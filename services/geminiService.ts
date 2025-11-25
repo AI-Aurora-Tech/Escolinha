@@ -1,12 +1,35 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || '';
+// Helper to access env vars safely in Vite/Browser
+const getApiKey = () => {
+  // 1. Try import.meta.env (Vite Standard)
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_GEMINI_API_KEY;
+  }
+  
+  // 2. Try process.env safely (Node/Webpack fallback)
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // Ignore ReferenceError if process is not defined
+  }
+  
+  return '';
+};
 
-// Initialize only if key exists (handled in component safely)
+const apiKey = getApiKey();
+
+// Initialize AI client
 const ai = new GoogleGenAI({ apiKey });
 
 export const generateTrainingDrill = async (ageGroup: string, focusSkill: string, duration: string): Promise<string> => {
   try {
+    if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+
     const model = 'gemini-2.5-flash';
     const prompt = `
       Você é um técnico de futebol profissional da escolinha "Garotos do Martinica".
@@ -39,6 +62,8 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
 
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
+        if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+
         const model = 'gemini-2.5-flash';
         const prompt = `
           Analise a saúde financeira da escolinha de futebol "Garotos do Martinica".
