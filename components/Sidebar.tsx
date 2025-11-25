@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Trophy, Shirt, Ticket, X } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Trophy, Shirt, Ticket, X, Settings } from 'lucide-react';
 import { User, UserRole } from '../types';
 
 interface SidebarProps {
@@ -20,6 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
     { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
+    { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
     { id: 'ai-coach', label: 'IA Coach', icon: Trophy, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
   ];
 
@@ -89,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
               onClick={onLogout}
               className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-md text-xs transition-colors border border-gray-700"
           >
-              <LogOut className="w-4 h-4" /> Sair / Trocar Perfil
+              <LogOut className="w-4 h-4" /> Sair
           </button>
         </div>
       </div>

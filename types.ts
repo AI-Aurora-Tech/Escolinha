@@ -110,6 +110,8 @@ export interface Transaction {
 export interface User {
   id: string;
   name: string;
+  email: string;
+  password?: string; // Optional for display, required for auth/creation
   role: UserRole;
   avatar: string;
 }

@@ -8,20 +8,25 @@ import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { AICoachPage } from './pages/AICoachPage';
+import { UsersPage } from './pages/UsersPage';
 import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
-import { Menu, Loader2 } from 'lucide-react';
+import { Menu, Loader2, Trophy, User as UserIcon, Lock } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 
-// Mock User (Auth not fully implemented yet, keeping mock user for logic)
-const MOCK_USER_ADMIN: User = { id: 'u1', name: 'Carlos Silva', role: UserRole.ADMIN, avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026024d' };
-const MOCK_USER_PROFESSOR: User = { id: 'u2', name: 'Renato Gaúcho', role: UserRole.PROFESSOR, avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704d' };
-
 function App() {
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USER_ADMIN);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // Login State
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [pageData, setPageData] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   
   // App State
   const [students, setStudents] = useState<Student[]>([]);
@@ -29,6 +34,7 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [systemUsers, setSystemUsers] = useState<User[]>([]);
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
@@ -39,6 +45,20 @@ function App() {
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: transactionsData } = await supabase.from('transactions').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
+        
+        // Only fetch users if admin
+        if (currentUser?.role === UserRole.ADMIN) {
+            const { data: usersData } = await supabase.from('app_users').select('*');
+            if (usersData) {
+                setSystemUsers(usersData.map((u: any) => ({
+                    id: u.id,
+                    name: u.name,
+                    email: u.email,
+                    role: u.role,
+                    avatar: u.avatar
+                })));
+            }
+        }
 
         // Mappers to match Typescript Interfaces (Supabase returns snake_case, Types are camelCase or match)
         if (studentsData) {
@@ -109,8 +129,55 @@ function App() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isAuthenticated) {
+        fetchData();
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsLoggingIn(true);
+      setLoginError('');
+
+      try {
+          const { data, error } = await supabase
+            .from('app_users')
+            .select('*')
+            .eq('email', loginEmail)
+            .eq('password', loginPassword) // In production, use Supabase Auth or hash comparison
+            .single();
+
+          if (error || !data) {
+              setLoginError('Email ou senha inválidos.');
+              setIsLoggingIn(false);
+              return;
+          }
+
+          const user: User = {
+              id: data.id,
+              name: data.name,
+              email: data.email,
+              role: data.role as UserRole,
+              avatar: data.avatar || `https://ui-avatars.com/api/?name=${data.name}`
+          };
+
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+      } catch (err) {
+          setLoginError('Erro ao conectar ao servidor.');
+          console.error(err);
+      } finally {
+          setIsLoggingIn(false);
+      }
+  };
+
+  const handleLogout = () => {
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setLoginEmail('');
+      setLoginPassword('');
+      setCurrentPage('dashboard');
+  };
 
   // --- ACTIONS WITH SUPABASE ---
 
@@ -387,7 +454,6 @@ function App() {
   };
 
   const handleDeleteGroup = async (id: string) => {
-      // Note: This requires handling constraints in DB or UI. For now simple delete.
       const { error } = await supabase.from('groups').delete().eq('id', id);
       if (!error) {
           setGroups(groups.filter(g => g.id !== id));
@@ -428,9 +494,38 @@ function App() {
       }
   };
 
-  const toggleRole = () => {
-      setCurrentUser(currentUser.role === UserRole.ADMIN ? MOCK_USER_PROFESSOR : MOCK_USER_ADMIN);
-      setCurrentPage('dashboard');
+  const handleAddUser = async (user: Omit<User, 'id'>) => {
+      const { data, error } = await supabase.from('app_users').insert([user]).select().single();
+      if (data && !error) {
+          const newUser = { id: data.id, name: data.name, email: data.email, role: data.role, avatar: data.avatar };
+          setSystemUsers(prev => [...prev, newUser]);
+      } else {
+          console.error(error);
+          alert("Erro ao criar usuário.");
+      }
+  };
+
+  const handleUpdateUser = async (user: User) => {
+      const payload: any = { name: user.name, email: user.email, role: user.role, avatar: user.avatar };
+      if (user.password) payload.password = user.password;
+      
+      const { error } = await supabase.from('app_users').update(payload).eq('id', user.id);
+      if (!error) {
+          setSystemUsers(prev => prev.map(u => u.id === user.id ? { ...u, ...user, password: undefined } : u));
+      } else {
+          console.error(error);
+          alert("Erro ao atualizar usuário.");
+      }
+  };
+
+  const handleDeleteUser = async (id: string) => {
+      const { error } = await supabase.from('app_users').delete().eq('id', id);
+      if (!error) {
+          setSystemUsers(prev => prev.filter(u => u.id !== id));
+      } else {
+          console.error(error);
+          alert("Erro ao excluir usuário.");
+      }
   };
 
   const handleNavigate = (page: string, data?: any) => {
@@ -439,16 +534,74 @@ function App() {
       else setPageData(null);
   };
 
-  // Render Loading State
-  if (isLoading && students.length === 0 && plans.length === 0) {
+  // --- LOGIN SCREEN ---
+  if (!isAuthenticated) {
       return (
-          <div className="flex h-screen w-full items-center justify-center bg-gray-50 flex-col gap-4">
-              <Loader2 className="w-12 h-12 text-primary-500 animate-spin" />
-              <p className="text-gray-500 font-medium">Carregando sistema Garotos do Martinica...</p>
+          <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                  <div className="bg-primary-600 p-8 text-center">
+                      <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
+                          <Trophy className="w-10 h-10 text-white" />
+                      </div>
+                      <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
+                      <p className="text-primary-100">Sistema de Gestão Esportiva</p>
+                  </div>
+                  <div className="p-8">
+                      <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Acesso ao Sistema</h2>
+                      <form onSubmit={handleLogin} className="space-y-4">
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                              <div className="relative">
+                                  <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                  <input 
+                                    type="email" 
+                                    required
+                                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                                    placeholder="seu@email.com"
+                                    value={loginEmail}
+                                    onChange={(e) => setLoginEmail(e.target.value)}
+                                  />
+                              </div>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                              <div className="relative">
+                                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                  <input 
+                                    type="password" 
+                                    required
+                                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                                    placeholder="••••••"
+                                    value={loginPassword}
+                                    onChange={(e) => setLoginPassword(e.target.value)}
+                                  />
+                              </div>
+                          </div>
+                          
+                          {loginError && (
+                              <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 text-center">
+                                  {loginError}
+                              </div>
+                          )}
+
+                          <button 
+                            type="submit" 
+                            disabled={isLoggingIn}
+                            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                              {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Entrar no Sistema'}
+                          </button>
+                      </form>
+                      <div className="mt-6 text-center text-xs text-gray-400">
+                          © 2024 Garotos do Martinica. Todos os direitos reservados.
+                      </div>
+                  </div>
+              </div>
           </div>
-      )
+      );
   }
 
+  // --- APP CONTENT ---
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -456,7 +609,7 @@ function App() {
                   students={students} 
                   transactions={transactions} 
                   activities={activities} 
-                  role={currentUser.role}
+                  role={currentUser!.role}
                   onNavigate={handleNavigate}
                />;
       case 'students':
@@ -481,6 +634,7 @@ function App() {
                   onBatchAssignStudents={handleBatchAssignStudents}
                />;
       case 'plans':
+        if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
         return <PlansPage 
                   plans={plans} 
                   onAddPlan={handleAddPlan} 
@@ -497,30 +651,39 @@ function App() {
                   onUpdateAttendance={handleUpdateAttendance} 
                />;
       case 'finance':
-        return currentUser.role === UserRole.ADMIN ? 
+        return currentUser!.role === UserRole.ADMIN ? 
             <FinancePage 
                 transactions={transactions} 
                 plans={plans} 
                 onAddTransaction={handleAddTransaction} 
                 onUpdateTransaction={handleUpdateTransaction}
             /> : 
-            <div className="p-10 text-center">Acesso Negado</div>;
+            <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
+      case 'users':
+        return currentUser!.role === UserRole.ADMIN ? 
+            <UsersPage 
+                users={systemUsers} 
+                onAddUser={handleAddUser}
+                onUpdateUser={handleUpdateUser}
+                onDeleteUser={handleDeleteUser}
+            /> : 
+            <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
       case 'ai-coach':
          const totalIncome = transactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, c) => acc + c.amount, 0);
          const totalExpense = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, c) => acc + c.amount, 0);
          return <AICoachPage income={totalIncome} expense={totalExpense} />;
       default:
-        return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser.role} onNavigate={handleNavigate} />;
+        return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
     }
   };
 
   return (
     <div className="flex bg-gray-50 min-h-screen font-sans">
       <Sidebar 
-        currentUser={currentUser} 
+        currentUser={currentUser!} 
         currentPage={currentPage} 
         onNavigate={handleNavigate} 
-        onLogout={toggleRole} 
+        onLogout={handleLogout} 
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
@@ -542,6 +705,7 @@ function App() {
                         {currentPage === 'plans' && 'Planos e Mensalidades'}
                         {currentPage === 'schedule' && 'Agenda'}
                         {currentPage === 'finance' && 'Departamento Financeiro'}
+                        {currentPage === 'users' && 'Gestão de Usuários'}
                         {currentPage === 'ai-coach' && 'Inteligência Artificial'}
                     </h1>
                     <p className="text-xs md:text-sm text-gray-500 mt-1">Bem-vindo ao sistema Garotos do Martinica.</p>
@@ -550,11 +714,16 @@ function App() {
             
             <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                Sistema Online (Supabase)
+                Sistema Online
             </div>
         </header>
         
-        {renderContent()}
+        {isLoading && !currentUser ? (
+             <div className="flex h-64 w-full items-center justify-center flex-col gap-4">
+                <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
+                <p className="text-gray-500 font-medium">Sincronizando dados...</p>
+            </div>
+        ) : renderContent()}
       </main>
     </div>
   );
