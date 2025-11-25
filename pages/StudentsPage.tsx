@@ -509,13 +509,22 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           'Nome Responsável': 'Maria Silva',
           'CPF Responsável': '111.111.111-11',
           'Telefone Responsável': '(11) 98888-8888',
-          'Validade Atestado (dd/mm/aaaa)': '01/01/2025'
+          'Validade Atestado (dd/mm/aaaa)': '01/01/2025',
+          'CEP': '12345-678',
+          'Logradouro': 'Rua Exemplo',
+          'Número': '123',
+          'Complemento': 'Apto 1',
+          'Bairro': 'Centro',
+          'Cidade': 'Cidade',
+          'Estado': 'SP',
+          'Grupo (Nome Exato)': 'Sub-11',
+          'Plano (Nome Exato)': 'Básico'
       }];
 
       const ws = XLSX.utils.json_to_sheet(templateData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Template Importacao");
-      XLSX.writeFile(wb, "Template_Importacao_Alunos.xlsx");
+      XLSX.writeFile(wb, "Template_Importacao_Completo.xlsx");
   };
 
   const parseExcelDate = (value: any): string => {
@@ -558,6 +567,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
 
               const newStudents: Omit<Student, 'id'>[] = jsonData.map((row: any) => {
+                  // Lookup Group and Plan by Name
+                  const groupName = row['Grupo (Nome Exato)'];
+                  const planName = row['Plano (Nome Exato)'];
+                  
+                  const matchedGroup = groupName ? groups.find(g => g.name.toLowerCase() === String(groupName).toLowerCase().trim()) : undefined;
+                  const matchedPlan = planName ? plans.find(p => p.name.toLowerCase() === String(planName).toLowerCase().trim()) : undefined;
+
                   return {
                     name: row['Nome Completo'] || 'Sem Nome',
                     birthDate: parseExcelDate(row['Data Nascimento (dd/mm/aaaa)'] || row['Data Nascimento (YYYY-MM-DD)']),
@@ -566,11 +582,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     phone: row['Telefone'] ? String(row['Telefone']) : '',
                     medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)'] || row['Validade Atestado (YYYY-MM-DD)']),
                     photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
-                    groupId: '',
-                    planId: '',
+                    groupId: matchedGroup ? matchedGroup.id : '',
+                    planId: matchedPlan ? matchedPlan.id : '',
                     active: true,
                     address: {
-                        cep: '', street: '', number: '', complement: '', district: '', city: '', state: ''
+                        cep: row['CEP'] ? String(row['CEP']) : '', 
+                        street: row['Logradouro'] ? String(row['Logradouro']) : '', 
+                        number: row['Número'] ? String(row['Número']) : '', 
+                        complement: row['Complemento'] ? String(row['Complemento']) : '', 
+                        district: row['Bairro'] ? String(row['Bairro']) : '', 
+                        city: row['Cidade'] ? String(row['Cidade']) : '', 
+                        state: row['Estado'] ? String(row['Estado']) : ''
                     },
                     guardian: {
                         name: row['Nome Responsável'] || '',
@@ -639,8 +661,53 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.setFontSize(12);
     doc.text("CONTRATO DE PRESTAÇÃO DE SERVIÇOS E TERMO DE RESPONSABILIDADE", pageWidth / 2, 28, { align: 'center' });
     
-    // ... (Remaining Contract Logic same)
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
     
+    const today = new Date().toLocaleDateString('pt-BR');
+    const groupName = groups.find(g => g.id === studentForm.groupId)?.name || '________________';
+    
+    const headerText = `
+    CONTRATANTE (RESPONSÁVEL):
+    Nome: ${studentForm.guardian.name}
+    CPF: ${studentForm.guardian.cpf}
+    Telefone: ${studentForm.guardian.phone}
+    
+    ALUNO(A):
+    Nome: ${studentForm.name}
+    RG: ${studentForm.rg} | CPF: ${studentForm.cpf}
+    Data de Nascimento: ${new Date(studentForm.birthDate).toLocaleDateString('pt-BR')}
+    Grupo/Categoria: ${groupName}
+    `;
+    
+    doc.text(headerText, margin, 40);
+    
+    const bodyText = `
+    Eu, CONTRATANTE, abaixo qualificado, na qualidade de RESPONSÁVEL pelo (ALUNO) acima citado, venho solicitar e formalizar a inscrição, neste TERMO DE CONTRATAÇÃO, na UNIDADE, do ALUNO acima qualificado, declarando e assumindo, nesta oportunidade:
+    
+    1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;
+    
+    2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;
+    
+    3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);
+    
+    4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção da escola e posteriormente comunicados ao responsável pelo aluno;
+    
+    5 - Autorizo a utilização da imagem do referido aluno nas mídias sociais do Garotos do Martinica / Martinica Oficial, site e demais ações publicitárias com o intuito de promover o trabalho desenvolvido pela entidade;
+    
+    6 - Caso o atleta acumule duas ou mais mensalidades em atraso, o mesmo terá o acesso aos treinamentos automaticamente suspenso, permanecendo o bloqueio até a regularização dos débitos pendentes;
+    
+    7 - Alunos com 2 ou mais mensalidades atrasadas terão seus cadastro suspenso até regularização.
+    `;
+    
+    const splitBody = doc.splitTextToSize(bodyText, maxLineWidth);
+    doc.text(splitBody, margin, 90);
+    
+    doc.text(`Data: ${today}`, margin, 240);
+    
+    doc.text("___________________________________________________", pageWidth / 2, 260, { align: 'center' });
+    doc.text("Assinatura do Responsável", pageWidth / 2, 265, { align: 'center' });
+
     doc.save(`Contrato_${studentForm.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -675,7 +742,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       doc.setFontSize(10);
       doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
       
-      // ... (Table logic same)
+      const tableData = studentActivities.map(activity => {
+          const isPresent = activity.attendance.includes(editingId!);
+          return [
+              new Date(activity.date).toLocaleDateString('pt-BR'),
+              activity.title,
+              activity.startTime + ' - ' + activity.endTime,
+              isPresent ? 'PRESENTE' : 'AUSENTE'
+          ];
+      });
+
+      autoTable(doc, {
+          startY: 35,
+          head: [['Data', 'Atividade', 'Horário', 'Status']],
+          body: tableData,
+          didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 3) {
+                  if (data.cell.raw === 'AUSENTE') {
+                      data.cell.styles.textColor = [220, 38, 38];
+                  } else {
+                      data.cell.styles.textColor = [22, 163, 74];
+                  }
+              }
+          }
+      });
       doc.save(`Frequencia_${studentForm.name.replace(/\s+/g, '_')}.pdf`);
   };
 
