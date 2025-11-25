@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 // Para resolver o problema da tela branca e conectar ao banco, 
 // cole suas credenciais diretamente abaixo, dentro das aspas.
 //
-// Você encontra esses dados em: Supabase Dashboard > Project Settings > API
+// Você encontra esses dados em: Supabase Dashboard > Project Settings > API - 
 // ==============================================================================
 
 const supabaseUrl = 'https://puluknfhkrznoalccszq.supabase.co'; 
