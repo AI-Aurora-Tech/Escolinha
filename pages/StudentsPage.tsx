@@ -502,20 +502,40 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleDownloadTemplate = () => {
       const templateData = [{
           'Nome Completo': 'Ex: João Silva',
-          'Data Nascimento (YYYY-MM-DD)': '2010-05-20',
+          'Data Nascimento (dd/mm/aaaa)': '20/05/2010',
           'RG': '00.000.000-0',
           'CPF': '000.000.000-00',
           'Telefone': '(11) 99999-9999',
           'Nome Responsável': 'Maria Silva',
           'CPF Responsável': '111.111.111-11',
           'Telefone Responsável': '(11) 98888-8888',
-          'Validade Atestado (YYYY-MM-DD)': '2025-01-01'
+          'Validade Atestado (dd/mm/aaaa)': '01/01/2025'
       }];
 
       const ws = XLSX.utils.json_to_sheet(templateData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Template Importacao");
       XLSX.writeFile(wb, "Template_Importacao_Alunos.xlsx");
+  };
+
+  const parseExcelDate = (value: any): string => {
+      if (!value) return '';
+      // Formato YYYY-MM-DD
+      if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return value;
+      }
+      // Formato Brasileiro DD/MM/YYYY
+      if (typeof value === 'string' && value.includes('/')) {
+          const parts = value.split('/');
+          if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      // Número Serial do Excel (ex: 45000)
+      if (typeof value === 'number') {
+          // Ajuste para datas do Excel (base 1900)
+          const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+          return date.toISOString().split('T')[0];
+      }
+      return '';
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -525,41 +545,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const reader = new FileReader();
       reader.onload = (evt) => {
           try {
-              const bstr = evt.target?.result;
-              const wb = XLSX.read(bstr, { type: 'binary' });
+              const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+              const wb = XLSX.read(data, { type: 'array' });
+              
               const wsname = wb.SheetNames[0];
               const ws = wb.Sheets[wsname];
-              const data = XLSX.utils.sheet_to_json(ws);
+              const jsonData = XLSX.utils.sheet_to_json(ws);
 
-              if (data.length === 0) {
+              if (jsonData.length === 0) {
                   alert("Arquivo vazio ou formato inválido.");
                   return;
               }
 
-              const newStudents: Omit<Student, 'id'>[] = data.map((row: any) => ({
-                  name: row['Nome Completo'] || 'Sem Nome',
-                  birthDate: row['Data Nascimento (YYYY-MM-DD)'] || '',
-                  rg: row['RG'] || '',
-                  cpf: row['CPF'] || '',
-                  phone: row['Telefone'] || '',
-                  medicalCertificateExpiry: row['Validade Atestado (YYYY-MM-DD)'] || '',
-                  photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
-                  groupId: '',
-                  planId: '',
-                  active: true,
-                  address: {
-                      cep: '', street: '', number: '', complement: '', district: '', city: '', state: ''
-                  },
-                  guardian: {
-                      name: row['Nome Responsável'] || '',
-                      phone: row['Telefone Responsável'] || '',
-                      email: '',
-                      cpf: row['CPF Responsável'] || ''
-                  },
-                  documents: {
-                      rg: false, cpf: false, medical: false, address: false, school: false
+              const newStudents: Omit<Student, 'id'>[] = jsonData.map((row: any) => {
+                  return {
+                    name: row['Nome Completo'] || 'Sem Nome',
+                    birthDate: parseExcelDate(row['Data Nascimento (dd/mm/aaaa)'] || row['Data Nascimento (YYYY-MM-DD)']),
+                    rg: row['RG'] ? String(row['RG']) : '',
+                    cpf: row['CPF'] ? String(row['CPF']) : '',
+                    phone: row['Telefone'] ? String(row['Telefone']) : '',
+                    medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)'] || row['Validade Atestado (YYYY-MM-DD)']),
+                    photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
+                    groupId: '',
+                    planId: '',
+                    active: true,
+                    address: {
+                        cep: '', street: '', number: '', complement: '', district: '', city: '', state: ''
+                    },
+                    guardian: {
+                        name: row['Nome Responsável'] || '',
+                        phone: row['Telefone Responsável'] ? String(row['Telefone Responsável']) : '',
+                        email: '',
+                        cpf: row['CPF Responsável'] ? String(row['CPF Responsável']) : ''
+                    },
+                    documents: {
+                        rg: false, cpf: false, medical: false, address: false, school: false
+                    }
                   }
-              }));
+              });
 
               if (confirm(`Encontrados ${newStudents.length} alunos. Deseja importar?`)) {
                   onBatchAddStudents(newStudents);
@@ -571,7 +594,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           // Reset input
           if (fileInputRef.current) fileInputRef.current.value = '';
       };
-      reader.readAsBinaryString(file);
+      // Usar ArrayBuffer é mais seguro para arquivos modernos
+      reader.readAsArrayBuffer(file);
   };
 
   const handleExportPDF = () => {
