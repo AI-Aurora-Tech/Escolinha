@@ -14,12 +14,14 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNavigate, onLogout, isOpen, onClose }) => {
   
   const menuItems = [
-    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
+    // Dashboard hidden for Guardians as requested ("todos os demais itens devem ser removidos")
+    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'students', label: currentUser.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Alunos & Responsáveis', icon: Users, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
     { id: 'groups', label: 'Grupos', icon: Shirt, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
     { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
-    { id: 'finance', label: currentUser.role === UserRole.RESPONSAVEL ? 'Pagamentos' : 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN, UserRole.RESPONSAVEL] },
+    // Finance hidden for Guardians here because they access payments inside "Meus Filhos" -> "Histórico Financeiro"
+    { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
     { id: 'ai-coach', label: 'IA Coach', icon: Trophy, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
   ];

@@ -51,7 +51,7 @@ function App() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-        // Fetch base tables that don't depend on role filtering significantly for read (RLS would handle this in production)
+        // Fetch base tables
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
@@ -62,16 +62,6 @@ function App() {
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              // 1. Fetch only MY students (children)
-             // Note: We use the JSONB contains operator @> or exact match on text if we extracted it.
-             // Supabase JS filter on JSON column:
-             const { data: myStudents } = await supabase
-                .from('students')
-                .select('*')
-                .contains('guardian', { cpf: currentUser.cpf }); // This assumes exact match in JSON structure
-             
-             // Fallback: If contains doesn't work perfectly with formatting differences, we might fetch all and filter in JS.
-             // Given the complexity of CPF formatting (dots/dashes), let's fetch all and filter in JS for robustness in this prototype.
-             // IN PRODUCTION: Use a proper column or normalize CPFs.
              const { data: allStudents } = await supabase.from('students').select('*');
              
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
@@ -199,6 +189,10 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
         fetchData();
+        // Set default page for parents
+        if (currentUser?.role === UserRole.RESPONSAVEL) {
+            setCurrentPage('students');
+        }
     }
   }, [isAuthenticated]);
 
@@ -247,25 +241,16 @@ function App() {
       setIsLoggingIn(true);
       setLoginError('');
       
-      const cleanCpf = loginCpf.replace(/\D/g, ''); // Remove mask for checking logic if needed
-      
-      // 1. Check if user already exists in app_users
-      // Note: We need to handle potential formatting diffs in DB.
-      // We will try exact match first.
+      const cleanCpf = loginCpf.replace(/\D/g, ''); 
       
       try {
           const { data: existingUser } = await supabase
             .from('app_users')
             .select('*')
-            .eq('cpf', loginCpf) // Assuming user inputs formatted or unformatted consistently
+            .eq('cpf', loginCpf) 
             .maybeSingle();
             
           if (existingUser) {
-               // User exists, ask for password
-               // We reuse the loginPassword field for simplicity in UI, but in a real app we'd show a specific password field now.
-               // Since we are in "Step 1" of CPF login, let's just assume we want to check if they exist first.
-               // But to make UI simpler: let's verify both at once if password field is filled.
-               
                if (loginPassword) {
                    if (existingUser.password === loginPassword) {
                         const user: User = {
@@ -292,8 +277,6 @@ function App() {
                }
           }
 
-          // 2. User does NOT exist. Check if they are a Guardian in 'students' table.
-          // Fetch all students and find one where guardian.cpf matches
           const { data: studentsData } = await supabase.from('students').select('guardian');
           
           if (studentsData) {
@@ -303,7 +286,6 @@ function App() {
               });
 
               if (matchedStudent) {
-                  // FOUND! It is first access.
                   setIsFirstAccess(true);
                   setTempGuardianName(matchedStudent.guardian.name);
                   setTempGuardianEmail(matchedStudent.guardian.email || `${cleanCpf}@temp.com`);
@@ -341,14 +323,13 @@ function App() {
               email: tempGuardianEmail,
               password: newPassword,
               role: UserRole.RESPONSAVEL,
-              cpf: loginCpf, // Save as typed
+              cpf: loginCpf, 
               avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(tempGuardianName)}&background=random`
           };
 
           const { data, error } = await supabase.from('app_users').insert([newUserPayload]).select().single();
 
           if (data && !error) {
-              // Auto login
                const user: User = {
                     id: data.id,
                     name: data.name,
@@ -383,14 +364,7 @@ function App() {
       setCurrentPage('dashboard');
   };
 
-  // ... (Other functions like generateAnnualTuition, handleAddStudent, etc. remain the same) ...
-  // [OMITTED FOR BREVITY - Assume they are preserved exactly as is]
-  // Only ensuring `generateAnnualTuition`, `uploadPhoto`, `handleAddStudent`, `handleBatchAddStudents`, `handleUpdateStudent`, 
-  // `handleBatchAssignStudents`, `handleAddActivity`, `handleUpdateActivity`, `handleUpdateAttendance`, `handleAddTransaction`, 
-  // `handleUpdateTransaction`, `handleAddGroup`, `handleUpdateGroup`, `handleDeleteGroup`, `handleAddPlan`, `handleUpdatePlan`, 
-  // `handleDeletePlan`, `handleAddUser`, `handleUpdateUser`, `handleDeleteUser`, `handleNavigate` match previous implementation.
-
-  // Re-declaring key handlers to prevent errors in render (copy-paste previous implementation logic)
+  // Re-declaring key handlers to prevent errors in render 
   const generateAnnualTuition = async (student: Student, plan: Plan) => {
     const today = new Date();
     const currentMonth = today.getMonth();
@@ -521,10 +495,63 @@ function App() {
     } else { alert("Erro ao salvar aluno."); }
     setIsLoading(false);
   };
-  
-  // (Stubbing other handlers for brevity, logic is identical to previous App.tsx)
-  const handleBatchAddStudents = async (studentsData: any[]) => { /* ... existing ... */ };
-  const handleUpdateStudent = async (updatedStudent: Student) => { /* ... existing ... */ 
+
+  const handleBatchAddStudents = async (studentsData: any[]) => { 
+      setIsLoading(true);
+      const payload = studentsData.map(s => ({
+        name: s.name,
+        birth_date: s.birthDate,
+        rg: s.rg,
+        cpf: s.cpf,
+        phone: s.phone,
+        medical_expiry: s.medicalCertificateExpiry,
+        photo_url: s.photoUrl,
+        address: s.address,
+        guardian: s.guardian,
+        plan_id: s.planId || null,
+        group_id: s.groupId || null,
+        active: s.active,
+        documents: s.documents
+      }));
+      
+      const { data, error } = await supabase.from('students').insert(payload).select();
+      
+      if (data && !error) {
+          const newStudents: Student[] = data.map((d: any) => ({
+             id: d.id,
+             name: d.name,
+             birthDate: d.birth_date,
+             rg: d.rg,
+             cpf: d.cpf,
+             phone: d.phone,
+             medicalCertificateExpiry: d.medical_expiry,
+             photoUrl: d.photo_url,
+             address: d.address,
+             guardian: d.guardian,
+             planId: d.plan_id,
+             groupId: d.group_id,
+             active: d.active,
+             documents: d.documents
+          }));
+          
+          setStudents(prev => [...prev, ...newStudents]);
+          
+          // Generate tuition for each
+          for (const ns of newStudents) {
+              if (ns.active && ns.planId) {
+                  const plan = plans.find(p => p.id === ns.planId);
+                  if (plan) await generateAnnualTuition(ns, plan);
+              }
+          }
+          alert(`${newStudents.length} alunos importados com sucesso!`);
+      } else {
+          alert("Erro na importação em massa.");
+          console.error(error);
+      }
+      setIsLoading(false);
+  };
+
+  const handleUpdateStudent = async (updatedStudent: Student) => {
       setIsLoading(true);
       let finalPhotoUrl = updatedStudent.photoUrl;
       if (updatedStudent.photoUrl && updatedStudent.photoUrl.startsWith('data:')) {
@@ -551,23 +578,155 @@ function App() {
       }
       setIsLoading(false);
   };
-  const handleBatchAssignStudents = async (ids: string[], gid: string) => { /* ... existing ... */ };
-  const handleAddActivity = async (a: any) => { /* ... existing ... */ };
-  const handleUpdateActivity = async (a: any) => { /* ... existing ... */ };
-  const handleUpdateAttendance = async (aid: string, sid: string) => { /* ... existing ... */ };
-  const handleAddTransaction = async (t: any) => { /* ... existing ... */ };
-  const handleUpdateTransaction = async (t: any) => { /* ... existing ... */ };
-  const handleAddGroup = async (g: any) => { /* ... existing ... */ };
-  const handleUpdateGroup = async (g: any) => { /* ... existing ... */ };
-  const handleDeleteGroup = async (id: string) => { /* ... existing ... */ };
-  const handleAddPlan = async (p: any) => { /* ... existing ... */ };
-  const handleUpdatePlan = async (p: any) => { /* ... existing ... */ };
-  const handleDeletePlan = async (id: string) => { /* ... existing ... */ };
-  const handleAddUser = async (u: any) => { /* ... existing ... */ };
-  const handleUpdateUser = async (u: any) => { /* ... existing ... */ };
-  const handleDeleteUser = async (id: string) => { /* ... existing ... */ };
-  const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
+  
+  const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
+      setIsLoading(true);
+      const { error } = await supabase.from('students').update({ group_id: gid }).in('id', ids);
+      if (!error) {
+           setStudents(students.map(s => ids.includes(s.id) ? { ...s, groupId: gid } : s));
+      }
+      setIsLoading(false);
+  };
+  
+  const handleAddActivity = async (a: any) => { 
+      const payload = {
+          title: a.title,
+          group_id: a.groupId || null,
+          participants: a.participants,
+          date: a.date,
+          start_time: a.startTime,
+          end_time: a.endTime,
+          recurrence: a.recurrence,
+          attendance: a.attendance
+      };
+      const { data, error } = await supabase.from('activities').insert([payload]).select().single();
+      if(data && !error) {
+           setActivities(prev => [...prev, { ...a, id: data.id }]);
+      }
+  };
+  
+  const handleUpdateActivity = async (a: any) => { 
+      const payload = {
+          title: a.title,
+          group_id: a.groupId || null,
+          participants: a.participants,
+          date: a.date,
+          start_time: a.startTime,
+          end_time: a.endTime,
+          recurrence: a.recurrence,
+          attendance: a.attendance
+      };
+      const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
+      if(!error) {
+          setActivities(prev => prev.map(act => act.id === a.id ? a : act));
+      }
+  };
+  
+  const handleUpdateAttendance = async (aid: string, sid: string) => { 
+      const activity = activities.find(a => a.id === aid);
+      if(!activity) return;
+      const newAttendance = activity.attendance.includes(sid) 
+        ? activity.attendance.filter(id => id !== sid)
+        : [...activity.attendance, sid];
+      
+      const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
+      if(!error) {
+          setActivities(prev => prev.map(a => a.id === aid ? { ...a, attendance: newAttendance } : a));
+      }
+  };
 
+  const handleAddTransaction = async (t: any) => { 
+      const payload = {
+          description: t.description,
+          amount: t.amount,
+          type: t.type,
+          date: t.date,
+          status: t.status,
+          student_id: t.studentId || null,
+          plan_id: t.planId || null,
+          payment_method: t.paymentMethod,
+          payment_link: t.paymentLink
+      };
+      const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
+      if(data && !error) {
+          setTransactions(prev => [...prev, { ...t, id: data.id }]);
+      }
+  };
+  
+  const handleUpdateTransaction = async (t: any) => { 
+      const payload = {
+          description: t.description,
+          amount: t.amount,
+          type: t.type,
+          date: t.date,
+          status: t.status,
+          student_id: t.studentId || null,
+          plan_id: t.planId || null,
+          payment_method: t.paymentMethod,
+          payment_link: t.paymentLink
+      };
+      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
+      if(!error) {
+          setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
+      }
+  };
+
+  const handleAddGroup = async (g: any) => { 
+      const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
+      if(data && !error) setGroups(prev => [...prev, { ...g, id: data.id }]);
+  };
+  
+  const handleUpdateGroup = async (g: any) => { 
+      const { error } = await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
+      if(!error) setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr));
+  };
+  
+  const handleDeleteGroup = async (id: string) => { 
+      const { error } = await supabase.from('groups').delete().eq('id', id);
+      if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+  };
+  
+  const handleAddPlan = async (p: any) => { 
+      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const { data, error } = await supabase.from('plans').insert([payload]).select().single();
+      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
+  };
+  
+  const handleUpdatePlan = async (p: any) => { 
+      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
+      if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
+  };
+  
+  const handleDeletePlan = async (id: string) => { 
+      const { error } = await supabase.from('plans').delete().eq('id', id);
+      if(!error) setPlans(prev => prev.filter(p => p.id !== id));
+  };
+  
+  const handleAddUser = async (u: any) => { 
+      const { data, error } = await supabase.from('app_users').insert([u]).select().single();
+      if(data && !error) {
+          setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.cpf }]);
+      }
+  };
+  
+  const handleUpdateUser = async (u: any) => { 
+      // Remove password if empty to not overwrite
+      const payload: any = { name: u.name, email: u.email, role: u.role, avatar: u.avatar };
+      if(u.password) payload.password = u.password;
+      
+      const { error } = await supabase.from('app_users').update(payload).eq('id', u.id);
+      if(!error) {
+          setSystemUsers(prev => prev.map(us => us.id === u.id ? u : us));
+      }
+  };
+  
+  const handleDeleteUser = async (id: string) => { 
+      const { error } = await supabase.from('app_users').delete().eq('id', id);
+      if(!error) setSystemUsers(prev => prev.filter(u => u.id !== id));
+  };
+  
+  const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
   // --- LOGIN SCREEN RENDER ---
   if (!isAuthenticated) {
@@ -707,6 +866,7 @@ function App() {
                   onUpdateStudent={handleUpdateStudent}
                   onUpdateTransaction={handleUpdateTransaction}
                   initialFilter={pageData?.filter}
+                  currentUser={currentUser}
                />;
       case 'groups':
         // Responsável can't edit groups
@@ -734,12 +894,11 @@ function App() {
                   groups={groups} 
                   onAddActivity={handleAddActivity} 
                   onUpdateActivity={handleUpdateActivity}
-                  onUpdateAttendance={handleUpdateAttendance} 
+                  onUpdateAttendance={handleUpdateAttendance}
+                  currentUser={currentUser}
                />;
       case 'finance':
-        // Responsável views filtered finance page? Actually StudentsPage (History) is better for Parents.
-        // But if we want a consolidated view:
-        return (currentUser!.role === UserRole.ADMIN || currentUser!.role === UserRole.RESPONSAVEL) ? 
+        return (currentUser!.role === UserRole.ADMIN) ? 
             <FinancePage 
                 transactions={transactions} 
                 plans={plans} 
@@ -792,7 +951,7 @@ function App() {
                         {currentPage === 'groups' && 'Gestão de Grupos'}
                         {currentPage === 'plans' && 'Planos e Mensalidades'}
                         {currentPage === 'schedule' && 'Agenda'}
-                        {currentPage === 'finance' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Pagamentos' : 'Departamento Financeiro')}
+                        {currentPage === 'finance' && 'Fluxo de Caixa'}
                         {currentPage === 'users' && 'Gestão de Usuários'}
                         {currentPage === 'ai-coach' && 'Inteligência Artificial'}
                     </h1>

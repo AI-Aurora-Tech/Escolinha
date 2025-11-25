@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { Activity, Student, Group } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User, FileText, XCircle, Edit } from 'lucide-react';
+import { Activity, Student, Group, User, UserRole } from '../types';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -11,9 +12,10 @@ interface SchedulePageProps {
   onAddActivity: (activity: Omit<Activity, 'id'>) => void;
   onUpdateActivity: (activity: Activity) => void;
   onUpdateAttendance: (activityId: string, studentId: string) => void;
+  currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, currentUser }) => {
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -32,6 +34,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       recurrence: 'none',
       attendance: []
   });
+
+  const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   const selectedActivity = selectedActivityId ? activities.find(a => a.id === selectedActivityId) || null : null;
 
@@ -193,23 +197,25 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Agenda</h2>
-        <div className="flex gap-2 w-full md:w-auto">
-            <button 
-                onClick={handleExportAttendanceReport}
-                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
-            >
-                <FileText className="w-4 h-4" />
-                Exportar Relatório
-            </button>
-            <button 
-                onClick={handleOpenAdd}
-                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors"
-            >
-                <CalendarIcon className="w-4 h-4" />
-                Agendar Treino
-            </button>
-        </div>
+        <h2 className="text-2xl font-bold text-gray-800">Agenda de Treinos</h2>
+        {!isGuardian && (
+            <div className="flex gap-2 w-full md:w-auto">
+                <button 
+                    onClick={handleExportAttendanceReport}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+                >
+                    <FileText className="w-4 h-4" />
+                    Exportar Relatório
+                </button>
+                <button 
+                    onClick={handleOpenAdd}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors"
+                >
+                    <CalendarIcon className="w-4 h-4" />
+                    Agendar Treino
+                </button>
+            </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -257,7 +263,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                             </>
                                         ) : (
                                             <>
-                                                <User className="w-3 h-3" />
+                                                <UserIcon className="w-3 h-3" />
                                                 {participantCount} Alunos
                                             </>
                                         )}
@@ -268,13 +274,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 <div className={`px-3 py-1 rounded-full text-xs font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
                                     {isPast ? 'Concluído' : 'Agendado'}
                                 </div>
-                                <button 
-                                    onClick={(e) => handleOpenEdit(e, activity)}
-                                    className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                    title="Editar Atividade"
-                                >
-                                    <Edit className="w-4 h-4" />
-                                </button>
+                                {!isGuardian && (
+                                    <button 
+                                        onClick={(e) => handleOpenEdit(e, activity)}
+                                        className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                        title="Editar Atividade"
+                                    >
+                                        <Edit className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
                         </div>
                         <div className="mt-4 flex items-center gap-2">
@@ -313,8 +321,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 const isPresent = selectedActivity.attendance.includes(student.id);
                                 return (
                                     <div key={student.id} 
-                                        onClick={() => onUpdateAttendance(selectedActivity.id, student.id)}
-                                        className={`flex items-center justify-between p-3 mb-1 rounded-lg cursor-pointer transition-colors ${
+                                        onClick={() => !isGuardian && onUpdateAttendance(selectedActivity.id, student.id)}
+                                        className={`flex items-center justify-between p-3 mb-1 rounded-lg transition-colors ${!isGuardian ? 'cursor-pointer' : ''} ${
                                             isPresent ? 'bg-green-50 border border-green-100' : 'bg-red-50 hover:bg-red-100 border border-red-100'
                                         }`}
                                     >
@@ -346,13 +354,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             ) : (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400">
                     <CalendarIcon className="w-12 h-12 mb-2 opacity-20" />
-                    <p>Selecione um treino para<br/>gerenciar a presença</p>
+                    <p>Selecione um treino para<br/>{isGuardian ? 'ver' : 'gerenciar'} a presença</p>
                 </div>
             )}
         </div>
       </div>
 
-      {showAddModal && (
+      {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">{editingId ? 'Editar Atividade' : 'Agendar Atividade'}</h3>

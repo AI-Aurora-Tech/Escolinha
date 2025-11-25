@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity } from '../types';
-import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send } from 'lucide-react';
+import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -17,16 +17,17 @@ interface StudentsPageProps {
   onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Transaction) => void;
-  initialFilter?: string; // Prop opcional para definir filtro inicial
+  initialFilter?: string;
+  currentUser?: User | null;
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, initialFilter }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [medicalFilter, setMedicalFilter] = useState('ALL');
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
-  const [docsFilter, setDocsFilter] = useState('ALL'); // Novo filtro de documentos
+  const [docsFilter, setDocsFilter] = useState('ALL'); 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
@@ -61,6 +62,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   // Check status loading
   const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
 
+  const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
+
   // Inicializar filtro se passado via prop
   useEffect(() => {
     if (initialFilter === 'DEFAULTING') {
@@ -94,14 +97,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                          confirmPixPaymentSuccess();
                     }
                 } else if (status === 'rejected' || status === 'cancelled') {
-                    // Parar de monitorar rejeitados
                     somethingChanged = true;
                 } else {
-                    // Ainda pendente, manter na lista
                     remainingMonitored.push(payment);
                 }
             } catch (e) {
-                // Em caso de erro de rede, mantém na lista para tentar depois
                 remainingMonitored.push(payment);
             }
         }
@@ -110,10 +110,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
              setMonitoredPayments(remainingMonitored);
         }
 
-    }, 3000); // Checar a cada 3 segundos
+    }, 3000); 
 
     return () => clearInterval(interval);
-  }, [monitoredPayments, pixData, transactions]); // Dependências cruciais
+  }, [monitoredPayments, pixData, transactions]); 
 
 
   const initialFormState = {
@@ -170,7 +170,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       return !student.documents.rg || !student.documents.cpf || !student.documents.medical || !student.documents.address || !student.documents.school;
   };
 
-  // Check if student has overdue payments
   const getStudentOverdueCount = (studentId: string) => {
     const today = new Date();
     return transactions.filter(t => 
@@ -187,7 +186,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return `https://wa.me/55${numbers}`;
   };
 
-  // ... (handleRequestDocuments, handleRequestMedical, sendChargeMessage, checkStatus, sendBatchChargeMessage remain same)
   const handleRequestDocuments = (student: Student) => {
       const phone = student.guardian.phone.replace(/\D/g, '');
       if (!phone) {
@@ -328,7 +326,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       setSendingPixId(tx.id);
 
-      // 1. Gerar o PIX fresco
       try {
           const externalRef = tx.externalReference || crypto.randomUUID();
           
@@ -346,8 +343,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
           if (mpResult && mpResult.qrCode) {
               const code = mpResult.qrCode;
-              
-              // Adicionar ao monitoramento
               setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
 
               const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
@@ -370,7 +365,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
   };
   
-  // ... (fetchAddressByCep, filteredStudents, startCamera, stopCamera, capturePhoto remain same)
   const fetchAddressByCep = async (cep: string) => {
     const cleanCep = cep.replace(/\D/g, '');
     if (cleanCep.length !== 8) return;
@@ -476,7 +470,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
-  // ... (Modal handlers)
   const handleOpenNew = () => {
       setEditingId(null);
       setStudentForm(initialFormState);
@@ -554,6 +547,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if(isGuardian) return; 
+
     const studentData = {
       ...studentForm,
       photoUrl: capturedImage || `https://picsum.photos/seed/${studentForm.name}/200/200`
@@ -593,7 +588,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const initiatePixPayment = async (txId?: string) => {
-      // 1. Determinar o valor e descrição
       let amount = 0;
       let description = '';
       let externalRef = '';
@@ -626,7 +620,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       setShowPixModal(true);
       setPixData(null);
 
-      // 2. Chamar API MP para gerar QR Code
       try {
           const result = await createPixPayment({
               title: description,
@@ -642,7 +635,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
           if (result) {
               setPixData(result);
-              // Adicionar à lista de monitoramento
               setMonitoredPayments(prev => [...prev, { mpId: result.id, txIds: idsToPay }]);
           } else {
               alert("Erro ao gerar QR Code PIX. Verifique se o CPF é válido.");
@@ -658,9 +650,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
   
   const confirmPixPaymentSuccess = () => {
-      // Called automatically by polling or manually
-      // Transações já foram atualizadas no polling
-      // Apenas limpar estados visuais
       setSelectedFinanceIds(new Set());
       setShowPixModal(false);
       setPixData(null);
@@ -672,11 +661,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           alert("Código Copiado!");
       }
   };
-
-  // ... (handleExportExcel, handleDownloadTemplate, parseExcelDate, handleImportExcel, handleExportPDF, handlePrintContract, studentTransactions, etc remain same)
-  // Replicating these for completeness if file is fully replaced, 
-  // but for XML changes I assume context is preserved unless I output full file. 
-  // Since request is "update file", I will output the whole file content to be safe as per system instruction 'Full content of file'.
 
   const handleExportExcel = () => {
     const data = filteredStudents.map(s => ({
@@ -980,58 +964,62 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     <div className="space-y-6">
       {/* ... (Search and Headers) ... */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h2 className="text-xl md:text-2xl font-bold text-gray-800">Alunos e Responsáveis</h2>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleImportExcel} 
-                accept=".xlsx, .xls" 
-                className="hidden" 
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
-              title="Importar de Excel"
-            >
-              <Upload className="w-4 h-4" />
-              Importar
-            </button>
-            <button 
-              onClick={handleDownloadTemplate}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"
-              title="Baixar Modelo Excel"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Modelo
-            </button>
-            <button 
-              onClick={handleExportExcel}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"
-              title="Exportar Excel"
-            >
-              <Download className="w-4 h-4" />
-              Exportar
-            </button>
-            <button 
-              onClick={handleExportPDF}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"
-              title="Exportar PDF"
-            >
-              <FileText className="w-4 h-4" />
-              PDF
-            </button>
-            <button 
-              onClick={handleOpenNew}
-              className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Novo Aluno
-            </button>
-        </div>
+        <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
+        
+        {/* HIDE ACTION BUTTONS FOR GUARDIANS */}
+        {!isGuardian && (
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleImportExcel} 
+                    accept=".xlsx, .xls" 
+                    className="hidden" 
+                />
+                <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
+                title="Importar de Excel"
+                >
+                <Upload className="w-4 h-4" />
+                Importar
+                </button>
+                <button 
+                onClick={handleDownloadTemplate}
+                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"
+                title="Baixar Modelo Excel"
+                >
+                <FileSpreadsheet className="w-4 h-4" />
+                Modelo
+                </button>
+                <button 
+                onClick={handleExportExcel}
+                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"
+                title="Exportar Excel"
+                >
+                <Download className="w-4 h-4" />
+                Exportar
+                </button>
+                <button 
+                onClick={handleExportPDF}
+                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"
+                title="Exportar PDF"
+                >
+                <FileText className="w-4 h-4" />
+                PDF
+                </button>
+                <button 
+                onClick={handleOpenNew}
+                className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"
+                >
+                <Plus className="w-4 h-4" />
+                Novo Aluno
+                </button>
+            </div>
+        )}
       </div>
 
-      {/* Filters (Reduced code for brevity, same as before) */}
+      {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -1043,6 +1031,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {/* Other filters can remain visible for Guardians to filter their own children if they have many */}
           <div className="md:col-span-2 relative">
              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
              <input 
@@ -1125,7 +1114,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                       <AlertTriangle className="w-3 h-3" /> {overdueCount} Pendente{overdueCount > 1 ? 's' : ''}
                                   </span>
                               )}
-                              {missingDocs && (
+                              {missingDocs && !isGuardian && (
                                   <button
                                       onClick={() => handleRequestDocuments(student)}
                                       title="Clique para solicitar documentos via WhatsApp" 
@@ -1137,7 +1126,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           </p>
                           <div className="flex items-center gap-2 text-xs text-gray-500">
                               <span>Tel: {student.phone}</span>
-                              {student.phone && (
+                              {student.phone && !isGuardian && (
                                 <a href={getWhatsAppLink(student.phone)} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-700" title="Abrir WhatsApp Aluno">
                                   <MessageCircle className="w-4 h-4" />
                                 </a>
@@ -1153,7 +1142,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
                         <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
                             <Phone className="w-3 h-3" /> {student.guardian.phone}
-                            {student.guardian.phone && (
+                            {student.guardian.phone && !isGuardian && (
                                 <a href={getWhatsAppLink(student.guardian.phone)} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-700 ml-1" title="WhatsApp Responsável">
                                     <MessageCircle className="w-4 h-4" />
                                 </a>
@@ -1171,13 +1160,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           >
                             {student.active ? 'Ativo' : 'Inativo'}
                           </span>
-                           {expired && (
+                           {expired && !isGuardian && (
                              <button 
                                 onClick={() => handleRequestMedical(student)}
                                 className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center w-fit gap-1 border border-orange-200 hover:bg-orange-200 cursor-pointer"
                              >
                                 <HeartPulse className="w-3 h-3" /> Atestado Vencido
                              </button>
+                        )}
+                        {expired && isGuardian && (
+                            <span className="text-[10px] text-orange-600 font-bold flex items-center gap-1">
+                                <HeartPulse className="w-3 h-3" /> Atestado Vencido
+                            </span>
                         )}
                       </div>
                     </td>
@@ -1197,13 +1191,24 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         >
                           <History className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => handleOpenEdit(student)}
-                          className="text-primary-600 hover:text-primary-800 transition-colors p-2 bg-primary-50 rounded-lg"
-                          title="Editar Dados"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
+                        
+                        {!isGuardian ? (
+                            <button 
+                            onClick={() => handleOpenEdit(student)}
+                            className="text-primary-600 hover:text-primary-800 transition-colors p-2 bg-primary-50 rounded-lg"
+                            title="Editar Dados"
+                            >
+                            <Edit className="w-4 h-4" />
+                            </button>
+                        ) : (
+                            <button 
+                            onClick={() => handleOpenEdit(student)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors p-2 bg-gray-50 rounded-lg"
+                            title="Ver Dados"
+                            >
+                            <UserIcon className="w-4 h-4" />
+                            </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1221,7 +1226,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
              <div className="p-4 md:p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
                   <h3 className="text-lg md:text-xl font-bold text-gray-800">
-                      {editingId ? 'Editar Aluno' : 'Cadastrar Novo Aluno'}
+                      {isGuardian ? 'Ficha do Aluno (Visualização)' : (editingId ? 'Editar Aluno' : 'Cadastrar Novo Aluno')}
                   </h3>
                   {editingId && (
                       <div className="flex gap-2 md:gap-4 mt-4 overflow-x-auto pb-1">
@@ -1235,11 +1240,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </div>
             
             {activeTab === 'DETAILS' ? (
-                // FORM (Same as before, abbreviated for XML limits)
+                // FORM 
                 <form onSubmit={handleSubmit} className="p-4 md:p-6">
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-                    {/* ... (Columns 1, 2, 3 identical to previous, keeping core logic) ... */}
-                    {/* Assuming this part is unchanged from previous message logic */}
+                    {/* Column 1 */}
                     <div className="space-y-6">
                         <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2"><Camera className="w-4 h-4 text-primary-600" /> Foto do Aluno</h4>
                         <div className="flex flex-col items-center gap-4">
@@ -1253,58 +1257,67 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             ) : capturedImage ? (
                                 <div className="relative w-40 h-40">
                                     <img src={capturedImage} alt="Captured" className="w-full h-full object-cover rounded-full border-4 border-primary-100" />
-                                    <button type="button" onClick={() => setCapturedImage(null)} className="absolute bottom-0 right-0 bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600"><X className="w-4 h-4" /></button>
+                                    {!isGuardian && <button type="button" onClick={() => setCapturedImage(null)} className="absolute bottom-0 right-0 bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600"><X className="w-4 h-4" /></button>}
                                 </div>
                             ) : (
                                 <div className="w-40 h-40 bg-gray-100 rounded-full flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-300">
-                                    <User className="w-12 h-12 mb-2 opacity-20" />
-                                    <button type="button" onClick={startCamera} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded-full shadow-sm hover:bg-gray-50">{editingId ? 'Alterar Foto' : 'Abrir Câmera'}</button>
+                                    <UserIcon className="w-12 h-12 mb-2 opacity-20" />
+                                    {!isGuardian && <button type="button" onClick={startCamera} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded-full shadow-sm hover:bg-gray-50">{editingId ? 'Alterar Foto' : 'Abrir Câmera'}</button>}
                                 </div>
                             )}
                         </div>
                          <div className="space-y-3">
-                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome Completo do Aluno</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} /></div>
-                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Data de Nascimento</label><input required type="date" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} /></div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome Completo do Aluno</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} /></div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Data de Nascimento</label><input required disabled={isGuardian} type="date" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} /></div>
                         </div>
                     </div>
                     {/* Middle Column */}
                     <div className="space-y-6">
-                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2"><User className="w-4 h-4 text-primary-600" /> Documentos & Saúde</h4>
+                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2"><UserIcon className="w-4 h-4 text-primary-600" /> Documentos & Saúde</h4>
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
-                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">RG</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="00.000.000-0" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} /></div>
-                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="000.000.000-00" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} /></div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">RG</label><input type="text" disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="00.000.000-0" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} /></div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF</label><input type="text" disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="000.000.000-00" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} /></div>
                             </div>
-                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Aluno</label><input type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="(00) 00000-0000" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} /></div>
-                            <div className="bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-700 mb-1">Validade Atestado Médico</label><input required type="date" className="w-full border border-red-200 rounded-lg p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white" value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} /></div>
+                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Aluno</label><input type="tel" disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="(00) 00000-0000" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} /></div>
+                            <div className="bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-700 mb-1">Validade Atestado Médico</label><input required disabled={isGuardian} type="date" className="w-full border border-red-200 rounded-lg p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white disabled:bg-gray-100" value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} /></div>
                         </div>
                          <div className="pt-2">
                              <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-2"><FolderCheck className="w-4 h-4 text-primary-600" /> Checklist de Entrega</h4>
                              <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.rg} onChange={() => toggleDoc('rg')} className="rounded text-primary-600 focus:ring-primary-500" />RG Entregue</label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.cpf} onChange={() => toggleDoc('cpf')} className="rounded text-primary-600 focus:ring-primary-500" />CPF Entregue</label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.medical} onChange={() => toggleDoc('medical')} className="rounded text-primary-600 focus:ring-primary-500" />Atestado Médico Entregue</label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.address} onChange={() => toggleDoc('address')} className="rounded text-primary-600 focus:ring-primary-500" />Comp. Endereço Entregue</label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.school} onChange={() => toggleDoc('school')} className="rounded text-primary-600 focus:ring-primary-500" />Declaração Escolar Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.rg} onChange={() => toggleDoc('rg')} className="rounded text-primary-600 focus:ring-primary-500" />RG Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.cpf} onChange={() => toggleDoc('cpf')} className="rounded text-primary-600 focus:ring-primary-500" />CPF Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.medical} onChange={() => toggleDoc('medical')} className="rounded text-primary-600 focus:ring-primary-500" />Atestado Médico Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.address} onChange={() => toggleDoc('address')} className="rounded text-primary-600 focus:ring-primary-500" />Comp. Endereço Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.school} onChange={() => toggleDoc('school')} className="rounded text-primary-600 focus:ring-primary-500" />Declaração Escolar Entregue</label>
                             </div>
                         </div>
                         <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 pt-2"><MapPin className="w-4 h-4 text-primary-600" /> Endereço</h4>
                         <div className="space-y-3">
-                             <div className="relative"><label className="block text-xs font-semibold text-gray-600 mb-1">CEP (Somente números)</label><div className="relative"><input required type="text" className="w-full border rounded-lg p-2 pr-8 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="00000-000" value={studentForm.address.cep} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, cep: e.target.value}})} onBlur={(e) => fetchAddressByCep(e.target.value)} />{isLoadingCep && (<div className="absolute right-2 top-1/2 transform -translate-y-1/2"><Loader2 className="w-4 h-4 text-primary-500 animate-spin" /></div>)}</div></div>
-                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Logradouro</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.street} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} /></div>
-                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Número</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.number} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Complemento</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.complement} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, complement: e.target.value}})} /></div></div>
-                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Bairro</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.district} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Cidade/UF</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={`${studentForm.address.city}/${studentForm.address.state}`} readOnly /></div></div>
+                             <div className="relative"><label className="block text-xs font-semibold text-gray-600 mb-1">CEP (Somente números)</label><div className="relative"><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 pr-8 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="00000-000" value={studentForm.address.cep} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, cep: e.target.value}})} onBlur={(e) => fetchAddressByCep(e.target.value)} />{isLoadingCep && (<div className="absolute right-2 top-1/2 transform -translate-y-1/2"><Loader2 className="w-4 h-4 text-primary-500 animate-spin" /></div>)}</div></div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Logradouro</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.address.street} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} /></div>
+                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Número</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.address.number} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Complemento</label><input type="text" disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.address.complement} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, complement: e.target.value}})} /></div></div>
+                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Bairro</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.address.district} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Cidade/UF</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={`${studentForm.address.city}/${studentForm.address.state}`} readOnly /></div></div>
                         </div>
                     </div>
                     {/* Right Column */}
                     <div className="space-y-6">
-                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><User className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
-                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
+                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><UserIcon className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required disabled={isGuardian} type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
+                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                     </div>
                  </div>
                  <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-6 mt-6 border-t border-gray-100">
                     <button type="button" onClick={handlePrintContract} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-indigo-600 font-medium hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors"><Printer className="w-4 h-4" /> Imprimir Contrato</button>
-                    <div className="flex gap-3 w-full sm:w-auto justify-end"><button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="flex-1 sm:flex-none px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button><button type="submit" className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30">{editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}</button></div>
+                    <div className="flex gap-3 w-full sm:w-auto justify-end">
+                        <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="flex-1 sm:flex-none px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">
+                            {isGuardian ? 'Fechar' : 'Cancelar'}
+                        </button>
+                        {!isGuardian && (
+                            <button type="submit" className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30">
+                                {editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}
+                            </button>
+                        )}
+                    </div>
                 </div>
                 </form>
             ) : activeTab === 'FINANCE' ? (
@@ -1326,8 +1339,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     <div><p className="text-xs font-bold text-orange-800 uppercase">Seleção em Lote</p><p className="text-sm font-semibold text-gray-900">{selectedFinanceIds.size} parcelas • Total: R$ {selectedTotal.toFixed(2)}</p></div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => sendBatchChargeMessage(selectedTransactions)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"><MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)</button>
-                                    <button onClick={() => initiatePixPayment()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"><QrCode className="w-3.5 h-3.5" /> Receber Combo (PIX)</button>
+                                    {!isGuardian && (
+                                        <button onClick={() => sendBatchChargeMessage(selectedTransactions)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"><MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)</button>
+                                    )}
+                                    <button onClick={() => initiatePixPayment()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"><QrCode className="w-3.5 h-3.5" /> Pagar Combo (PIX)</button>
                                 </div>
                              </div>
                         )}
@@ -1381,15 +1396,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             <td className="px-4 py-3 text-right">
                                                 {tx.status !== PaymentStatus.PAID && (
                                                     <div className="flex justify-end gap-2">
-                                                        {isLate && tx.paymentLink && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
-                                                        {(tx.paymentLink || tx.externalReference) && (
+                                                        {isLate && tx.paymentLink && !isGuardian && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
+                                                        {(tx.paymentLink || tx.externalReference) && !isGuardian && (
                                                             <button onClick={() => checkStatus(tx)} disabled={isChecking} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors flex items-center gap-1 border border-blue-200" title="Verificar Pagamento no Mercado Pago">
                                                                 {isChecking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}Verificar
                                                             </button>
                                                         )}
-                                                        {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> PIX/Link</button>)}
+                                                        {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> Pagar (PIX)</button>)}
                                                         
-                                                        {showPayButton && (
+                                                        {showPayButton && !isGuardian && (
                                                             <button 
                                                                 onClick={() => handleSendPixToWhatsApp(tx)}
                                                                 disabled={isSendingPix}
@@ -1401,7 +1416,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                             </button>
                                                         )}
 
-                                                        <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>
+                                                        {!isGuardian && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>}
                                                     </div>
                                                 )}
                                             </td>
@@ -1422,7 +1437,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center"><p className="text-xs text-green-700 font-semibold uppercase">Aulas Presente</p><div className="text-2xl font-bold text-green-800 mt-1">{attendanceStats.present}</div></div>
                         <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center"><p className="text-xs text-red-700 font-semibold uppercase">Faltas</p><div className="text-2xl font-bold text-red-800 mt-1">{attendanceStats.absent}</div></div>
                     </div>
-                    <div className="flex justify-between items-center mb-4"><h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4><button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button></div>
+                    <div className="flex justify-between items-center mb-4"><h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4>
+                    {!isGuardian && <button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button>}
+                    </div>
                     <div className="overflow-hidden border border-gray-200 rounded-xl max-h-[400px] overflow-y-auto overflow-x-auto">
                         <table className="w-full text-left text-sm min-w-[500px]">
                             <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0"><tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Atividade</th><th className="px-4 py-3">Horário</th><th className="px-4 py-3 text-right">Status</th></tr></thead>
