@@ -21,14 +21,16 @@ const getApiKey = () => {
   return '';
 };
 
-const apiKey = getApiKey();
-
-// Initialize AI client
-const ai = new GoogleGenAI({ apiKey });
+// Remove top-level initialization to prevent crash
+// const ai = new GoogleGenAI({ apiKey }); <--- CAUSES CRASH
 
 export const generateTrainingDrill = async (ageGroup: string, focusSkill: string, duration: string): Promise<string> => {
   try {
+    const apiKey = getApiKey();
     if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+
+    // Initialize inside the function safely
+    const ai = new GoogleGenAI({ apiKey });
 
     const model = 'gemini-2.5-flash';
     const prompt = `
@@ -62,7 +64,11 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
 
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
+        const apiKey = getApiKey();
         if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+
+        // Initialize inside the function safely
+        const ai = new GoogleGenAI({ apiKey });
 
         const model = 'gemini-2.5-flash';
         const prompt = `
