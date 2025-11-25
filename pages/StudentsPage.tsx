@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock } from 'lucide-react';
@@ -551,7 +552,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
     const studentData = {
       ...studentForm,
-      photoUrl: capturedImage || `https://picsum.photos/seed/${studentForm.name}/200/200`
+      // Se não tiver imagem capturada, usa UI Avatars para gerar as iniciais em vez de imagem aleatória
+      photoUrl: capturedImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name)}&background=random&color=fff&size=200`
     };
     if (editingId) {
         onUpdateStudent({ ...studentData, id: editingId } as Student);
