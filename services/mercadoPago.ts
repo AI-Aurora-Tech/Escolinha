@@ -81,10 +81,6 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
         }
     };
     
-    // Opcional para preferences, mas para pagamentos PIX diretos não usamos phoneObject aninhado no payer da mesma forma
-    // A estrutura do payer muda levemente entre /checkout/preferences e /v1/payments
-    // Vamos retornar um objeto base e adaptar nas funções.
-    
     return { payerPayload, phoneObject };
 };
 
@@ -104,7 +100,8 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         phone: phoneObject
     };
 
-    const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
+    // USANDO PROXY: /api/mp/... em vez de https://api.mercadopago.com/...
+    const response = await fetch('/api/mp/checkout/preferences', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -154,7 +151,6 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
     try {
         const { payerPayload } = sanitizePayer(data.payer);
 
-        // Payload específico para PIX (/v1/payments)
         const body = {
             transaction_amount: Number(data.price),
             description: data.title,
@@ -168,12 +164,13 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             external_reference: data.externalReference
         };
 
-        const response = await fetch('https://api.mercadopago.com/v1/payments', {
+        // USANDO PROXY
+        const response = await fetch('/api/mp/v1/payments', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'X-Idempotency-Key': data.externalReference // Evita duplicidade se clicar 2x
+                'X-Idempotency-Key': data.externalReference 
             },
             body: JSON.stringify(body)
         });
@@ -202,7 +199,8 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
     if (!token) return null;
 
     try {
-        const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        // USANDO PROXY
+        const response = await fetch(`/api/mp/v1/payments/${paymentId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -220,7 +218,8 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
     if (!token) return null;
   
     try {
-      const response = await fetch(`https://api.mercadopago.com/v1/payments/search?external_reference=${externalReference}`, {
+      // USANDO PROXY
+      const response = await fetch(`/api/mp/v1/payments/search?external_reference=${externalReference}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`

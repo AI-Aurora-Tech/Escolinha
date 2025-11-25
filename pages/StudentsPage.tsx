@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity } from '../types';
-import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy } from 'lucide-react';
+import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,6 +37,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [pixLoading, setPixLoading] = useState(false);
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   
+  // Sending PIX via Whatsapp loading state
+  const [sendingPixId, setSendingPixId] = useState<string | null>(null);
+
   // Multi-select State for Finance
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
 
@@ -286,6 +289,53 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       const encodedMessage = encodeURIComponent(message);
       window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+  };
+
+  const handleSendPixToWhatsApp = async (tx: Transaction) => {
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não encontrado.");
+          return;
+      }
+      
+      setSendingPixId(tx.id);
+
+      // 1. Gerar o PIX fresco
+      try {
+          const externalRef = tx.externalReference || crypto.randomUUID();
+          
+          const mpResult = await createPixPayment({
+              title: tx.description,
+              price: tx.amount,
+              externalReference: externalRef,
+              payer: {
+                  name: studentForm.guardian.name,
+                  email: studentForm.guardian.email,
+                  phone: studentForm.guardian.phone,
+                  identification: { type: 'CPF', number: studentForm.guardian.cpf }
+              }
+          });
+
+          if (mpResult && mpResult.qrCode) {
+              const code = mpResult.qrCode;
+              const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
+                  `Referente a: *${tx.description}*\n` +
+                  `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
+                  `Segue o código PIX Copia e Cola para pagamento:\n\n` +
+                  `${code}\n\n` +
+                  `Ao efetuar o pagamento, o sistema identificará automaticamente.`;
+
+              const encodedMessage = encodeURIComponent(message);
+              window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+          } else {
+              alert("Erro ao gerar o código PIX. Verifique o CPF do responsável.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Erro de comunicação com o sistema de pagamento.");
+      } finally {
+          setSendingPixId(null);
+      }
   };
   
   // ... (fetchAddressByCep, filteredStudents, startCamera, stopCamera, capturePhoto remain same)
@@ -1269,6 +1319,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         const isPaid = tx.status === PaymentStatus.PAID;
                                         const isSelected = selectedFinanceIds.has(tx.id);
                                         const isChecking = checkingStatusId === tx.id;
+                                        const isSendingPix = sendingPixId === tx.id;
 
                                         return (
                                         <tr key={tx.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-orange-50' : ''}`}>
@@ -1298,6 +1349,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                             </button>
                                                         )}
                                                         {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> PIX/Link</button>)}
+                                                        
+                                                        {showPayButton && (
+                                                            <button 
+                                                                onClick={() => handleSendPixToWhatsApp(tx)}
+                                                                disabled={isSendingPix}
+                                                                className="px-3 py-1.5 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors flex items-center gap-1"
+                                                                title="Gerar PIX e Enviar no WhatsApp"
+                                                            >
+                                                                {isSendingPix ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                                                                PIX Zap
+                                                            </button>
+                                                        )}
+
                                                         <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>
                                                     </div>
                                                 )}
