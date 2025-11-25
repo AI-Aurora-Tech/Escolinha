@@ -1,15 +1,14 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 // Access environment variables. 
-// In Vite (which is likely the underlying bundler), we use import.meta.env.
-// However, to ensure compatibility if process.env is used, we check both.
+// We use fallback values to prevent the application from crashing if keys are missing.
+// In a real scenario, these must be set in .env or Vercel settings.
 
-const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Anon Key is missing. Please check your environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY). Application will not persist data correctly.');
+if (!import.meta.env?.VITE_SUPABASE_URL && !process.env.VITE_SUPABASE_URL) {
+  console.warn('Supabase keys are missing. The app is running in placeholder mode. Data will not be saved.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
