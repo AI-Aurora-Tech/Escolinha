@@ -119,15 +119,45 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     doc.save(`Aniversariantes_${months[birthdayMonth]}.pdf`);
   };
 
-  const chartData = [
-    { name: 'Jan', receita: 4000, despesa: 2400 },
-    { name: 'Fev', receita: 3000, despesa: 1398 },
-    { name: 'Mar', receita: 2000, despesa: 9800 },
-    { name: 'Abr', receita: 2780, despesa: 3908 },
-    { name: 'Mai', receita: 1890, despesa: 4800 },
-    { name: 'Jun', receita: 2390, despesa: 3800 },
-    { name: 'Jul', receita: 3490, despesa: 4300 },
-  ];
+  // --- CÁLCULO DINÂMICO DO GRÁFICO (Últimos 6 meses) ---
+  const chartData = useMemo(() => {
+    const data = [];
+    const today = new Date();
+    
+    // Loop para os últimos 6 meses (incluindo o atual)
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const monthName = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
+        const year = d.getFullYear();
+        const month = d.getMonth();
+
+        // Filtra transações deste mês específico
+        const monthlyTxs = transactions.filter(t => {
+            const tDate = new Date(t.date);
+            // Ajuste de fuso horário simples (pega o mês UTC ou local dependendo de como salvou)
+            // Como usamos YYYY-MM-DD string, new Date(string) as vezes dá problema de fuso
+            // Vamos usar string compare que é mais seguro para YYYY-MM
+            const txMonthStr = t.date.substring(0, 7); // "2024-05"
+            const currentMonthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+            return txMonthStr === currentMonthStr;
+        });
+
+        const receita = monthlyTxs
+            .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const despesa = monthlyTxs
+            .filter(t => t.type === TransactionType.EXPENSE)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        data.push({
+            name: monthName.charAt(0).toUpperCase() + monthName.slice(1), // Capitaliza (Jan, Fev...)
+            receita,
+            despesa
+        });
+    }
+    return data;
+  }, [transactions]);
 
   return (
     <div className="space-y-6">
@@ -148,8 +178,8 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         {role === UserRole.ADMIN && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 font-medium">Receita Mensal</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">R$ {monthlyRevenue.toLocaleString('pt-BR')}</h3>
+              <p className="text-sm text-gray-500 font-medium">Receita Total (Paga)</p>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">R$ {monthlyRevenue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3>
             </div>
             <div className="bg-green-50 p-3 rounded-lg">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -208,21 +238,32 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Financial Chart (Admin Only) or Placeholder */}
+        {/* Financial Chart (Admin Only) */}
         {role === UserRole.ADMIN ? (
              <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6">Desempenho Financeiro (Semestral)</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mb-6">Desempenho Financeiro (Últimos 6 Meses)</h3>
                 <div className="h-64 md:h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
-                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
-                            <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                            <Bar dataKey="receita" name="Receitas" fill="#f97316" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                    {transactions.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
+                                <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
+                                <Tooltip 
+                                    cursor={{fill: '#f9fafb'}} 
+                                    formatter={(value: number) => [`R$ ${value.toFixed(2)}`, '']}
+                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
+                                />
+                                <Bar dataKey="receita" name="Receitas" fill="#f97316" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                            <DollarSign className="w-12 h-12 mb-2 opacity-20" />
+                            <p>Nenhuma movimentação financeira registrada ainda.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         ) : (
