@@ -194,7 +194,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
     }
 };
 
-export const getPaymentStatus = async (paymentId: number | string): Promise<'approved' | 'pending' | 'rejected' | null> => {
+export const getPaymentStatus = async (paymentId: number | string): Promise<'approved' | 'pending' | 'rejected' | 'cancelled' | null> => {
     const token = await getMPAccessToken();
     if (!token) return null;
 
@@ -213,7 +213,7 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
     }
 };
 
-export const checkMPPaymentStatus = async (externalReference: string): Promise<'approved' | 'pending' | 'rejected' | null> => {
+export const checkMPPaymentStatus = async (externalReference: string): Promise<'approved' | 'pending' | 'rejected' | 'cancelled' | null> => {
     const token = await getMPAccessToken();
     if (!token) return null;
   

@@ -40,6 +40,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   // Sending PIX via Whatsapp loading state
   const [sendingPixId, setSendingPixId] = useState<string | null>(null);
 
+  // Background Monitoring State for PIX
+  const [monitoredPayments, setMonitoredPayments] = useState<{ mpId: number, txIds: string[] }[]>([]);
+
   // Multi-select State for Finance
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
 
@@ -67,30 +70,50 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   }, [initialFilter]);
 
-  // Polling for PIX Payment Status
+  // Polling unificado para pagamentos PIX (Background)
   useEffect(() => {
-      let interval: any;
-      if (showPixModal && pixData && pixData.id) {
-          interval = setInterval(async () => {
-              const status = await getPaymentStatus(pixData.id);
-              if (status === 'approved') {
-                  // Confirmação de pagamento
-                  if (selectedFinanceIds.size > 0) {
-                      selectedFinanceIds.forEach(id => handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO));
-                  }
-                  // Se não foi lote, não tenho ID fácil aqui, mas geralmente uso selectedFinanceIds para unitário também nos handlers
-                  // Mas caso seja unitário via botão direto:
-                  // A lógica abaixo handlePayTransaction será chamada via confirmPixPayment
-                  // Vamos fazer o seguinte: Chamar a confirmação visual e disparar os updates
-                  confirmPixPaymentSuccess();
-                  clearInterval(interval);
-              }
-          }, 3000); // Check every 3 seconds
-      }
-      return () => {
-          if (interval) clearInterval(interval);
-      };
-  }, [showPixModal, pixData, selectedFinanceIds]);
+    if (monitoredPayments.length === 0) return;
+
+    const interval = setInterval(async () => {
+        const remainingMonitored: typeof monitoredPayments = [];
+        let somethingChanged = false;
+
+        for (const payment of monitoredPayments) {
+            try {
+                const status = await getPaymentStatus(payment.mpId);
+                
+                if (status === 'approved') {
+                    // Pagamento Confirmado!
+                    somethingChanged = true;
+                    payment.txIds.forEach(id => {
+                        handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO);
+                    });
+
+                    // Se este pagamento for o que está no modal agora, fecha o modal
+                    if (pixData && pixData.id === payment.mpId) {
+                         confirmPixPaymentSuccess();
+                    }
+                } else if (status === 'rejected' || status === 'cancelled') {
+                    // Parar de monitorar rejeitados
+                    somethingChanged = true;
+                } else {
+                    // Ainda pendente, manter na lista
+                    remainingMonitored.push(payment);
+                }
+            } catch (e) {
+                // Em caso de erro de rede, mantém na lista para tentar depois
+                remainingMonitored.push(payment);
+            }
+        }
+        
+        if (somethingChanged) {
+             setMonitoredPayments(remainingMonitored);
+        }
+
+    }, 3000); // Checar a cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, [monitoredPayments, pixData, transactions]); // Dependências cruciais
 
 
   const initialFormState = {
@@ -255,7 +278,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           alert("Pagamento CONFIRMADO pelo Mercado Pago! Baixa efetuada.");
       } else if (status === 'pending') {
           alert("Pagamento ainda pendente.");
-      } else if (status === 'rejected') {
+      } else if (status === 'rejected' || status === 'cancelled') {
           alert("Pagamento foi rejeitado/cancelado.");
       } else {
           alert("Não foi possível verificar o status.");
@@ -298,6 +321,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
       
+      if (!studentForm.guardian.cpf) {
+          alert("CPF do responsável é obrigatório para gerar PIX.");
+          return;
+      }
+
       setSendingPixId(tx.id);
 
       // 1. Gerar o PIX fresco
@@ -318,6 +346,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
           if (mpResult && mpResult.qrCode) {
               const code = mpResult.qrCode;
+              
+              // Adicionar ao monitoramento
+              setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
+
               const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
                   `Referente a: *${tx.description}*\n` +
                   `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
@@ -328,7 +360,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const encodedMessage = encodeURIComponent(message);
               window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
           } else {
-              alert("Erro ao gerar o código PIX. Verifique o CPF do responsável.");
+              alert("Erro ao gerar o código PIX. Verifique se o CPF do responsável é válido.");
           }
       } catch (e) {
           console.error(e);
@@ -565,20 +597,28 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       let amount = 0;
       let description = '';
       let externalRef = '';
+      
+      const idsToPay: string[] = [];
 
       if (txId) {
           const tx = transactions.find(t => t.id === txId);
           if (!tx) return;
           amount = tx.amount;
           description = tx.description;
-          externalRef = tx.externalReference || crypto.randomUUID(); // Fallback if missing
-          setSelectedFinanceIds(new Set([txId])); // For polling logic
+          externalRef = tx.externalReference || crypto.randomUUID(); 
+          idsToPay.push(txId);
       } else if (selectedFinanceIds.size > 0) {
           const selectedTxs = transactions.filter(t => selectedFinanceIds.has(t.id));
           amount = selectedTxs.reduce((acc, t) => acc + t.amount, 0);
           description = `Combo de ${selectedTxs.length} mensalidades`;
           externalRef = `combo_${Date.now()}`;
+          selectedTxs.forEach(t => idsToPay.push(t.id));
       } else {
+          return;
+      }
+      
+      if (!studentForm.guardian.cpf) {
+          alert("CPF do responsável é obrigatório para gerar PIX.");
           return;
       }
 
@@ -602,8 +642,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
           if (result) {
               setPixData(result);
+              // Adicionar à lista de monitoramento
+              setMonitoredPayments(prev => [...prev, { mpId: result.id, txIds: idsToPay }]);
           } else {
-              alert("Erro ao gerar QR Code PIX.");
+              alert("Erro ao gerar QR Code PIX. Verifique se o CPF é válido.");
               setShowPixModal(false);
           }
       } catch (error) {
@@ -617,11 +659,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   
   const confirmPixPaymentSuccess = () => {
       // Called automatically by polling or manually
-      if (selectedFinanceIds.size > 0) {
-          selectedFinanceIds.forEach(id => {
-              handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO);
-          });
-      }
+      // Transações já foram atualizadas no polling
+      // Apenas limpar estados visuais
       setSelectedFinanceIds(new Set());
       setShowPixModal(false);
       setPixData(null);
