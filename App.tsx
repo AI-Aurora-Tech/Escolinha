@@ -409,6 +409,7 @@ function App() {
             plan_id: plan.id,
             payment_link: paymentLink,
             payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+            externalReference: externalReference
         });
     }
 
@@ -425,7 +426,8 @@ function App() {
                  studentId: t.student_id,
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
-                 paymentLink: t.payment_link
+                 paymentLink: t.payment_link,
+                 externalReference: t.externalReference
              }));
              setTransactions(prev => [...prev, ...mappedTxs]);
         }
@@ -645,7 +647,8 @@ function App() {
           student_id: t.studentId || null,
           plan_id: t.planId || null,
           payment_method: t.paymentMethod,
-          payment_link: t.paymentLink
+          payment_link: t.paymentLink,
+          externalReference: t.externalReference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
       if(data && !error) {
@@ -865,6 +868,7 @@ function App() {
                   onBatchAddStudents={handleBatchAddStudents}
                   onUpdateStudent={handleUpdateStudent}
                   onUpdateTransaction={handleUpdateTransaction}
+                  onAddTransaction={handleAddTransaction}
                   initialFilter={pageData?.filter}
                   currentUser={currentUser}
                />;

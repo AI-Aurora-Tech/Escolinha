@@ -2,11 +2,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { checkMPPaymentStatus, createPixPayment, getPaymentStatus } from '../services/mercadoPago';
+import { checkMPPaymentStatus, createPixPayment, getPaymentStatus, createMPPreference } from '../services/mercadoPago';
 
 interface StudentsPageProps {
   students: Student[];
@@ -18,11 +18,12 @@ interface StudentsPageProps {
   onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Transaction) => void;
+  onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   initialFilter?: string;
   currentUser?: User | null;
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, initialFilter, currentUser }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -62,6 +63,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   
   // Check status loading
   const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
+
+  // Manual Charge State
+  const [showChargeModal, setShowChargeModal] = useState(false);
+  const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -962,6 +967,53 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }));
   };
 
+  // Handler for Manual Charge
+  const handleSaveManualCharge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId) return;
+
+    // 1. Prepare Base Transaction
+    const externalReference = crypto.randomUUID();
+    let paymentLink = '';
+
+    // 2. Try to generate Mercado Pago Preference immediately (optional but better UX)
+    try {
+        if (studentForm.guardian.cpf) {
+            const mpResult = await createMPPreference({
+                title: manualCharge.description,
+                price: manualCharge.amount,
+                externalReference: externalReference,
+                payer: {
+                    name: studentForm.guardian.name,
+                    email: studentForm.guardian.email,
+                    phone: studentForm.guardian.phone,
+                    identification: { type: 'CPF', number: studentForm.guardian.cpf }
+                }
+            });
+            if (mpResult) {
+                paymentLink = mpResult.init_point;
+            }
+        }
+    } catch (e) { console.warn("Could not generate MP Link for manual charge"); }
+
+    // 3. Save to DB via App
+    onAddTransaction({
+        description: manualCharge.description,
+        amount: manualCharge.amount,
+        type: TransactionType.INCOME,
+        date: manualCharge.date,
+        status: PaymentStatus.PENDING,
+        studentId: editingId,
+        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO, // Default to PIX/MP
+        paymentLink: paymentLink,
+        externalReference: externalReference
+    });
+
+    setShowChargeModal(false);
+    setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+    alert("Cobrança criada com sucesso!");
+  };
+
   return (
     <div className="space-y-6">
       {/* ... (Search and Headers) ... */}
@@ -1320,8 +1372,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                                 <Wallet className="w-5 h-5 text-primary-600" /> Histórico de Mensalidades
                             </h4>
-                            <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
-                                Plano Atual: {plans.find(p => p.id === studentForm.planId)?.name || 'Sem plano'}
+                            <div className="flex items-center gap-3">
+                                <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
+                                    Plano Atual: {plans.find(p => p.id === studentForm.planId)?.name || 'Sem plano'}
+                                </div>
+                                {!isGuardian && (
+                                    <button 
+                                        onClick={() => setShowChargeModal(true)}
+                                        className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 flex items-center gap-1.5 shadow-sm transition-colors"
+                                    >
+                                        <PlusCircle className="w-3.5 h-3.5" /> Nova Cobrança
+                                    </button>
+                                )}
                             </div>
                         </div>
                         {selectedFinanceIds.size > 0 && (
@@ -1475,6 +1537,65 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                  </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Manual Charge Modal */}
+      {showChargeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Nova Cobrança Manual</h3>
+                <form onSubmit={handleSaveManualCharge} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                        <input 
+                            required 
+                            type="text" 
+                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
+                            placeholder="Ex: Uniforme, Excursão..."
+                            value={manualCharge.description}
+                            onChange={e => setManualCharge({...manualCharge, description: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+                        <input 
+                            required 
+                            type="number" 
+                            min="0.01" 
+                            step="0.01" 
+                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
+                            value={manualCharge.amount}
+                            onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Data de Vencimento</label>
+                        <input 
+                            required 
+                            type="date" 
+                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
+                            value={manualCharge.date}
+                            onChange={e => setManualCharge({...manualCharge, date: e.target.value})}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button 
+                            type="button" 
+                            onClick={() => setShowChargeModal(false)}
+                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+                        >
+                            Cancelar
+                        </button>
+                        <button 
+                            type="submit" 
+                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium"
+                        >
+                            Criar Cobrança
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
       )}
 
