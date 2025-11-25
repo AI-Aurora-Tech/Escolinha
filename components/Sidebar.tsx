@@ -14,12 +14,12 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNavigate, onLogout, isOpen, onClose }) => {
   
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
-    { id: 'students', label: 'Alunos & Responsáveis', icon: Users, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
+    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
+    { id: 'students', label: currentUser.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Alunos & Responsáveis', icon: Users, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
     { id: 'groups', label: 'Grupos', icon: Shirt, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
-    { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
-    { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
+    { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
+    { id: 'finance', label: currentUser.role === UserRole.RESPONSAVEL ? 'Pagamentos' : 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN, UserRole.RESPONSAVEL] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
     { id: 'ai-coach', label: 'IA Coach', icon: Trophy, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
   ];
@@ -43,7 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-white p-2 rounded-full">
-                <Trophy className="w-6 h-6 text-primary-600" />
+                <img src="/logo.svg" alt="Logo" className="w-8 h-8" />
             </div>
             <div>
                 <h1 className="font-bold text-lg leading-tight">Garotos do<br/>Martinica</h1>
@@ -80,10 +80,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
 
         <div className="absolute bottom-0 w-full p-4 border-t border-gray-800 bg-gray-900">
           <div className="flex items-center gap-3 mb-4">
-            <img src={currentUser.avatar} alt="User" className="w-10 h-10 rounded-full border-2 border-primary-500" />
+            <img src={currentUser.avatar} alt="User" className="w-10 h-10 rounded-full border-2 border-primary-500 bg-white" />
             <div className="overflow-hidden">
               <p className="text-sm font-semibold truncate">{currentUser.name}</p>
-              <p className="text-xs text-gray-400 truncate capitalize">{currentUser.role === UserRole.ADMIN ? 'Administrador' : 'Professor'}</p>
+              <p className="text-xs text-gray-400 truncate capitalize">
+                {currentUser.role === UserRole.ADMIN ? 'Administrador' : 
+                 currentUser.role === UserRole.RESPONSAVEL ? 'Responsável' : 'Professor'}
+              </p>
             </div>
           </div>
           <button 

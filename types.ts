@@ -2,6 +2,7 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
   PROFESSOR = 'PROFESSOR',
+  RESPONSAVEL = 'RESPONSAVEL',
 }
 
 export enum PaymentStatus {
@@ -116,4 +117,5 @@ export interface User {
   password?: string; // Optional for display, required for auth/creation
   role: UserRole;
   avatar: string;
+  cpf?: string; // Para login de responsável
 }
