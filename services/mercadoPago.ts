@@ -43,28 +43,21 @@ interface CreatePreferenceData {
   };
 }
 
-export const createMPPreference = async (data: CreatePreferenceData): Promise<{ init_point: string, id: string } | null> => {
-  const token = await getMPAccessToken();
-  if (!token) return null;
-
-  try {
+// --- HELPERS DE SANITIZAÇÃO ---
+const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     // 1. Sanitização do Email
-    // Se não tiver email válido, usa um placeholder seguro para não quebrar a API,
-    // mas idealmente o cliente deve preencher no checkout.
-    const email = data.payer.email && data.payer.email.includes('@') 
-        ? data.payer.email.trim() 
+    const email = payerData.email && payerData.email.includes('@') 
+        ? payerData.email.trim() 
         : 'cliente@naoinformado.com';
 
-    // 2. Separação de Nome e Sobrenome (Crítico para Mercado Pago)
-    const fullName = data.payer.name ? data.payer.name.trim() : 'Responsável';
+    // 2. Separação de Nome e Sobrenome
+    const fullName = payerData.name ? payerData.name.trim() : 'Responsável';
     const nameParts = fullName.split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'do Aluno';
 
     // 3. Sanitização do Telefone
-    // O Mercado Pago é muito chato com telefone. Se não estiver perfeito, é melhor NÃO enviar
-    // e deixar o usuário preencher no checkout, do que enviar errado e dar a tela de erro.
-    const rawPhone = data.payer.phone ? data.payer.phone.replace(/\D/g, '') : '';
+    const rawPhone = payerData.phone ? payerData.phone.replace(/\D/g, '') : '';
     let phoneObject = undefined;
 
     if (rawPhone.length >= 10) {
@@ -76,21 +69,40 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         };
     }
 
-    // 4. Montagem do Objeto Payer Seguro
     const payerPayload: any = {
-        name: firstName,
-        surname: lastName,
+        first_name: firstName, // Para /v1/payments usa first_name
+        last_name: lastName,   // Para /v1/payments usa last_name
+        name: firstName,       // Para preferences usa name
+        surname: lastName,     // Para preferences usa surname
         email: email,
         identification: {
             type: 'CPF',
-            number: data.payer.identification.number.replace(/\D/g, '')
+            number: payerData.identification.number.replace(/\D/g, '')
         }
     };
+    
+    // Opcional para preferences, mas para pagamentos PIX diretos não usamos phoneObject aninhado no payer da mesma forma
+    // A estrutura do payer muda levemente entre /checkout/preferences e /v1/payments
+    // Vamos retornar um objeto base e adaptar nas funções.
+    
+    return { payerPayload, phoneObject };
+};
 
-    // Só adiciona telefone se tiver certeza que é válido
-    if (phoneObject) {
-        payerPayload.phone = phoneObject;
-    }
+export const createMPPreference = async (data: CreatePreferenceData): Promise<{ init_point: string, id: string } | null> => {
+  const token = await getMPAccessToken();
+  if (!token) return null;
+
+  try {
+    const { payerPayload, phoneObject } = sanitizePayer(data.payer);
+    
+    // Ajuste para Preferences API
+    const preferencesPayer = {
+        name: payerPayload.name,
+        surname: payerPayload.surname,
+        email: payerPayload.email,
+        identification: payerPayload.identification,
+        phone: phoneObject
+    };
 
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
@@ -104,10 +116,10 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
             title: data.title,
             quantity: 1,
             currency_id: 'BRL',
-            unit_price: Number(data.price) // Garante que é numero
+            unit_price: Number(data.price)
           }
         ],
-        payer: payerPayload,
+        payer: preferencesPayer,
         external_reference: data.externalReference,
         back_urls: {
           success: window.location.origin,
@@ -119,8 +131,6 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
     });
 
     const result = await response.json();
-    
-    // Check for Sandbox vs Production based on Token
     const isSandbox = token.startsWith('TEST');
     const paymentLink = isSandbox ? result.sandbox_init_point : result.init_point;
 
@@ -128,7 +138,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       return { init_point: paymentLink, id: result.id };
     }
     
-    console.error("Erro MP (Resposta API):", result);
+    console.error("Erro MP (Preferences):", result);
     return null;
 
   } catch (error) {
@@ -137,12 +147,79 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
   }
 };
 
+export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qrCode: string, qrCodeBase64: string, id: number } | null> => {
+    const token = await getMPAccessToken();
+    if (!token) return null;
+
+    try {
+        const { payerPayload } = sanitizePayer(data.payer);
+
+        // Payload específico para PIX (/v1/payments)
+        const body = {
+            transaction_amount: Number(data.price),
+            description: data.title,
+            payment_method_id: "pix",
+            payer: {
+                email: payerPayload.email,
+                first_name: payerPayload.first_name,
+                last_name: payerPayload.last_name,
+                identification: payerPayload.identification
+            },
+            external_reference: data.externalReference
+        };
+
+        const response = await fetch('https://api.mercadopago.com/v1/payments', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'X-Idempotency-Key': data.externalReference // Evita duplicidade se clicar 2x
+            },
+            body: JSON.stringify(body)
+        });
+
+        const result = await response.json();
+
+        if (result.id && result.point_of_interaction) {
+            return {
+                id: result.id,
+                qrCode: result.point_of_interaction.transaction_data.qr_code,
+                qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64
+            };
+        }
+
+        console.error("Erro MP (PIX):", result);
+        return null;
+
+    } catch (error) {
+        console.error("Error creating PIX:", error);
+        return null;
+    }
+};
+
+export const getPaymentStatus = async (paymentId: number | string): Promise<'approved' | 'pending' | 'rejected' | null> => {
+    const token = await getMPAccessToken();
+    if (!token) return null;
+
+    try {
+        const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const result = await response.json();
+        return result.status;
+    } catch (error) {
+        return null;
+    }
+};
+
 export const checkMPPaymentStatus = async (externalReference: string): Promise<'approved' | 'pending' | 'rejected' | null> => {
     const token = await getMPAccessToken();
     if (!token) return null;
   
     try {
-      // Search payment by external_reference
       const response = await fetch(`https://api.mercadopago.com/v1/payments/search?external_reference=${externalReference}`, {
         method: 'GET',
         headers: {
@@ -153,12 +230,11 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
       const result = await response.json();
       
       if (result.results && result.results.length > 0) {
-        // Check the most recent payment
         const lastPayment = result.results[result.results.length - 1];
-        return lastPayment.status; // approved, pending, rejected
+        return lastPayment.status; 
       }
       
-      return 'pending'; // No payment found yet
+      return 'pending';
   
     } catch (error) {
       console.error("Error checking payment:", error);

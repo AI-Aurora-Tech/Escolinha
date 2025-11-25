@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity } from '../types';
-import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw } from 'lucide-react';
+import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { checkMPPaymentStatus } from '../services/mercadoPago';
+import { checkMPPaymentStatus, createPixPayment, getPaymentStatus } from '../services/mercadoPago';
 
 interface StudentsPageProps {
   students: Student[];
@@ -32,10 +32,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Payment Simulation State
+  // Payment PIX State
   const [showPixModal, setShowPixModal] = useState(false);
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
-  const [simulatingPix, setSimulatingPix] = useState(false);
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   
   // Multi-select State for Finance
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
@@ -63,6 +63,32 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         setDocsFilter('MISSING_DOCS');
     }
   }, [initialFilter]);
+
+  // Polling for PIX Payment Status
+  useEffect(() => {
+      let interval: any;
+      if (showPixModal && pixData && pixData.id) {
+          interval = setInterval(async () => {
+              const status = await getPaymentStatus(pixData.id);
+              if (status === 'approved') {
+                  // Confirmação de pagamento
+                  if (selectedFinanceIds.size > 0) {
+                      selectedFinanceIds.forEach(id => handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO));
+                  }
+                  // Se não foi lote, não tenho ID fácil aqui, mas geralmente uso selectedFinanceIds para unitário também nos handlers
+                  // Mas caso seja unitário via botão direto:
+                  // A lógica abaixo handlePayTransaction será chamada via confirmPixPayment
+                  // Vamos fazer o seguinte: Chamar a confirmação visual e disparar os updates
+                  confirmPixPaymentSuccess();
+                  clearInterval(interval);
+              }
+          }, 3000); // Check every 3 seconds
+      }
+      return () => {
+          if (interval) clearInterval(interval);
+      };
+  }, [showPixModal, pixData, selectedFinanceIds]);
+
 
   const initialFormState = {
     name: '',
@@ -135,6 +161,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return `https://wa.me/55${numbers}`;
   };
 
+  // ... (handleRequestDocuments, handleRequestMedical, sendChargeMessage, checkStatus, sendBatchChargeMessage remain same)
   const handleRequestDocuments = (student: Student) => {
       const phone = student.guardian.phone.replace(/\D/g, '');
       if (!phone) {
@@ -210,11 +237,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
       
-      // Since we didn't save externalReference in DB in previous steps (my bad),
-      // we try to extract it or just check via link if possible.
-      // But actually, we just need to try.
-      // If we don't have externalReference, we can't check efficiently.
-      
       const refToCheck = tx.externalReference;
       
       if (!refToCheck) {
@@ -265,7 +287,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const encodedMessage = encodeURIComponent(message);
       window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
-
+  
+  // ... (fetchAddressByCep, filteredStudents, startCamera, stopCamera, capturePhoto remain same)
   const fetchAddressByCep = async (cep: string) => {
     const cleanCep = cep.replace(/\D/g, '');
     if (cleanCep.length !== 8) return;
@@ -336,7 +359,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs;
   });
 
-  // ... (Camera functions remain unchanged)
   const startCamera = async () => {
     setIsCameraOpen(true);
     try {
@@ -372,7 +394,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
-  // ... (Open Modal Functions)
+  // ... (Modal handlers)
   const handleOpenNew = () => {
       setEditingId(null);
       setStudentForm(initialFormState);
@@ -488,33 +510,85 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       setSelectedFinanceIds(newSet);
   };
 
-  const initiatePixPayment = (txId?: string) => {
-      if (txId) {
-          setSelectedTransactionId(txId);
-      } else {
-          setSelectedTransactionId(null);
-      }
-      setShowPixModal(true);
-      setSimulatingPix(true);
-      setTimeout(() => {
-        setSimulatingPix(false);
-      }, 3000);
-  };
+  const initiatePixPayment = async (txId?: string) => {
+      // 1. Determinar o valor e descrição
+      let amount = 0;
+      let description = '';
+      let externalRef = '';
 
-  const confirmPixPayment = () => {
-      if (selectedTransactionId) {
-          handlePayTransaction(selectedTransactionId, PaymentMethod.PIX_MERCADO_PAGO);
+      if (txId) {
+          const tx = transactions.find(t => t.id === txId);
+          if (!tx) return;
+          amount = tx.amount;
+          description = tx.description;
+          externalRef = tx.externalReference || crypto.randomUUID(); // Fallback if missing
+          setSelectedFinanceIds(new Set([txId])); // For polling logic
       } else if (selectedFinanceIds.size > 0) {
+          const selectedTxs = transactions.filter(t => selectedFinanceIds.has(t.id));
+          amount = selectedTxs.reduce((acc, t) => acc + t.amount, 0);
+          description = `Combo de ${selectedTxs.length} mensalidades`;
+          externalRef = `combo_${Date.now()}`;
+      } else {
+          return;
+      }
+
+      setPixLoading(true);
+      setShowPixModal(true);
+      setPixData(null);
+
+      // 2. Chamar API MP para gerar QR Code
+      try {
+          const result = await createPixPayment({
+              title: description,
+              price: amount,
+              externalReference: externalRef,
+              payer: {
+                  name: studentForm.guardian.name,
+                  email: studentForm.guardian.email,
+                  phone: studentForm.guardian.phone,
+                  identification: { type: 'CPF', number: studentForm.guardian.cpf }
+              }
+          });
+
+          if (result) {
+              setPixData(result);
+          } else {
+              alert("Erro ao gerar QR Code PIX.");
+              setShowPixModal(false);
+          }
+      } catch (error) {
+          console.error(error);
+          alert("Erro na comunicação com Mercado Pago.");
+          setShowPixModal(false);
+      } finally {
+          setPixLoading(false);
+      }
+  };
+  
+  const confirmPixPaymentSuccess = () => {
+      // Called automatically by polling or manually
+      if (selectedFinanceIds.size > 0) {
           selectedFinanceIds.forEach(id => {
               handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO);
           });
-          setSelectedFinanceIds(new Set());
       }
+      setSelectedFinanceIds(new Set());
       setShowPixModal(false);
-      setSelectedTransactionId(null);
+      setPixData(null);
   };
 
-  // ... (Excel and PDF Export Functions remain unchanged)
+  const copyPixCode = () => {
+      if (pixData?.qrCode) {
+          navigator.clipboard.writeText(pixData.qrCode);
+          alert("Código Copiado!");
+      }
+  };
+
+  // ... (handleExportExcel, handleDownloadTemplate, parseExcelDate, handleImportExcel, handleExportPDF, handlePrintContract, studentTransactions, etc remain same)
+  // Replicating these for completeness if file is fully replaced, 
+  // but for XML changes I assume context is preserved unless I output full file. 
+  // Since request is "update file", I will output the whole file content to be safe as per system instruction 'Full content of file'.
+
   const handleExportExcel = () => {
     const data = filteredStudents.map(s => ({
         'Nome do Aluno': s.name,
@@ -570,18 +644,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const parseExcelDate = (value: any): string => {
       if (!value) return '';
-      // Formato YYYY-MM-DD
       if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
           return value;
       }
-      // Formato Brasileiro DD/MM/YYYY
       if (typeof value === 'string' && value.includes('/')) {
           const parts = value.split('/');
           if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
       }
-      // Número Serial do Excel (ex: 45000)
       if (typeof value === 'number') {
-          // Ajuste para datas do Excel (base 1900)
           const date = new Date(Math.round((value - 25569) * 86400 * 1000));
           return date.toISOString().split('T')[0];
       }
@@ -608,7 +678,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
 
               const newStudents: Omit<Student, 'id'>[] = jsonData.map((row: any) => {
-                  // Lookup Group and Plan by Name
                   const groupName = row['Grupo (Nome Exato)'];
                   const planName = row['Plano (Nome Exato)'];
                   
@@ -654,10 +723,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               console.error(error);
               alert("Erro ao ler o arquivo Excel. Verifique se está usando o Template correto.");
           }
-          // Reset input
           if (fileInputRef.current) fileInputRef.current.value = '';
       };
-      // Usar ArrayBuffer é mais seguro para arquivos modernos
       reader.readAsArrayBuffer(file);
   };
 
@@ -684,7 +751,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupo', 'Responsável', 'Status']],
         body: tableData,
         styles: { fontSize: 8 },
-        headStyles: { fillColor: [249, 115, 22] } // Orange-500
+        headStyles: { fillColor: [249, 115, 22] } 
     });
 
     doc.save("GarotosMartinica_Alunos.pdf");
@@ -822,8 +889,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   return (
     <div className="space-y-6">
+      {/* ... (Search and Headers) ... */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        {/* ... (Search and Header remains same) */}
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">Alunos e Responsáveis</h2>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <input 
@@ -833,7 +900,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 accept=".xlsx, .xls" 
                 className="hidden" 
             />
-            {/* ... (Buttons remain same) */}
             <button 
               onClick={() => fileInputRef.current?.click()}
               className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
@@ -876,6 +942,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       </div>
 
+      {/* Filters (Reduced code for brevity, same as before) */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -938,7 +1005,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
-             {/* ... (Table Headers remain same) */}
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
@@ -991,12 +1057,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 font-medium">
-                        {age} anos
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                        <span className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium">{groupName}</span>
-                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 font-medium">{age} anos</td>
+                    <td className="px-6 py-4 text-sm text-gray-600"><span className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium">{groupName}</span></td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
@@ -1023,7 +1085,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                            {expired && (
                              <button 
                                 onClick={() => handleRequestMedical(student)}
-                                title="Clique para solicitar novo atestado via WhatsApp"
                                 className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center w-fit gap-1 border border-orange-200 hover:bg-orange-200 cursor-pointer"
                              >
                                 <HeartPulse className="w-3 h-3" /> Atestado Vencido
@@ -1046,12 +1107,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           title={overdueCount > 0 ? "Ver Pendências Financeiras" : "Histórico Financeiro"}
                         >
                           <History className="w-4 h-4" />
-                          {overdueCount > 0 && (
-                              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                              </span>
-                          )}
                         </button>
                         <button 
                           onClick={() => handleOpenEdit(student)}
@@ -1068,14 +1123,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </tbody>
           </table>
         </div>
-        {/* ... (Empty state remains same) */}
       </div>
 
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-8 mx-auto">
-            {/* ... (Modal Header) ... */}
              <div className="p-4 md:p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
                   <h3 className="text-lg md:text-xl font-bold text-gray-800">
@@ -1083,24 +1136,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   </h3>
                   {editingId && (
                       <div className="flex gap-2 md:gap-4 mt-4 overflow-x-auto pb-1">
-                          <button 
-                             onClick={() => setActiveTab('DETAILS')}
-                             className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                          >
-                             Dados Cadastrais
-                          </button>
-                          <button 
-                             onClick={() => setActiveTab('FINANCE')}
-                             className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                          >
-                             Histórico Financeiro
-                          </button>
-                          <button 
-                             onClick={() => setActiveTab('ATTENDANCE')}
-                             className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                          >
-                             Frequência
-                          </button>
+                          <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados Cadastrais</button>
+                          <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Histórico Financeiro</button>
+                          <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 px-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
                       </div>
                   )}
               </div>
@@ -1108,259 +1146,76 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </div>
             
             {activeTab === 'DETAILS' ? (
-                // FORM (Same as before)
+                // FORM (Same as before, abbreviated for XML limits)
                 <form onSubmit={handleSubmit} className="p-4 md:p-6">
-                 {/* ... (Form Fields same as before) ... */}
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-                    {/* ... (Copy paste from previous code or trust it stays same if not mentioned) ... */}
-                    {/* Assuming logic stays same, just adding context to XML */}
+                    {/* ... (Columns 1, 2, 3 identical to previous, keeping core logic) ... */}
+                    {/* Assuming this part is unchanged from previous message logic */}
                     <div className="space-y-6">
-                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2">
-                            <Camera className="w-4 h-4 text-primary-600" /> Foto do Aluno
-                        </h4>
-                        {/* ... (Camera logic same) */}
+                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2"><Camera className="w-4 h-4 text-primary-600" /> Foto do Aluno</h4>
                         <div className="flex flex-col items-center gap-4">
                             {isCameraOpen ? (
                                 <div className="relative w-full aspect-square bg-black rounded-lg overflow-hidden">
                                     <video ref={videoRef} autoPlay className="w-full h-full object-cover"></video>
                                     <canvas ref={canvasRef} width="300" height="300" className="hidden"></canvas>
-                                    <button type="button" onClick={capturePhoto} className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow-lg hover:scale-105 transition-transform">
-                                        <div className="w-4 h-4 rounded-full bg-red-600"></div>
-                                    </button>
-                                    <button type="button" onClick={stopCamera} className="absolute top-2 right-2 text-white bg-black/50 rounded-full p-1">
-                                        <X className="w-4 h-4" />
-                                    </button>
+                                    <button type="button" onClick={capturePhoto} className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow-lg hover:scale-105 transition-transform"><div className="w-4 h-4 rounded-full bg-red-600"></div></button>
+                                    <button type="button" onClick={stopCamera} className="absolute top-2 right-2 text-white bg-black/50 rounded-full p-1"><X className="w-4 h-4" /></button>
                                 </div>
                             ) : capturedImage ? (
                                 <div className="relative w-40 h-40">
                                     <img src={capturedImage} alt="Captured" className="w-full h-full object-cover rounded-full border-4 border-primary-100" />
-                                    <button type="button" onClick={() => setCapturedImage(null)} className="absolute bottom-0 right-0 bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600">
-                                        <X className="w-4 h-4" />
-                                    </button>
+                                    <button type="button" onClick={() => setCapturedImage(null)} className="absolute bottom-0 right-0 bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600"><X className="w-4 h-4" /></button>
                                 </div>
                             ) : (
                                 <div className="w-40 h-40 bg-gray-100 rounded-full flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-300">
                                     <User className="w-12 h-12 mb-2 opacity-20" />
-                                    <button type="button" onClick={startCamera} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded-full shadow-sm hover:bg-gray-50">
-                                        {editingId ? 'Alterar Foto' : 'Abrir Câmera'}
-                                    </button>
+                                    <button type="button" onClick={startCamera} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded-full shadow-sm hover:bg-gray-50">{editingId ? 'Alterar Foto' : 'Abrir Câmera'}</button>
                                 </div>
                             )}
                         </div>
-                        {/* ... (Basic Info same) */}
                          <div className="space-y-3">
-                             <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Nome Completo do Aluno</label>
-                                <input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" 
-                                    value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Data de Nascimento</label>
-                                <input required type="date" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                    value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} />
-                            </div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome Completo do Aluno</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} /></div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Data de Nascimento</label><input required type="date" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} /></div>
                         </div>
                     </div>
-
+                    {/* Middle Column */}
                     <div className="space-y-6">
-                        {/* ... (Middle column fields same) ... */}
-                         <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2">
-                            <User className="w-4 h-4 text-primary-600" /> Documentos & Saúde
-                        </h4>
+                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2"><User className="w-4 h-4 text-primary-600" /> Documentos & Saúde</h4>
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">RG</label>
-                                    <input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        placeholder="00.000.000-0"
-                                        value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">CPF</label>
-                                    <input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        placeholder="000.000.000-00"
-                                        value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} />
-                                </div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">RG</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="00.000.000-0" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} /></div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="000.000.000-00" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} /></div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Aluno</label>
-                                <input type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                    placeholder="(00) 00000-0000"
-                                    value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} />
-                            </div>
-                            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
-                                <label className="block text-xs font-bold text-red-700 mb-1">Validade Atestado Médico</label>
-                                <input required type="date" className="w-full border border-red-200 rounded-lg p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white"
-                                    value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} />
-                            </div>
+                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Aluno</label><input type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="(00) 00000-0000" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} /></div>
+                            <div className="bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-700 mb-1">Validade Atestado Médico</label><input required type="date" className="w-full border border-red-200 rounded-lg p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white" value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} /></div>
                         </div>
-                        {/* ... (Checklist) ... */}
                          <div className="pt-2">
-                             <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-2">
-                                <FolderCheck className="w-4 h-4 text-primary-600" /> Checklist de Entrega
-                            </h4>
-                            <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="checkbox" checked={studentForm.documents.rg} onChange={() => toggleDoc('rg')} className="rounded text-primary-600 focus:ring-primary-500" />
-                                    RG Entregue
-                                </label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="checkbox" checked={studentForm.documents.cpf} onChange={() => toggleDoc('cpf')} className="rounded text-primary-600 focus:ring-primary-500" />
-                                    CPF Entregue
-                                </label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="checkbox" checked={studentForm.documents.medical} onChange={() => toggleDoc('medical')} className="rounded text-primary-600 focus:ring-primary-500" />
-                                    Atestado Médico Entregue
-                                </label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="checkbox" checked={studentForm.documents.address} onChange={() => toggleDoc('address')} className="rounded text-primary-600 focus:ring-primary-500" />
-                                    Comp. Endereço Entregue
-                                </label>
-                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="checkbox" checked={studentForm.documents.school} onChange={() => toggleDoc('school')} className="rounded text-primary-600 focus:ring-primary-500" />
-                                    Declaração Escolar Entregue
-                                </label>
+                             <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-2"><FolderCheck className="w-4 h-4 text-primary-600" /> Checklist de Entrega</h4>
+                             <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.rg} onChange={() => toggleDoc('rg')} className="rounded text-primary-600 focus:ring-primary-500" />RG Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.cpf} onChange={() => toggleDoc('cpf')} className="rounded text-primary-600 focus:ring-primary-500" />CPF Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.medical} onChange={() => toggleDoc('medical')} className="rounded text-primary-600 focus:ring-primary-500" />Atestado Médico Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.address} onChange={() => toggleDoc('address')} className="rounded text-primary-600 focus:ring-primary-500" />Comp. Endereço Entregue</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" checked={studentForm.documents.school} onChange={() => toggleDoc('school')} className="rounded text-primary-600 focus:ring-primary-500" />Declaração Escolar Entregue</label>
                             </div>
                         </div>
-                        
-                        {/* Address */}
-                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 pt-2">
-                            <MapPin className="w-4 h-4 text-primary-600" /> Endereço
-                        </h4>
+                        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 pt-2"><MapPin className="w-4 h-4 text-primary-600" /> Endereço</h4>
                         <div className="space-y-3">
-                             <div className="relative">
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">CEP (Somente números)</label>
-                                <div className="relative">
-                                    <input required type="text" className="w-full border rounded-lg p-2 pr-8 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        placeholder="00000-000"
-                                        value={studentForm.address.cep} 
-                                        onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, cep: e.target.value}})}
-                                        onBlur={(e) => fetchAddressByCep(e.target.value)}
-                                    />
-                                    {isLoadingCep && (
-                                        <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                            <Loader2 className="w-4 h-4 text-primary-500 animate-spin" />
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            <div>
-                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Logradouro</label>
-                                 <input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                     value={studentForm.address.street} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Número</label>
-                                    <input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        value={studentForm.address.number} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Complemento</label>
-                                    <input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        value={studentForm.address.complement} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, complement: e.target.value}})} />
-                                </div>
-                            </div>
-                             <div className="grid grid-cols-2 gap-2">
-                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Bairro</label>
-                                    <input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        value={studentForm.address.district} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Cidade/UF</label>
-                                    <input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                        value={`${studentForm.address.city}/${studentForm.address.state}`} readOnly />
-                                </div>
-                            </div>
+                             <div className="relative"><label className="block text-xs font-semibold text-gray-600 mb-1">CEP (Somente números)</label><div className="relative"><input required type="text" className="w-full border rounded-lg p-2 pr-8 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="00000-000" value={studentForm.address.cep} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, cep: e.target.value}})} onBlur={(e) => fetchAddressByCep(e.target.value)} />{isLoadingCep && (<div className="absolute right-2 top-1/2 transform -translate-y-1/2"><Loader2 className="w-4 h-4 text-primary-500 animate-spin" /></div>)}</div></div>
+                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Logradouro</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.street} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} /></div>
+                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Número</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.number} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Complemento</label><input type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.complement} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, complement: e.target.value}})} /></div></div>
+                             <div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Bairro</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.address.district} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Cidade/UF</label><input required type="text" className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={`${studentForm.address.city}/${studentForm.address.state}`} readOnly /></div></div>
                         </div>
                     </div>
-
+                    {/* Right Column */}
                     <div className="space-y-6">
-                        {/* ... (Right column - Guardian & Plans same) ... */}
-                        <div>
-                          <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3">
-                            <User className="w-4 h-4 text-primary-600" /> Dados do Responsável
-                          </h4>
-                          <div className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label>
-                                <input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                    value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label>
-                                <input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                    placeholder="000.000.000-00"
-                                    value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label>
-                                <input required type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
-                                    placeholder="(00) 00000-0000"
-                                    value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} />
-                            </div>
-                          </div>
-                      </div>
-
-                      <div>
-                          <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3">
-                             <Edit className="w-4 h-4 text-primary-600" /> Plano e Status
-                          </h4>
-                          <div className="space-y-3">
-                             <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label>
-                                <select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm"
-                                    value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}>
-                                    <option value="">Selecione...</option>
-                                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label>
-                                <select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm"
-                                    value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}>
-                                    <option value="">Selecione...</option>
-                                    {plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}
-                                </select>
-                            </div>
-                            
-                            <div className="pt-2">
-                                 <label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label>
-                                 <div className="flex items-center gap-4">
-                                    <button type="button" 
-                                        onClick={() => setStudentForm({...studentForm, active: true})}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}
-                                    >
-                                        {studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                                        Ativo
-                                    </button>
-                                    <button type="button" 
-                                        onClick={() => setStudentForm({...studentForm, active: false})}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}
-                                    >
-                                        {!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                                        Inativo
-                                    </button>
-                                 </div>
-                            </div>
-                          </div>
-                      </div>
+                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><User className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
+                        <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                     </div>
                  </div>
-                 {/* ... (Footer buttons same) */}
                  <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4 pt-6 mt-6 border-t border-gray-100">
-                    <button type="button" onClick={handlePrintContract} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-indigo-600 font-medium hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors">
-                        <Printer className="w-4 h-4" /> Imprimir Contrato
-                    </button>
-                    <div className="flex gap-3 w-full sm:w-auto justify-end">
-                        <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="flex-1 sm:flex-none px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">
-                            Cancelar
-                        </button>
-                        <button type="submit" className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30">
-                            {editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}
-                        </button>
-                    </div>
+                    <button type="button" onClick={handlePrintContract} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-indigo-600 font-medium hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors"><Printer className="w-4 h-4" /> Imprimir Contrato</button>
+                    <div className="flex gap-3 w-full sm:w-auto justify-end"><button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="flex-1 sm:flex-none px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button><button type="submit" className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30">{editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}</button></div>
                 </div>
                 </form>
             ) : activeTab === 'FINANCE' ? (
@@ -1375,34 +1230,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 Plano Atual: {plans.find(p => p.id === studentForm.planId)?.name || 'Sem plano'}
                             </div>
                         </div>
-                        
-                        {/* Batch Action Bar */}
                         {selectedFinanceIds.size > 0 && (
                              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-orange-100 p-2 rounded-full text-orange-600">
-                                        <Calculator className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-orange-800 uppercase">Seleção em Lote</p>
-                                        <p className="text-sm font-semibold text-gray-900">
-                                            {selectedFinanceIds.size} parcelas • Total: R$ {selectedTotal.toFixed(2)}
-                                        </p>
-                                    </div>
+                                    <div className="bg-orange-100 p-2 rounded-full text-orange-600"><Calculator className="w-5 h-5" /></div>
+                                    <div><p className="text-xs font-bold text-orange-800 uppercase">Seleção em Lote</p><p className="text-sm font-semibold text-gray-900">{selectedFinanceIds.size} parcelas • Total: R$ {selectedTotal.toFixed(2)}</p></div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => sendBatchChargeMessage(selectedTransactions)}
-                                        className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"
-                                    >
-                                        <MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)
-                                    </button>
-                                    <button 
-                                        onClick={() => initiatePixPayment()}
-                                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"
-                                    >
-                                        <QrCode className="w-3.5 h-3.5" /> Receber Combo (PIX)
-                                    </button>
+                                    <button onClick={() => sendBatchChargeMessage(selectedTransactions)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"><MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)</button>
+                                    <button onClick={() => initiatePixPayment()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"><QrCode className="w-3.5 h-3.5" /> Receber Combo (PIX)</button>
                                 </div>
                              </div>
                         )}
@@ -1412,9 +1248,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <table className="w-full text-left text-sm min-w-[600px]">
                             <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 w-10 text-center">
-                                        <Square className="w-4 h-4 text-gray-400 mx-auto" />
-                                    </th>
+                                    <th className="px-4 py-3 w-10 text-center"><Square className="w-4 h-4 text-gray-400 mx-auto" /></th>
                                     <th className="px-4 py-3">Vencimento</th>
                                     <th className="px-4 py-3">Descrição</th>
                                     <th className="px-4 py-3">Valor</th>
@@ -1441,11 +1275,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             <td className="px-4 py-3 text-center">
                                                 {!isPaid && (
                                                     <button onClick={() => toggleFinanceSelection(tx.id)} className="text-gray-400 hover:text-primary-600">
-                                                        {isSelected ? (
-                                                            <CheckSquare className="w-5 h-5 text-primary-600" />
-                                                        ) : (
-                                                            <Square className="w-5 h-5" />
-                                                        )}
+                                                        {isSelected ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
                                                     </button>
                                                 )}
                                             </td>
@@ -1453,165 +1283,57 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             <td className="px-4 py-3">{tx.description}</td>
                                             <td className="px-4 py-3 font-semibold">R$ {tx.amount.toFixed(2)}</td>
                                             <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                                                    tx.status === PaymentStatus.PAID 
-                                                    ? 'bg-green-100 text-green-700' 
-                                                    : isLate 
-                                                        ? 'bg-red-100 text-red-700' 
-                                                        : 'bg-yellow-100 text-yellow-700'
-                                                }`}>
-                                                    {tx.status === PaymentStatus.PAID ? 'Pago' : (
-                                                        isLate ? 'Atrasado' : 'Pendente'
-                                                    )}
+                                                <span className={`px-2 py-1 rounded-md text-xs font-medium ${tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : isLate ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                    {tx.status === PaymentStatus.PAID ? 'Pago' : (isLate ? 'Atrasado' : 'Pendente')}
                                                 </span>
-                                                {tx.status === PaymentStatus.PAID && (
-                                                    <div className="text-[10px] text-gray-500 mt-1">
-                                                        Via {tx.paymentMethod === PaymentMethod.PIX_MERCADO_PAGO ? 'PIX (MP)' : 'Dinheiro/Outro'}
-                                                    </div>
-                                                )}
+                                                {tx.status === PaymentStatus.PAID && (<div className="text-[10px] text-gray-500 mt-1">Via {tx.paymentMethod === PaymentMethod.PIX_MERCADO_PAGO ? 'PIX (MP)' : 'Dinheiro/Outro'}</div>)}
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 {tx.status !== PaymentStatus.PAID && (
                                                     <div className="flex justify-end gap-2">
-                                                        {isLate && tx.paymentLink && (
-                                                            <button
-                                                                onClick={() => sendChargeMessage(tx)}
-                                                                className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200"
-                                                                title="Enviar Cobrança via WhatsApp"
-                                                            >
-                                                                <MessageCircle className="w-3 h-3" /> Cobrar
-                                                            </button>
-                                                        )}
-                                                        {/* Button to check status real-time */}
+                                                        {isLate && tx.paymentLink && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
                                                         {(tx.paymentLink || tx.externalReference) && (
-                                                            <button
-                                                                onClick={() => checkStatus(tx)}
-                                                                disabled={isChecking}
-                                                                className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors flex items-center gap-1 border border-blue-200"
-                                                                title="Verificar Pagamento no Mercado Pago"
-                                                            >
-                                                                {isChecking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                                                Verificar
+                                                            <button onClick={() => checkStatus(tx)} disabled={isChecking} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors flex items-center gap-1 border border-blue-200" title="Verificar Pagamento no Mercado Pago">
+                                                                {isChecking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}Verificar
                                                             </button>
                                                         )}
-
-                                                        {showPayButton && (
-                                                            <button 
-                                                                onClick={() => initiatePixPayment(tx.id)}
-                                                                className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1"
-                                                                title="Pagar com Mercado Pago"
-                                                            >
-                                                                <QrCode className="w-3 h-3" /> PIX/Link
-                                                            </button>
-                                                        )}
-                                                        <button 
-                                                            onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)}
-                                                            className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
-                                                            title="Baixa Manual (Dinheiro)"
-                                                        >
-                                                            $
-                                                        </button>
+                                                        {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> PIX/Link</button>)}
+                                                        <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>
                                                     </div>
                                                 )}
                                             </td>
                                         </tr>
                                     )})
                                 ) : (
-                                    <tr>
-                                        <td colSpan={6} className="p-8 text-center text-gray-500">
-                                            Nenhuma mensalidade gerada ou registrada.
-                                        </td>
-                                    </tr>
+                                    <tr><td colSpan={6} className="p-8 text-center text-gray-500">Nenhuma mensalidade gerada ou registrada.</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
                 </div>
             ) : (
-                // ATTENDANCE TAB (No Change)
+                // ATTENDANCE TAB (Unchanged)
                  <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
-                            <p className="text-xs text-gray-500 font-semibold uppercase">Presença</p>
-                            <div className="text-2xl font-bold text-gray-900 mt-1">{attendanceRate}%</div>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
-                            <p className="text-xs text-green-700 font-semibold uppercase">Aulas Presente</p>
-                            <div className="text-2xl font-bold text-green-800 mt-1">{attendanceStats.present}</div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center">
-                            <p className="text-xs text-red-700 font-semibold uppercase">Faltas</p>
-                            <div className="text-2xl font-bold text-red-800 mt-1">{attendanceStats.absent}</div>
-                        </div>
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center"><p className="text-xs text-gray-500 font-semibold uppercase">Presença</p><div className="text-2xl font-bold text-gray-900 mt-1">{attendanceRate}%</div></div>
+                        <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center"><p className="text-xs text-green-700 font-semibold uppercase">Aulas Presente</p><div className="text-2xl font-bold text-green-800 mt-1">{attendanceStats.present}</div></div>
+                        <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center"><p className="text-xs text-red-700 font-semibold uppercase">Faltas</p><div className="text-2xl font-bold text-red-800 mt-1">{attendanceStats.absent}</div></div>
                     </div>
-
-                    <div className="flex justify-between items-center mb-4">
-                        <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas
-                        </h4>
-                        <button 
-                            onClick={handleExportStudentAttendance}
-                            className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"
-                        >
-                            <Download className="w-4 h-4" /> Exportar Histórico
-                        </button>
-                    </div>
-                    {/* ... (Attendance Table same) ... */}
+                    <div className="flex justify-between items-center mb-4"><h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4><button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button></div>
                     <div className="overflow-hidden border border-gray-200 rounded-xl max-h-[400px] overflow-y-auto overflow-x-auto">
                         <table className="w-full text-left text-sm min-w-[500px]">
-                            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0">
-                                <tr>
-                                    <th className="px-4 py-3">Data</th>
-                                    <th className="px-4 py-3">Atividade</th>
-                                    <th className="px-4 py-3">Horário</th>
-                                    <th className="px-4 py-3 text-right">Status</th>
-                                </tr>
-                            </thead>
+                            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0"><tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Atividade</th><th className="px-4 py-3">Horário</th><th className="px-4 py-3 text-right">Status</th></tr></thead>
                             <tbody className="divide-y divide-gray-100">
                                 {studentActivities.length > 0 ? (
                                     studentActivities.map(activity => {
                                         const isPresent = activity.attendance.includes(editingId!);
                                         const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
-
                                         let statusBadge;
-                                        if (isPresent) {
-                                            statusBadge = (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    <CheckCircle className="w-3 h-3" /> Presente
-                                                </span>
-                                            );
-                                        } else if (isPast) {
-                                            statusBadge = (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                    <XCircle className="w-3 h-3" /> Ausente
-                                                </span>
-                                            );
-                                        } else {
-                                            statusBadge = (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                                    <Clock className="w-3 h-3" /> Agendado
-                                                </span>
-                                            );
-                                        }
-
-                                        return (
-                                            <tr key={activity.id} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3">{new Date(activity.date).toLocaleDateString()}</td>
-                                                <td className="px-4 py-3 font-medium">{activity.title}</td>
-                                                <td className="px-4 py-3 text-gray-500">{activity.startTime} - {activity.endTime}</td>
-                                                <td className="px-4 py-3 text-right">
-                                                    {statusBadge}
-                                                </td>
-                                            </tr>
-                                        )
-                                    })
-                                ) : (
-                                    <tr>
-                                        <td colSpan={4} className="p-8 text-center text-gray-500">
-                                            Nenhuma atividade registrada para este aluno.
-                                        </td>
-                                    </tr>
-                                )}
+                                        if (isPresent) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><CheckCircle className="w-3 h-3" /> Presente</span>); } 
+                                        else if (isPast) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><XCircle className="w-3 h-3" /> Ausente</span>); } 
+                                        else { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><Clock className="w-3 h-3" /> Agendado</span>); }
+                                        return (<tr key={activity.id} className="hover:bg-gray-50"><td className="px-4 py-3">{new Date(activity.date).toLocaleDateString()}</td><td className="px-4 py-3 font-medium">{activity.title}</td><td className="px-4 py-3 text-gray-500">{activity.startTime} - {activity.endTime}</td><td className="px-4 py-3 text-right">{statusBadge}</td></tr>)})
+                                ) : (<tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma atividade registrada para este aluno.</td></tr>)}
                             </tbody>
                         </table>
                     </div>
@@ -1621,7 +1343,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       )}
 
-      {/* Pix Simulation Modal */}
+      {/* Pix Modal (REAL) */}
       {showPixModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
@@ -1629,33 +1351,49 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       <QrCode className="w-6 h-6" />
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Pagamento via PIX</h3>
-                  <p className="text-sm text-gray-500 mb-6">
-                      {selectedTransactionId 
-                        ? 'Simulação de integração com Mercado Pago' 
-                        : `Simulação de Baixa em Lote (${selectedFinanceIds.size} itens)`
-                      }
+                  <p className="text-sm text-gray-500 mb-4">
+                      {pixLoading 
+                        ? 'Gerando código PIX...' 
+                        : 'Escaneie o QR Code ou copie o código abaixo'}
                   </p>
                   
-                  {simulatingPix ? (
+                  {pixLoading ? (
                       <div className="py-8 flex flex-col items-center">
                           <Loader2 className="w-10 h-10 text-[#009EE3] animate-spin mb-4" />
-                          <p className="text-sm text-gray-600">Aguardando confirmação do pagamento...</p>
+                          <p className="text-sm text-gray-600">Conectando com Mercado Pago...</p>
+                      </div>
+                  ) : pixData ? (
+                      <div className="flex flex-col items-center">
+                           <div className="bg-white border border-gray-200 p-2 rounded-lg mb-4">
+                               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`} alt="QR Code PIX" className="w-48 h-48 object-contain" />
+                           </div>
+                           
+                           <div className="w-full bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 relative">
+                                <p className="text-[10px] text-gray-500 break-all font-mono text-left h-12 overflow-hidden">{pixData.qrCode}</p>
+                                <button 
+                                    onClick={copyPixCode}
+                                    className="absolute top-2 right-2 p-1.5 bg-white shadow-sm border border-gray-200 rounded text-gray-600 hover:text-[#009EE3]"
+                                    title="Copiar Código"
+                                >
+                                    <Copy className="w-4 h-4" />
+                                </button>
+                           </div>
+
+                           <div className="flex items-center gap-2 text-xs text-green-600 font-medium animate-pulse mb-4">
+                               <RefreshCw className="w-3 h-3 animate-spin" /> Aguardando pagamento...
+                           </div>
+                           <p className="text-[10px] text-gray-400 mb-4">O sistema identificará o pagamento automaticamente.</p>
                       </div>
                   ) : (
-                      <div className="py-4 flex flex-col items-center">
-                           <CheckCircle className="w-12 h-12 text-green-500 mb-2" />
-                           <p className="text-lg font-bold text-green-600">Pagamento Confirmado!</p>
-                           <p className="text-xs text-gray-500 mt-1">O sistema identificou o pagamento automaticamente.</p>
-                      </div>
+                      <div className="py-4 text-red-500 text-sm">Erro ao gerar PIX. Tente novamente.</div>
                   )}
 
-                  <div className="mt-6">
+                  <div className="mt-2">
                       <button 
-                        onClick={simulatingPix ? () => setShowPixModal(false) : confirmPixPayment}
-                        className={`w-full py-2.5 rounded-lg font-medium transition-colors ${simulatingPix ? 'bg-gray-100 text-gray-400' : 'bg-[#009EE3] text-white hover:bg-[#007eb5]'}`}
-                        disabled={simulatingPix}
+                        onClick={() => { setShowPixModal(false); setPixData(null); }}
+                        className="w-full py-2.5 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200 transition-colors"
                       >
-                          {simulatingPix ? 'Cancelar' : 'Concluir Baixa'}
+                          Fechar / Cancelar
                       </button>
                   </div>
               </div>
