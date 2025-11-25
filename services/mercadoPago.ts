@@ -48,6 +48,20 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
   if (!token) return null;
 
   try {
+    // Sanitize phone number (remove non-digits)
+    // Format required by MP: area_code (string), number (string)
+    const rawPhone = data.payer.phone ? data.payer.phone.replace(/\D/g, '') : '';
+    let areaCode = '11'; // Default Fallback
+    let number = '999999999'; // Default Fallback
+
+    if (rawPhone.length >= 10) {
+        areaCode = rawPhone.substring(0, 2);
+        number = rawPhone.substring(2);
+    }
+
+    // Sanitize Email
+    const email = data.payer.email && data.payer.email.includes('@') ? data.payer.email : 'email@naoinformado.com';
+
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {
@@ -65,10 +79,14 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         ],
         payer: {
             name: data.payer.name,
-            email: data.payer.email || 'email@naoinformado.com',
+            email: email,
             phone: {
-                area_code: data.payer.phone.substring(0, 2),
-                number: data.payer.phone.substring(2)
+                area_code: areaCode,
+                number: number
+            },
+            identification: {
+                type: 'CPF',
+                number: data.payer.identification.number.replace(/\D/g, '')
             }
         },
         external_reference: data.externalReference,
@@ -82,9 +100,15 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
     });
 
     const result = await response.json();
-    if (result.init_point) {
-      return { init_point: result.init_point, id: result.id };
+    
+    // Check for Sandbox vs Production based on Token
+    const isSandbox = token.startsWith('TEST');
+    const paymentLink = isSandbox ? result.sandbox_init_point : result.init_point;
+
+    if (paymentLink) {
+      return { init_point: paymentLink, id: result.id };
     }
+    
     console.error("MP Error:", result);
     return null;
 
