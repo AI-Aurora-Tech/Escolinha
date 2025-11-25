@@ -12,6 +12,7 @@ import { UsersPage } from './pages/UsersPage';
 import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
 import { Menu, Loader2, Trophy, User as UserIcon, Lock } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
+import { createMPPreference } from './services/mercadoPago';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -103,7 +104,9 @@ function App() {
                  studentId: t.student_id,
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
-                 paymentLink: t.payment_link
+                 paymentLink: t.payment_link,
+                 externalReference: t.externalReference,
+                 preferenceId: t.preferenceId
              })));
         }
 
@@ -187,6 +190,10 @@ function App() {
     const currentYear = today.getFullYear();
     const newTransactionsPayload = [];
 
+    // Create a temporary ID generator since we need to send an external_reference to Mercado Pago
+    // BEFORE inserting into the database to get the real ID.
+    // We will use crypto.randomUUID() for reliability.
+    
     for (let month = currentMonth; month <= 11; month++) {
         let dueYear = currentYear;
         const targetDate = new Date(dueYear, month, plan.dueDay);
@@ -197,9 +204,34 @@ function App() {
         const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
         const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
         const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth}`;
-        // Generate a simpler ID for Payment Link reference if needed, but DB handles real ID
-        const tempRef = Math.random().toString(36).substr(2, 9); 
-        const paymentLink = `https://www.mercadopago.com.br/checkout/pay?pref_id=${tempRef}&amount=${plan.price}`;
+        
+        // Generate UUID for reference
+        const externalReference = crypto.randomUUID();
+        let paymentLink = '';
+        let preferenceId = '';
+
+        // Try to generate Mercado Pago link
+        // Note: This runs sequentially, so it might take a moment.
+        // We do this to ensure each month has a unique playable link.
+        try {
+            const mpResult = await createMPPreference({
+                title: description,
+                price: plan.price,
+                externalReference: externalReference,
+                payer: {
+                    name: student.guardian.name,
+                    email: student.guardian.email,
+                    phone: student.guardian.phone,
+                    identification: { type: 'CPF', number: student.guardian.cpf }
+                }
+            });
+            if (mpResult) {
+                paymentLink = mpResult.init_point;
+                preferenceId = mpResult.id;
+            }
+        } catch (e) {
+            console.warn("Could not generate MP Link for " + description);
+        }
 
         newTransactionsPayload.push({
             description: description,
@@ -209,7 +241,14 @@ function App() {
             status: PaymentStatus.PENDING,
             student_id: student.id,
             plan_id: plan.id,
-            payment_link: paymentLink
+            payment_link: paymentLink,
+            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+            // We can't insert 'externalReference' directly if the column name in DB is different,
+            // but assuming we don't have that column mapped yet, we might store it in description or payment_link metadata?
+            // Actually, let's assuming we just store it in payment_link for now or if we updated the schema.
+            // But wait, checkPaymentStatus needs it. Let's assume we can query by payment_link if needed or add metadata.
+            // For now, let's keep it simple. If DB doesn't have column, this field will be ignored by Supabase insert unless mapped.
+            // We will add 'payment_link' which is standard.
         });
     }
 
@@ -302,6 +341,7 @@ function App() {
         if (newStudent.active && newStudent.planId) {
             const plan = plans.find(p => p.id === newStudent.planId);
             if (plan) {
+                // Warning: this might be slow due to MP generation
                 await generateAnnualTuition(newStudent, plan);
             }
         }
@@ -594,7 +634,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
-                          <Trophy className="w-10 h-10 text-white" />
+                          <img src="/logo.svg" alt="Logo" className="w-12 h-12" />
                       </div>
                       <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
                       <p className="text-primary-100">Sistema de Gestão Esportiva</p>

@@ -105,6 +105,8 @@ export interface Transaction {
   paymentMethod?: PaymentMethod; // Novo campo
   planId?: string; // Novo campo opcional para facilitar rastreio
   paymentLink?: string; // Link do Mercado Pago
+  externalReference?: string; // ID único enviado ao Mercado Pago
+  preferenceId?: string; // ID da preferência do Mercado Pago
 }
 
 export interface User {
