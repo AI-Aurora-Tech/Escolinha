@@ -9,25 +9,14 @@ const getApiKey = () => {
     return import.meta.env.VITE_GEMINI_API_KEY;
   }
   
-  // 2. Try process.env safely (Node/Webpack fallback)
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-      return process.env.API_KEY;
-    }
-  } catch (e) {
-    // Ignore ReferenceError if process is not defined
-  }
-  
+  // No fallback to process.env to avoid "ReferenceError: process is not defined" in browser
   return '';
 };
-
-// Remove top-level initialization to prevent crash
-// const ai = new GoogleGenAI({ apiKey }); <--- CAUSES CRASH
 
 export const generateTrainingDrill = async (ageGroup: string, focusSkill: string, duration: string): Promise<string> => {
   try {
     const apiKey = getApiKey();
-    if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+    if (!apiKey) return "Chave da API não configurada. Configure VITE_GEMINI_API_KEY no arquivo .env ou no painel da Vercel.";
 
     // Initialize inside the function safely
     const ai = new GoogleGenAI({ apiKey });
@@ -65,7 +54,7 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
         const apiKey = getApiKey();
-        if (!apiKey) return "Chave da API não configurada (VITE_GEMINI_API_KEY).";
+        if (!apiKey) return "Chave da API não configurada. Configure VITE_GEMINI_API_KEY no arquivo .env ou no painel da Vercel.";
 
         // Initialize inside the function safely
         const ai = new GoogleGenAI({ apiKey });
