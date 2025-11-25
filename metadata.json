@@ -1,0 +1,7 @@
+{
+  "name": "Garotos do Martinica Manager",
+  "description": "Sistema de gestão completo para escolinha de futebol com controle de alunos, financeiro, presença e IA integrada.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
