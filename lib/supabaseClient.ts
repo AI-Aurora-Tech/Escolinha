@@ -9,8 +9,7 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 // ==============================================================================
 
-// Fallback seguro para evitar crash do app se as chaves estiverem vazias
-// Usamos uma URL fake válida e uma chave fake válida (estrutura JWT) para o init não quebrar
+// Fallback seguro para evitar crash do app se as chaves estiverem vazias ou inválidas
 const safeUrl = (supabaseUrl && supabaseUrl.startsWith('http')) 
   ? supabaseUrl 
   : 'https://placeholder.supabase.co';
@@ -19,4 +18,9 @@ const safeKey = (supabaseAnonKey && supabaseAnonKey.length > 20)
   ? supabaseAnonKey 
   : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIn0.placeholder';
 
-export const supabase = createClient(safeUrl, safeKey);
+export const supabase = createClient(safeUrl, safeKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  }
+});
