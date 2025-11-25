@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity } from '../types';
-import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck } from 'lucide-react';
+import { Search, Plus, Phone, User, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -13,12 +13,13 @@ interface StudentsPageProps {
   transactions: Transaction[];
   activities: Activity[];
   onAddStudent: (s: Omit<Student, 'id'>) => void;
+  onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Transaction) => void;
   initialFilter?: string; // Prop opcional para definir filtro inicial
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onUpdateStudent, onUpdateTransaction, initialFilter }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, initialFilter }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -46,6 +47,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   // CEP Loading State
   const [isLoadingCep, setIsLoadingCep] = useState(false);
+  
+  // Excel Upload Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Inicializar filtro se passado via prop
   useEffect(() => {
@@ -495,6 +499,81 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     XLSX.writeFile(wb, "GarotosMartinica_Alunos.xlsx");
   };
 
+  const handleDownloadTemplate = () => {
+      const templateData = [{
+          'Nome Completo': 'Ex: João Silva',
+          'Data Nascimento (YYYY-MM-DD)': '2010-05-20',
+          'RG': '00.000.000-0',
+          'CPF': '000.000.000-00',
+          'Telefone': '(11) 99999-9999',
+          'Nome Responsável': 'Maria Silva',
+          'CPF Responsável': '111.111.111-11',
+          'Telefone Responsável': '(11) 98888-8888',
+          'Validade Atestado (YYYY-MM-DD)': '2025-01-01'
+      }];
+
+      const ws = XLSX.utils.json_to_sheet(templateData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Importacao");
+      XLSX.writeFile(wb, "Template_Importacao_Alunos.xlsx");
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          try {
+              const bstr = evt.target?.result;
+              const wb = XLSX.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              const data = XLSX.utils.sheet_to_json(ws);
+
+              if (data.length === 0) {
+                  alert("Arquivo vazio ou formato inválido.");
+                  return;
+              }
+
+              const newStudents: Omit<Student, 'id'>[] = data.map((row: any) => ({
+                  name: row['Nome Completo'] || 'Sem Nome',
+                  birthDate: row['Data Nascimento (YYYY-MM-DD)'] || '',
+                  rg: row['RG'] || '',
+                  cpf: row['CPF'] || '',
+                  phone: row['Telefone'] || '',
+                  medicalCertificateExpiry: row['Validade Atestado (YYYY-MM-DD)'] || '',
+                  photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
+                  groupId: '',
+                  planId: '',
+                  active: true,
+                  address: {
+                      cep: '', street: '', number: '', complement: '', district: '', city: '', state: ''
+                  },
+                  guardian: {
+                      name: row['Nome Responsável'] || '',
+                      phone: row['Telefone Responsável'] || '',
+                      email: '',
+                      cpf: row['CPF Responsável'] || ''
+                  },
+                  documents: {
+                      rg: false, cpf: false, medical: false, address: false, school: false
+                  }
+              }));
+
+              if (confirm(`Encontrados ${newStudents.length} alunos. Deseja importar?`)) {
+                  onBatchAddStudents(newStudents);
+              }
+          } catch (error) {
+              console.error(error);
+              alert("Erro ao ler o arquivo Excel. Verifique se está usando o Template correto.");
+          }
+          // Reset input
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+      reader.readAsBinaryString(file);
+  };
+
   const handleExportPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4'); 
     doc.setFontSize(18);
@@ -591,13 +670,36 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">Alunos e Responsáveis</h2>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImportExcel} 
+                accept=".xlsx, .xls" 
+                className="hidden" 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
+              title="Importar de Excel"
+            >
+              <Upload className="w-4 h-4" />
+              Importar
+            </button>
+            <button 
+              onClick={handleDownloadTemplate}
+              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"
+              title="Baixar Modelo Excel"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Modelo
+            </button>
             <button 
               onClick={handleExportExcel}
               className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"
               title="Exportar Excel"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              Excel
+              <Download className="w-4 h-4" />
+              Exportar
             </button>
             <button 
               onClick={handleExportPDF}

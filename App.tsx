@@ -312,6 +312,59 @@ function App() {
     setIsLoading(false);
   };
 
+  const handleBatchAddStudents = async (studentsData: Omit<Student, 'id'>[]) => {
+    setIsLoading(true);
+    try {
+        const payload = studentsData.map(s => ({
+            name: s.name,
+            birth_date: s.birthDate,
+            rg: s.rg,
+            cpf: s.cpf,
+            phone: s.phone,
+            medical_expiry: s.medicalCertificateExpiry,
+            photo_url: s.photoUrl,
+            address: s.address,
+            guardian: s.guardian,
+            plan_id: s.planId || null,
+            group_id: s.groupId || null,
+            active: s.active,
+            documents: s.documents
+        }));
+
+        const { data, error } = await supabase.from('students').insert(payload).select();
+
+        if (data && !error) {
+            const newStudents: Student[] = data.map((d: any) => ({
+                 id: d.id,
+                 name: d.name,
+                 birthDate: d.birth_date,
+                 rg: d.rg,
+                 cpf: d.cpf,
+                 phone: d.phone,
+                 medicalCertificateExpiry: d.medical_expiry,
+                 photoUrl: d.photo_url,
+                 address: d.address,
+                 guardian: d.guardian,
+                 planId: d.plan_id,
+                 groupId: d.group_id,
+                 active: d.active,
+                 documents: d.documents
+            }));
+            
+            setStudents(prev => [...prev, ...newStudents]);
+            alert(`${newStudents.length} alunos importados com sucesso!`);
+        } else {
+            console.error(error);
+            alert("Erro na importação em massa.");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Erro inesperado na importação.");
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
   const handleUpdateStudent = async (updatedStudent: Student) => {
     setIsLoading(true);
     let finalPhotoUrl = updatedStudent.photoUrl;
@@ -620,6 +673,7 @@ function App() {
                   transactions={transactions} 
                   activities={activities} 
                   onAddStudent={handleAddStudent} 
+                  onBatchAddStudents={handleBatchAddStudents}
                   onUpdateStudent={handleUpdateStudent}
                   onUpdateTransaction={handleUpdateTransaction}
                   initialFilter={pageData?.filter}
