@@ -48,19 +48,49 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
   if (!token) return null;
 
   try {
-    // Sanitize phone number (remove non-digits)
-    // Format required by MP: area_code (string), number (string)
+    // 1. Sanitização do Email
+    // Se não tiver email válido, usa um placeholder seguro para não quebrar a API,
+    // mas idealmente o cliente deve preencher no checkout.
+    const email = data.payer.email && data.payer.email.includes('@') 
+        ? data.payer.email.trim() 
+        : 'cliente@naoinformado.com';
+
+    // 2. Separação de Nome e Sobrenome (Crítico para Mercado Pago)
+    const fullName = data.payer.name ? data.payer.name.trim() : 'Responsável';
+    const nameParts = fullName.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'do Aluno';
+
+    // 3. Sanitização do Telefone
+    // O Mercado Pago é muito chato com telefone. Se não estiver perfeito, é melhor NÃO enviar
+    // e deixar o usuário preencher no checkout, do que enviar errado e dar a tela de erro.
     const rawPhone = data.payer.phone ? data.payer.phone.replace(/\D/g, '') : '';
-    let areaCode = '11'; // Default Fallback
-    let number = '999999999'; // Default Fallback
+    let phoneObject = undefined;
 
     if (rawPhone.length >= 10) {
-        areaCode = rawPhone.substring(0, 2);
-        number = rawPhone.substring(2);
+        const areaCode = rawPhone.substring(0, 2);
+        const number = rawPhone.substring(2);
+        phoneObject = {
+            area_code: areaCode,
+            number: number
+        };
     }
 
-    // Sanitize Email
-    const email = data.payer.email && data.payer.email.includes('@') ? data.payer.email : 'email@naoinformado.com';
+    // 4. Montagem do Objeto Payer Seguro
+    const payerPayload: any = {
+        name: firstName,
+        surname: lastName,
+        email: email,
+        identification: {
+            type: 'CPF',
+            number: data.payer.identification.number.replace(/\D/g, '')
+        }
+    };
+
+    // Só adiciona telefone se tiver certeza que é válido
+    if (phoneObject) {
+        payerPayload.phone = phoneObject;
+    }
 
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
@@ -74,21 +104,10 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
             title: data.title,
             quantity: 1,
             currency_id: 'BRL',
-            unit_price: data.price
+            unit_price: Number(data.price) // Garante que é numero
           }
         ],
-        payer: {
-            name: data.payer.name,
-            email: email,
-            phone: {
-                area_code: areaCode,
-                number: number
-            },
-            identification: {
-                type: 'CPF',
-                number: data.payer.identification.number.replace(/\D/g, '')
-            }
-        },
+        payer: payerPayload,
         external_reference: data.externalReference,
         back_urls: {
           success: window.location.origin,
@@ -109,7 +128,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       return { init_point: paymentLink, id: result.id };
     }
     
-    console.error("MP Error:", result);
+    console.error("Erro MP (Resposta API):", result);
     return null;
 
   } catch (error) {
