@@ -914,7 +914,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       
       const isGroupMatch = a.groupId === studentForm.groupId; 
       const isParticipant = a.participants?.includes(editingId);
-      return isGroupMatch || isParticipant;
+      // Incluir se estiver na lista de presença, independente de grupo ou agendamento
+      const isPresent = a.attendance?.includes(editingId);
+      
+      return isGroupMatch || isParticipant || isPresent;
   }).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
 
   const attendanceStats = {
@@ -939,9 +942,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           let status = 'AGENDADO';
           if (isPresent) status = 'PRESENTE';
           else if (isPast) status = 'AUSENTE';
+          
+          // Correção de fuso horário simples para exibição (usar string pura)
+          const datePart = activity.date.split('T')[0];
+          const [year, month, day] = datePart.split('-');
+          const displayDate = `${day}/${month}/${year}`;
 
           return [
-              new Date(activity.date).toLocaleDateString('pt-BR'),
+              displayDate,
               activity.title,
               activity.startTime + ' - ' + activity.endTime,
               status
