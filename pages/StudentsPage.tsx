@@ -1553,7 +1553,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4>
                         {!isGuardian && (
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2 items-center">
                                 <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2">
                                     <input 
                                         type="month" 
@@ -1561,14 +1561,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         onChange={(e) => setAttendanceMonth(e.target.value)}
                                         className="bg-transparent text-sm text-gray-600 outline-none py-1.5"
                                     />
-                                    <button 
-                                        onClick={handleSendAttendanceToWhatsApp}
-                                        className="text-green-600 hover:text-green-700 p-1 border-l border-gray-200 pl-2" 
-                                        title="Enviar Relatório Mensal via WhatsApp"
-                                    >
-                                        <MessageCircle className="w-4 h-4" />
-                                    </button>
                                 </div>
+                                <button 
+                                    onClick={handleSendAttendanceToWhatsApp}
+                                    className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-green-700 transition-colors shadow-sm font-medium" 
+                                    title="Enviar Relatório Mensal via WhatsApp"
+                                >
+                                    <MessageCircle className="w-4 h-4" /> Enviar Zap
+                                </button>
                                 <button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button>
                             </div>
                         )}
