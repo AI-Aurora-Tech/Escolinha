@@ -149,8 +149,9 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
-                 externalReference: t.externalReference,
-                 preferenceId: t.preferenceId
+                 // Mapeamento correto: Banco (snake_case) -> App (camelCase)
+                 externalReference: t.external_reference, 
+                 preferenceId: t.preference_id
              })));
         }
 
@@ -409,7 +410,8 @@ function App() {
             plan_id: plan.id,
             payment_link: paymentLink,
             payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-            externalReference: externalReference
+            // Mapeamento correto: App (camelCase) -> Banco (snake_case)
+            external_reference: externalReference 
         });
     }
 
@@ -427,9 +429,11 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
-                 externalReference: t.externalReference
+                 externalReference: t.external_reference
              }));
              setTransactions(prev => [...prev, ...mappedTxs]);
+        } else {
+            console.error("Erro ao gerar mensalidades:", error);
         }
     }
   };
@@ -648,11 +652,14 @@ function App() {
           plan_id: t.planId || null,
           payment_method: t.paymentMethod,
           payment_link: t.paymentLink,
-          externalReference: t.externalReference
+          // Mapeamento correto: App (camelCase) -> Banco (snake_case)
+          external_reference: t.externalReference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
       if(data && !error) {
           setTransactions(prev => [...prev, { ...t, id: data.id }]);
+      } else {
+          console.error("Erro ao adicionar transação:", error);
       }
   };
   
