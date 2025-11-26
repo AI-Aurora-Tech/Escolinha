@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -48,6 +48,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   // Multi-select State for Finance
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
+
+  // Attendance Report State
+  const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
   // Camera States
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -975,6 +978,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       doc.save(`Frequencia_${studentForm.name.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const handleSendAttendanceToWhatsApp = () => {
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não encontrado.");
+          return;
+      }
+      
+      if (!editingId) return;
+
+      // Filter activities by the selected month
+      const filteredActivities = studentActivities.filter(a => a.date.startsWith(attendanceMonth));
+      
+      const stats = {
+          total: filteredActivities.length,
+          present: filteredActivities.filter(a => a.attendance.includes(editingId)).length,
+          absent: filteredActivities.filter(a => !a.attendance.includes(editingId) && new Date(a.date + 'T' + a.endTime) <= new Date()).length
+      };
+
+      const rate = stats.total > 0 
+          ? Math.round((stats.present / stats.total) * 100) 
+          : 0;
+
+      const [year, month] = attendanceMonth.split('-');
+      const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      const monthName = monthNames[parseInt(month) - 1];
+
+      const message = `Olá ${studentForm.guardian.name}, tudo bem? ⚽\n\n` +
+          `Segue o relatório de frequência de *${studentForm.name}* referente a *${monthName}/${year}*.\n\n` +
+          `📊 *Resumo do Mês:*\n` +
+          `✅ Presenças: ${stats.present}\n` +
+          `❌ Faltas: ${stats.absent}\n` +
+          `📉 Frequência: ${rate}%\n\n` +
+          `Agradecemos a parceria!`;
+
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+  };
+
   const toggleDoc = (field: keyof typeof studentForm.documents) => {
       setStudentForm(prev => ({
           ...prev,
@@ -1509,8 +1550,28 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center"><p className="text-xs text-green-700 font-semibold uppercase">Aulas Presente</p><div className="text-2xl font-bold text-green-800 mt-1">{attendanceStats.present}</div></div>
                         <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center"><p className="text-xs text-red-700 font-semibold uppercase">Faltas</p><div className="text-2xl font-bold text-red-800 mt-1">{attendanceStats.absent}</div></div>
                     </div>
-                    <div className="flex justify-between items-center mb-4"><h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4>
-                    {!isGuardian && <button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button>}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                        <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4>
+                        {!isGuardian && (
+                            <div className="flex gap-2">
+                                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2">
+                                    <input 
+                                        type="month" 
+                                        value={attendanceMonth} 
+                                        onChange={(e) => setAttendanceMonth(e.target.value)}
+                                        className="bg-transparent text-sm text-gray-600 outline-none py-1.5"
+                                    />
+                                    <button 
+                                        onClick={handleSendAttendanceToWhatsApp}
+                                        className="text-green-600 hover:text-green-700 p-1 border-l border-gray-200 pl-2" 
+                                        title="Enviar Relatório Mensal via WhatsApp"
+                                    >
+                                        <MessageCircle className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button>
+                            </div>
+                        )}
                     </div>
                     <div className="overflow-hidden border border-gray-200 rounded-xl max-h-[400px] overflow-y-auto overflow-x-auto">
                         <table className="w-full text-left text-sm min-w-[500px]">
