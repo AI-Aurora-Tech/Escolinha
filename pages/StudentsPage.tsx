@@ -1,8 +1,9 @@
 
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -185,6 +186,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         t.studentId === studentId && 
         t.type === TransactionType.INCOME && 
         t.status !== PaymentStatus.PAID && 
+        t.status !== PaymentStatus.CANCELLED &&
         new Date(t.date) < today
     ).length;
   };
@@ -585,6 +587,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               date: new Date().toISOString().split('T')[0]
           });
       }
+  };
+
+  const handleCancelTransaction = (tx: Transaction) => {
+    if (confirm(`Deseja realmente cancelar/ignorar esta cobrança?\n${tx.description}`)) {
+        onUpdateTransaction({
+            ...tx,
+            status: PaymentStatus.CANCELLED
+        });
+    }
   };
 
   const toggleFinanceSelection = (id: string) => {
@@ -1481,9 +1492,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         const diffTime = dueDate.getTime() - today.getTime();
                                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                                         
-                                        const showPayButton = diffDays <= 10;
-                                        const isLate = dueDate < today && tx.status !== PaymentStatus.PAID;
+                                        const showPayButton = diffDays <= 10 && tx.status !== PaymentStatus.CANCELLED;
+                                        const isLate = dueDate < today && tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED;
                                         const isPaid = tx.status === PaymentStatus.PAID;
+                                        const isCancelled = tx.status === PaymentStatus.CANCELLED;
                                         const isSelected = selectedFinanceIds.has(tx.id);
                                         const isChecking = checkingStatusId === tx.id;
                                         const isSendingPix = sendingPixId === tx.id;
@@ -1491,23 +1503,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         return (
                                         <tr key={tx.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-orange-50' : ''}`}>
                                             <td className="px-4 py-3 text-center">
-                                                {!isPaid && (
+                                                {!isPaid && !isCancelled && (
                                                     <button onClick={() => toggleFinanceSelection(tx.id)} className="text-gray-400 hover:text-primary-600">
                                                         {isSelected ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
                                                     </button>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3">{dueDate.toLocaleDateString()}</td>
-                                            <td className="px-4 py-3">{tx.description}</td>
-                                            <td className="px-4 py-3 font-semibold">R$ {tx.amount.toFixed(2)}</td>
+                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{dueDate.toLocaleDateString()}</td>
+                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{tx.description}</td>
+                                            <td className={`px-4 py-3 font-semibold ${isCancelled ? 'text-gray-400 line-through' : ''}`}>R$ {tx.amount.toFixed(2)}</td>
                                             <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded-md text-xs font-medium ${tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : isLate ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                    {tx.status === PaymentStatus.PAID ? 'Pago' : (isLate ? 'Atrasado' : 'Pendente')}
+                                                <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                                                    tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                                    isCancelled ? 'bg-gray-100 text-gray-500' :
+                                                    isLate ? 'bg-red-100 text-red-700' : 
+                                                    'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                    {tx.status === PaymentStatus.PAID ? 'Pago' : 
+                                                     isCancelled ? 'Cancelado' :
+                                                     isLate ? 'Atrasado' : 'Pendente'}
                                                 </span>
                                                 {tx.status === PaymentStatus.PAID && (<div className="text-[10px] text-gray-500 mt-1">Via {tx.paymentMethod === PaymentMethod.PIX_MERCADO_PAGO ? 'PIX (MP)' : 'Dinheiro/Outro'}</div>)}
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                {tx.status !== PaymentStatus.PAID && (
+                                                {tx.status !== PaymentStatus.PAID && !isCancelled && (
                                                     <div className="flex justify-end gap-2">
                                                         {isLate && tx.paymentLink && !isGuardian && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
                                                         {(tx.paymentLink || tx.externalReference) && !isGuardian && (
@@ -1530,6 +1549,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                         )}
 
                                                         {!isGuardian && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>}
+                                                        {!isGuardian && <button onClick={() => handleCancelTransaction(tx)} className="px-3 py-1.5 bg-gray-100 text-gray-500 border border-gray-200 rounded text-xs hover:bg-gray-200 hover:text-red-600 transition-colors" title="Cancelar/Ignorar Cobrança"><Ban className="w-3 h-3" /></button>}
                                                     </div>
                                                 )}
                                             </td>

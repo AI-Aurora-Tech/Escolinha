@@ -9,6 +9,7 @@ export enum PaymentStatus {
   PAID = 'PAID',
   PENDING = 'PENDING',
   LATE = 'LATE',
+  CANCELLED = 'CANCELLED',
 }
 
 export enum TransactionType {
