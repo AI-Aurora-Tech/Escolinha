@@ -49,6 +49,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
      s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase()))
   );
 
+  // Helper para formatar data sem fuso horário
+  const formatDate = (dateString: string) => {
+      if (!dateString) return '';
+      const parts = dateString.split('-');
+      if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return dateString;
+  };
+
   const toggleStudentSelection = (id: string) => {
       const newSet = new Set(selectedStudentIds);
       if (newSet.has(id)) {
@@ -156,7 +166,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               if (!isPast && !isPresent) status = 'AGENDADO';
 
               reportRows.push([
-                  new Date(activity.date).toLocaleDateString(),
+                  formatDate(activity.date),
                   activity.title,
                   groupName,
                   student.name,
@@ -249,7 +259,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
                                     <span className="flex items-center gap-1">
                                         <CalendarIcon className="w-4 h-4" />
-                                        {new Date(activity.date).toLocaleDateString()}
+                                        {formatDate(activity.date)}
                                     </span>
                                     <span className="flex items-center gap-1">
                                         <Clock className="w-4 h-4" />

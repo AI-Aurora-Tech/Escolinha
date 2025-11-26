@@ -62,6 +62,16 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime())[0];
   }, [activities]);
 
+  // Helper para formatar data sem fuso horário
+  const formatDate = (dateString: string) => {
+      if (!dateString) return '';
+      const parts = dateString.split('-');
+      if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return dateString;
+  };
+
   const months = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
@@ -193,7 +203,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             <h3 className="text-lg font-bold text-gray-900 mt-1 truncate max-w-[120px] sm:max-w-[150px]">
               {nextActivity ? nextActivity.title : 'Sem treinos'}
             </h3>
-            {nextActivity && <p className="text-xs text-gray-400">{new Date(nextActivity.date).toLocaleDateString('pt-BR')} às {nextActivity.startTime}</p>}
+            {nextActivity && <p className="text-xs text-gray-400">{formatDate(nextActivity.date)} às {nextActivity.startTime}</p>}
           </div>
           <div className="bg-indigo-50 p-3 rounded-lg">
             <CalendarCheck className="w-6 h-6 text-indigo-600" />

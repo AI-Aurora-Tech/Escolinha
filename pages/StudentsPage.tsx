@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban } from 'lucide-react';
@@ -170,6 +172,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return age;
   };
 
+  // Helper para formatar data sem fuso horário
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const parts = dateString.split('-');
+    if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateString;
+  };
+
   const isMedicalExpired = (dateString: string) => {
     if (!dateString) return true;
     return new Date(dateString) < new Date();
@@ -253,7 +265,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
 
-      const dueDate = new Date(tx.date).toLocaleDateString('pt-BR');
+      const dueDate = formatDate(tx.date);
       const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
           `Consta em nosso sistema a pendência referente à: *${tx.description}*.\n` +
           `Vencimento: ${dueDate}\n` +
@@ -308,7 +320,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       let details = "";
       txs.forEach(t => {
-          details += `- ${t.description} (${new Date(t.date).toLocaleDateString('pt-BR')}): R$ ${t.amount.toFixed(2)}\n`;
+          details += `- ${t.description} (${formatDate(t.date)}): R$ ${t.amount.toFixed(2)}\n`;
       });
 
       const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
@@ -686,7 +698,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleExportExcel = () => {
     const data = filteredStudents.map(s => ({
         'Nome do Aluno': s.name,
-        'Data Nascimento': new Date(s.birthDate).toLocaleDateString('pt-BR'),
+        'Data Nascimento': formatDate(s.birthDate),
         'Idade': calculateAge(s.birthDate),
         'RG': s.rg,
         'CPF Aluno': s.cpf,
@@ -833,7 +845,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         s.name,
         s.rg,
         s.cpf,
-        new Date(s.birthDate).toLocaleDateString('pt-BR'),
+        formatDate(s.birthDate),
         calculateAge(s.birthDate).toString(),
         groups.find(g => g.id === s.groupId)?.name || 'N/A',
         s.guardian.name,
@@ -878,7 +890,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     ALUNO(A):
     Nome: ${studentForm.name}
     RG: ${studentForm.rg} | CPF: ${studentForm.cpf}
-    Data de Nascimento: ${new Date(studentForm.birthDate).toLocaleDateString('pt-BR')}
+    Data de Nascimento: ${formatDate(studentForm.birthDate)}
     Grupo/Categoria: ${groupName}
     `;
     
@@ -957,13 +969,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           if (isPresent) status = 'PRESENTE';
           else if (isPast) status = 'AUSENTE';
           
-          // Correção de fuso horário simples para exibição (usar string pura)
-          const datePart = activity.date.split('T')[0];
-          const [year, month, day] = datePart.split('-');
-          const displayDate = `${day}/${month}/${year}`;
-
           return [
-              displayDate,
+              formatDate(activity.date),
               activity.title,
               activity.startTime + ' - ' + activity.endTime,
               status
@@ -1509,7 +1516,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                     </button>
                                                 )}
                                             </td>
-                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{dueDate.toLocaleDateString()}</td>
+                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{formatDate(tx.date)}</td>
                                             <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{tx.description}</td>
                                             <td className={`px-4 py-3 font-semibold ${isCancelled ? 'text-gray-400 line-through' : ''}`}>R$ {tx.amount.toFixed(2)}</td>
                                             <td className="px-4 py-3">
@@ -1605,7 +1612,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         if (isPresent) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><CheckCircle className="w-3 h-3" /> Presente</span>); } 
                                         else if (isPast) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><XCircle className="w-3 h-3" /> Ausente</span>); } 
                                         else { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><Clock className="w-3 h-3" /> Agendado</span>); }
-                                        return (<tr key={activity.id} className="hover:bg-gray-50"><td className="px-4 py-3">{new Date(activity.date).toLocaleDateString()}</td><td className="px-4 py-3 font-medium">{activity.title}</td><td className="px-4 py-3 text-gray-500">{activity.startTime} - {activity.endTime}</td><td className="px-4 py-3 text-right">{statusBadge}</td></tr>)})
+                                        return (<tr key={activity.id} className="hover:bg-gray-50"><td className="px-4 py-3">{formatDate(activity.date)}</td><td className="px-4 py-3 font-medium">{activity.title}</td><td className="px-4 py-3 text-gray-500">{activity.startTime} - {activity.endTime}</td><td className="px-4 py-3 text-right">{statusBadge}</td></tr>)})
                                 ) : (<tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma atividade registrada para este aluno.</td></tr>)}
                             </tbody>
                         </table>
