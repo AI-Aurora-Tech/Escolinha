@@ -907,8 +907,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const selectedTotal = selectedTransactions.reduce((acc, t) => acc + t.amount, 0);
 
   const studentActivities = activities.filter(a => {
-      const isPast = new Date(a.date + 'T' + a.endTime) <= new Date();
-      if (!isPast || !editingId) return false;
+      // FIX: Removed isPast filtering. We want to see all activities linked to the student, even future ones.
+      // const isPast = new Date(a.date + 'T' + a.endTime) <= new Date();
+      // if (!isPast || !editingId) return false;
+      if (!editingId) return false;
+      
       const isGroupMatch = a.groupId === studentForm.groupId; 
       const isParticipant = a.participants?.includes(editingId);
       return isGroupMatch || isParticipant;
@@ -917,7 +920,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const attendanceStats = {
       total: studentActivities.length,
       present: studentActivities.filter(a => a.attendance.includes(editingId!)).length,
-      absent: studentActivities.filter(a => !a.attendance.includes(editingId!)).length
+      absent: studentActivities.filter(a => !a.attendance.includes(editingId!) && new Date(a.date + 'T' + a.endTime) <= new Date()).length
   };
   const attendanceRate = attendanceStats.total > 0 
       ? Math.round((attendanceStats.present / attendanceStats.total) * 100) 
@@ -932,11 +935,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       
       const tableData = studentActivities.map(activity => {
           const isPresent = activity.attendance.includes(editingId!);
+          const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+          let status = 'AGENDADO';
+          if (isPresent) status = 'PRESENTE';
+          else if (isPast) status = 'AUSENTE';
+
           return [
               new Date(activity.date).toLocaleDateString('pt-BR'),
               activity.title,
               activity.startTime + ' - ' + activity.endTime,
-              isPresent ? 'PRESENTE' : 'AUSENTE'
+              status
           ];
       });
 
@@ -948,8 +956,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               if (data.section === 'body' && data.column.index === 3) {
                   if (data.cell.raw === 'AUSENTE') {
                       data.cell.styles.textColor = [220, 38, 38];
-                  } else {
+                  } else if (data.cell.raw === 'PRESENTE') {
                       data.cell.styles.textColor = [22, 163, 74];
+                  } else {
+                      data.cell.styles.textColor = [100, 116, 139];
                   }
               }
           }
@@ -1484,7 +1494,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     </div>
                 </div>
             ) : (
-                // ATTENDANCE TAB (Unchanged)
+                // ATTENDANCE TAB (Updated Logic)
                  <div className="p-6 flex-1 overflow-y-auto">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center"><p className="text-xs text-gray-500 font-semibold uppercase">Presença</p><div className="text-2xl font-bold text-gray-900 mt-1">{attendanceRate}%</div></div>
