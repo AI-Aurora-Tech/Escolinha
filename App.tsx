@@ -745,7 +745,7 @@ function App() {
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
-                          <img src="/logo.svg" alt="Logo" className="w-12 h-12" />
+                          <img src="/logo.svg" alt="Logo" className="w-16 h-16" />
                       </div>
                       <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
