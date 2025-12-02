@@ -1,11 +1,6 @@
-
-
-
-
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -74,6 +69,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
 
+  // --- BULK SEND STATE ---
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkQueue, setBulkQueue] = useState<Transaction[]>([]);
+  const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0);
+  const [bulkIsRunning, setBulkIsRunning] = useState(false);
+  const [bulkCountdown, setBulkCountdown] = useState(10);
+  const [bulkLogs, setBulkLogs] = useState<string[]>([]);
+  const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   // Inicializar filtro se passado via prop
@@ -126,6 +130,143 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
     return () => clearInterval(interval);
   }, [monitoredPayments, pixData, transactions]); 
+
+  // --- BULK SEND LOGIC ---
+  const handleStartBulkSend = () => {
+      // 1. Find pending transactions for the current month
+      const today = new Date();
+      const currentMonthStr = today.toISOString().slice(0, 7); // YYYY-MM
+
+      const queue = transactions.filter(t => {
+          const isActiveStudent = students.find(s => s.id === t.studentId)?.active;
+          return (
+            t.type === TransactionType.INCOME &&
+            t.status === PaymentStatus.PENDING &&
+            t.date.startsWith(currentMonthStr) &&
+            isActiveStudent
+          );
+      });
+
+      if (queue.length === 0) {
+          alert("Não há mensalidades pendentes para o mês atual.");
+          return;
+      }
+
+      if (confirm(`Encontradas ${queue.length} mensalidades pendentes para este mês. Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
+          setBulkQueue(queue);
+          setBulkCurrentIndex(0);
+          setBulkIsRunning(true);
+          setIsBulkModalOpen(true);
+          setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
+          setBulkCountdown(1); // Start almost immediately
+      }
+  };
+
+  useEffect(() => {
+      if (!isBulkModalOpen || !bulkIsRunning) {
+          if (bulkTimerRef.current) clearTimeout(bulkTimerRef.current);
+          return;
+      }
+
+      if (bulkCurrentIndex >= bulkQueue.length) {
+          setBulkIsRunning(false);
+          setBulkLogs(prev => [...prev, "✅ Processo finalizado!"]);
+          return;
+      }
+
+      if (bulkCountdown > 0) {
+          bulkTimerRef.current = setTimeout(() => {
+              setBulkCountdown(prev => prev - 1);
+          }, 1000);
+      } else {
+          // Process current item
+          processBulkItem(bulkQueue[bulkCurrentIndex]);
+      }
+
+      return () => {
+          if (bulkTimerRef.current) clearTimeout(bulkTimerRef.current);
+      };
+  }, [isBulkModalOpen, bulkIsRunning, bulkCountdown, bulkCurrentIndex, bulkQueue]);
+
+  const processBulkItem = async (tx: Transaction) => {
+      const student = students.find(s => s.id === tx.studentId);
+      if (!student) {
+          setBulkLogs(prev => [`⚠️ Aluno não encontrado para TX ${tx.description}`, ...prev]);
+          nextBulkItem();
+          return;
+      }
+
+      let finalLink = tx.paymentLink;
+      
+      // Generate link if missing
+      if (!finalLink) {
+          setBulkLogs(prev => [`🔄 Gerando link para ${student.name}...`, ...prev]);
+          try {
+              const externalReference = tx.externalReference || crypto.randomUUID();
+              
+              // Try MP Preference first (better for links)
+              if (student.guardian.cpf) {
+                  const mpResult = await createMPPreference({
+                    title: tx.description,
+                    price: tx.amount,
+                    externalReference: externalReference,
+                    payer: {
+                        name: student.guardian.name,
+                        email: student.guardian.email,
+                        phone: student.guardian.phone,
+                        identification: { type: 'CPF', number: student.guardian.cpf }
+                    }
+                });
+                
+                if (mpResult) {
+                    finalLink = mpResult.init_point;
+                    // Update TX in DB silently
+                    onUpdateTransaction({ 
+                        ...tx, 
+                        paymentLink: finalLink, 
+                        externalReference 
+                    });
+                }
+              }
+          } catch (e) {
+              setBulkLogs(prev => [`❌ Erro ao gerar link para ${student.name}`, ...prev]);
+          }
+      }
+
+      if (finalLink) {
+          const phone = student.guardian.phone.replace(/\D/g, '');
+          if (phone) {
+              const dueDate = formatDate(tx.date);
+              const message = `Olá ${student.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
+                  `A mensalidade de *${student.name}* (${dueDate}) já está disponível.\n` +
+                  `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
+                  `Link para pagamento:\n${finalLink}\n\n` +
+                  `Obrigado!`;
+              
+              const encodedMessage = encodeURIComponent(message);
+              const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
+              
+              // Open window
+              const win = window.open(url, '_blank');
+              if (win) {
+                  setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
+              } else {
+                  setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}. Permita pop-ups!`, ...prev]);
+              }
+          } else {
+              setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
+          }
+      } else {
+          setBulkLogs(prev => [`❌ Falha no link para ${student.name}`, ...prev]);
+      }
+
+      nextBulkItem();
+  };
+
+  const nextBulkItem = () => {
+      setBulkCurrentIndex(prev => prev + 1);
+      setBulkCountdown(10); // Reset countdown for next
+  };
 
 
   const initialFormState = {
@@ -1100,6 +1241,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         {/* HIDE ACTION BUTTONS FOR GUARDIANS */}
         {!isGuardian && (
             <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <button 
+                    onClick={handleStartBulkSend}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"
+                    title="Enviar cobrança automática para todos os inadimplentes do mês atual"
+                >
+                    <Zap className="w-4 h-4" />
+                    Cobrança Automática
+                </button>
                 <input 
                     type="file" 
                     ref={fileInputRef} 
@@ -1642,6 +1791,64 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     </div>
                  </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Send Modal */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                   <Zap className="w-5 h-5 text-purple-600" /> Cobrança Automática
+               </h3>
+               {!bulkIsRunning && <button onClick={() => setIsBulkModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>}
+            </div>
+
+            <div className="mb-6">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Progresso:</span>
+                    <span>{Math.min(bulkCurrentIndex + 1, bulkQueue.length)} de {bulkQueue.length}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div className="bg-purple-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${((bulkCurrentIndex) / bulkQueue.length) * 100}%` }}></div>
+                </div>
+                
+                {bulkIsRunning ? (
+                    <div className="bg-purple-50 text-purple-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
+                        Próximo envio em {bulkCountdown}s...
+                        <span className="text-xs font-normal text-gray-500">Permita pop-ups no navegador!</span>
+                    </div>
+                ) : (
+                    <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">
+                        Processo Finalizado
+                    </div>
+                )}
+            </div>
+            
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">
+                {bulkLogs.map((log, i) => (
+                    <div key={i} className="mb-1">{log}</div>
+                ))}
+                {bulkLogs.length === 0 && <div className="text-gray-500">Aguardando início...</div>}
+            </div>
+
+            <div className="flex justify-end gap-2">
+                {bulkIsRunning ? (
+                    <button onClick={() => setBulkIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">
+                        <Pause className="w-4 h-4" /> Pausar
+                    </button>
+                ) : (
+                    <button onClick={() => setBulkIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={bulkCurrentIndex >= bulkQueue.length}>
+                        <Play className="w-4 h-4" /> Continuar
+                    </button>
+                )}
+                <button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Fechar
+                </button>
+            </div>
           </div>
         </div>
       )}
