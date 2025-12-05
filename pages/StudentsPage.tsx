@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
@@ -133,32 +134,40 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   // --- BULK SEND LOGIC ---
   const handleStartBulkSend = () => {
-      // 1. Find pending transactions for the current month
-      const today = new Date();
-      const currentMonthStr = today.toISOString().slice(0, 7); // YYYY-MM
+      // Lógica: Percorrer todos os alunos ATIVOS.
+      // Para cada aluno, encontrar a transação PENDENTE ou ATRASADA mais antiga (prioridade para dívidas antigas).
+      // Adicionar à fila.
+      
+      const activeStudents = students.filter(s => s.active);
+      const queue: Transaction[] = [];
 
-      const queue = transactions.filter(t => {
-          const isActiveStudent = students.find(s => s.id === t.studentId)?.active;
-          return (
-            t.type === TransactionType.INCOME &&
-            t.status === PaymentStatus.PENDING &&
-            t.date.startsWith(currentMonthStr) &&
-            isActiveStudent
-          );
+      activeStudents.forEach(student => {
+          const studentPendingTxs = transactions
+            .filter(t => 
+                t.studentId === student.id && 
+                t.type === TransactionType.INCOME && 
+                (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
+            )
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ordenar por data: mais antiga primeiro
+
+          if (studentPendingTxs.length > 0) {
+              // Adiciona a transação mais antiga (próxima a vencer ou atrasada)
+              queue.push(studentPendingTxs[0]);
+          }
       });
 
       if (queue.length === 0) {
-          alert("Não há mensalidades pendentes para o mês atual.");
+          alert("Não há mensalidades pendentes para enviar.");
           return;
       }
 
-      if (confirm(`Encontradas ${queue.length} mensalidades pendentes para este mês. Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
+      if (confirm(`Encontradas ${queue.length} cobranças pendentes (próxima a vencer ou atrasada de cada aluno). Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
           setBulkQueue(queue);
           setBulkCurrentIndex(0);
           setBulkIsRunning(true);
           setIsBulkModalOpen(true);
           setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
-          setBulkCountdown(1); // Start almost immediately
+          setBulkCountdown(1); // Começa quase imediatamente
       }
   };
 
@@ -257,7 +266,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
           }
       } else {
-          setBulkLogs(prev => [`❌ Falha no link para ${student.name}`, ...prev]);
+          setBulkLogs(prev => [`❌ Falha no link para ${student.name}. CPF do responsável: ${student.guardian.cpf ? 'OK' : 'Faltando'}`, ...prev]);
       }
 
       nextBulkItem();
@@ -1074,9 +1083,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const selectedTotal = selectedTransactions.reduce((acc, t) => acc + t.amount, 0);
 
   const studentActivities = activities.filter(a => {
-      // FIX: Removed isPast filtering. We want to see all activities linked to the student, even future ones.
-      // const isPast = new Date(a.date + 'T' + a.endTime) <= new Date();
-      // if (!isPast || !editingId) return false;
       if (!editingId) return false;
       
       const isGroupMatch = a.groupId === studentForm.groupId; 
@@ -1244,10 +1250,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button 
                     onClick={handleStartBulkSend}
                     className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"
-                    title="Enviar cobrança automática para todos os inadimplentes do mês atual"
+                    title="Enviar cobrança da próxima mensalidade pendente para todos os alunos"
                 >
                     <Zap className="w-4 h-4" />
-                    Cobrança Automática
+                    Enviar Cobranças (1 a 1)
                 </button>
                 <input 
                     type="file" 

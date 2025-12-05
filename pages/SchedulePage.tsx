@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -23,9 +23,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
+  const [hasFee, setHasFee] = useState(false);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
       title: '',
+      type: 'TRAINING',
+      fee: 0,
       date: new Date().toISOString().split('T')[0],
       startTime: '14:00',
       endTime: '15:30',
@@ -73,6 +76,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setEditingId(null);
       setNewActivity({
           title: '',
+          type: 'TRAINING',
+          fee: 0,
           date: new Date().toISOString().split('T')[0],
           startTime: '14:00',
           endTime: '15:30',
@@ -84,6 +89,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setTargetType('GROUP');
       setSelectedStudentIds(new Set());
       setStudentSearch('');
+      setHasFee(false);
       setShowAddModal(true);
   }
 
@@ -92,6 +98,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setEditingId(activity.id);
       setNewActivity({
           title: activity.title,
+          type: activity.type || 'TRAINING',
+          fee: activity.fee || 0,
           date: activity.date,
           startTime: activity.startTime,
           endTime: activity.endTime,
@@ -109,6 +117,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           setSelectedStudentIds(new Set());
       }
       
+      setHasFee(!!activity.fee && activity.fee > 0);
       setStudentSearch('');
       setShowAddModal(true);
   };
@@ -118,6 +127,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       
       const activityData = {
           ...newActivity,
+          fee: hasFee ? newActivity.fee : 0,
           groupId: targetType === 'GROUP' ? newActivity.groupId : undefined,
           participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [],
       };
@@ -161,13 +171,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           expectedStudents.forEach(student => {
               const isPresent = activity.attendance.includes(student.id);
               const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
+              const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
               
               let status = isPresent ? 'PRESENTE' : 'AUSENTE';
               if (!isPast && !isPresent) status = 'AGENDADO';
 
               reportRows.push([
                   formatDate(activity.date),
-                  activity.title,
+                  `${type}: ${activity.title}`,
                   groupName,
                   student.name,
                   status
@@ -207,7 +218,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Agenda de Treinos</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
                 <button 
@@ -222,7 +233,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors"
                 >
                     <CalendarIcon className="w-4 h-4" />
-                    Agendar Treino
+                    Agendar
                 </button>
             </div>
         )}
@@ -237,6 +248,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 const participantCount = activity.groupId 
                     ? students.filter(s => s.groupId === activity.groupId).length 
                     : (activity.participants?.length || 0);
+                const isGame = activity.type === 'GAME';
                 
                 return (
                     <div 
@@ -249,10 +261,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                             <div>
                                 <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                                    {isGame ? <Trophy className="w-4 h-4 text-yellow-500" /> : <CalendarIcon className="w-4 h-4 text-primary-500" />}
                                     {activity.title}
                                     {activity.recurrence === 'weekly' && (
                                         <span title="Recorrente (Semanal)" className="bg-blue-100 text-blue-700 p-1 rounded-full">
                                             <Repeat className="w-3 h-3" />
+                                        </span>
+                                    )}
+                                    {isGame && activity.fee && activity.fee > 0 && (
+                                        <span title={`Taxa: R$ ${activity.fee}`} className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
+                                            <Coins className="w-3 h-3" /> R$ {activity.fee}
                                         </span>
                                     )}
                                 </h4>
@@ -322,8 +340,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             {selectedActivity ? (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 sticky top-4 max-h-[calc(100vh-2rem)] flex flex-col">
                     <div className="p-5 border-b border-gray-100 bg-gray-50 rounded-t-xl">
-                        <h3 className="font-bold text-gray-900">Lista de Presença</h3>
-                        <p className="text-sm text-gray-500">{selectedActivity.title}</p>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="font-bold text-gray-900">Lista de Presença</h3>
+                                <p className="text-sm text-gray-500">{selectedActivity.title}</p>
+                            </div>
+                            {selectedActivity.type === 'GAME' && selectedActivity.fee && (
+                                <div className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md">
+                                    Taxa: R$ {selectedActivity.fee}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-2">
                         {getAttendeesList(selectedActivity).length > 0 ? (
@@ -364,7 +391,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             ) : (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400">
                     <CalendarIcon className="w-12 h-12 mb-2 opacity-20" />
-                    <p>Selecione um treino para<br/>{isGuardian ? 'ver' : 'gerenciar'} a presença</p>
+                    <p>Selecione uma atividade para<br/>{isGuardian ? 'ver' : 'gerenciar'} a presença</p>
                 </div>
             )}
         </div>
@@ -375,15 +402,60 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">{editingId ? 'Editar Atividade' : 'Agendar Atividade'}</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    
+                    {/* Tipo de Atividade */}
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Tipo de Atividade</label>
+                        <div className="flex gap-4">
+                            <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 ring-1 ring-primary-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                <input type="radio" name="type" value="TRAINING" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" />
+                                <CalendarIcon className="w-4 h-4" /> Treino
+                            </label>
+                            <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 ring-1 ring-yellow-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                <input type="radio" name="type" value="GAME" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" />
+                                <Trophy className="w-4 h-4" /> Jogo
+                            </label>
+                        </div>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium mb-1">Título</label>
-                        <input className="w-full border rounded-lg p-2" type="text" placeholder="Ex: Treino Tático" 
+                        <input className="w-full border rounded-lg p-2" type="text" placeholder="Ex: Treino Tático ou Jogo vs Time X" 
                             required value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} />
                     </div>
 
+                    {newActivity.type === 'GAME' && (
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                             <div className="flex items-center gap-2 mb-2">
+                                 <input 
+                                    type="checkbox" 
+                                    id="hasFee"
+                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                    checked={hasFee}
+                                    onChange={(e) => setHasFee(e.target.checked)}
+                                 />
+                                 <label htmlFor="hasFee" className="text-sm font-medium text-gray-800">Cobrar Taxa do Jogo?</label>
+                             </div>
+                             {hasFee && (
+                                 <div>
+                                     <label className="block text-xs font-medium text-gray-600 mb-1">Valor da Taxa (R$)</label>
+                                     <input 
+                                        type="number" 
+                                        min="0" 
+                                        step="0.01"
+                                        className="w-full border rounded-lg p-2 bg-white"
+                                        placeholder="0,00"
+                                        value={newActivity.fee}
+                                        onChange={(e) => setNewActivity({...newActivity, fee: parseFloat(e.target.value)})}
+                                     />
+                                 </div>
+                             )}
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                             <label className="block text-sm font-medium mb-1">Tipo de Evento</label>
+                             <label className="block text-sm font-medium mb-1">Repetição</label>
                              <select className="w-full border rounded-lg p-2 bg-white" 
                                 value={newActivity.recurrence} 
                                 onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as 'weekly' | 'none'})}>
@@ -396,14 +468,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             <div className="flex border rounded-lg overflow-hidden">
                                 <button type="button" 
                                     onClick={() => setTargetType('GROUP')}
-                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'GROUP' ? 'bg-primary-50 text-primary-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'GROUP' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     Grupo
                                 </button>
                                 <div className="w-px bg-gray-200"></div>
                                 <button type="button" 
                                     onClick={() => setTargetType('INDIVIDUAL')}
-                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'INDIVIDUAL' ? 'bg-primary-50 text-primary-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'INDIVIDUAL' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     Individual
                                 </button>

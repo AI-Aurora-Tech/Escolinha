@@ -170,6 +170,8 @@ function App() {
              setActivities(relevantActivities.map((a: any) => ({
                  id: a.id,
                  title: a.title,
+                 type: a.activity_type || 'TRAINING', // Mapeia coluna activity_type
+                 fee: a.fee || 0,
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -597,6 +599,8 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       const payload = {
           title: a.title,
+          activity_type: a.type, // Map to DB column
+          fee: a.fee, // Map to DB column
           group_id: a.groupId || null,
           participants: a.participants,
           date: a.date,
@@ -614,6 +618,8 @@ function App() {
   const handleUpdateActivity = async (a: any) => { 
       const payload = {
           title: a.title,
+          activity_type: a.type, // Map to DB column
+          fee: a.fee, // Map to DB column
           group_id: a.groupId || null,
           participants: a.participants,
           date: a.date,

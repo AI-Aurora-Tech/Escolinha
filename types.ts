@@ -86,6 +86,8 @@ export interface Student {
 export interface Activity {
   id: string;
   title: string;
+  type: 'TRAINING' | 'GAME'; // Novo campo
+  fee?: number; // Novo campo: Taxa do jogo
   groupId?: string; // Optional: Activity might be for specific students only
   participants?: string[]; // Optional: List of Student IDs if not a group activity
   date: string; // ISO String
