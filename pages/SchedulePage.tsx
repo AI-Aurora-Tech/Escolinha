@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -26,6 +26,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
+
+  // --- NOTIFICATION STATE ---
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [notifyQueue, setNotifyQueue] = useState<Student[]>([]);
+  const [notifyCurrentIndex, setNotifyCurrentIndex] = useState(0);
+  const [notifyIsRunning, setNotifyIsRunning] = useState(false);
+  const [notifyCountdown, setNotifyCountdown] = useState(10);
+  const [notifyLogs, setNotifyLogs] = useState<string[]>([]);
+  const [notifyActivity, setNotifyActivity] = useState<Activity | null>(null);
+  const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
       title: '',
@@ -173,6 +183,99 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }
       return [];
   };
+
+  // --- NOTIFICATION LOGIC ---
+  const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
+      e.stopPropagation();
+      const targetStudents = getAttendeesList(activity);
+      
+      if (targetStudents.length === 0) {
+          alert("Não há alunos vinculados a esta atividade.");
+          return;
+      }
+
+      const typeLabel = activity.type === 'GAME' ? 'Convocação para Jogo' : 'Lembrete de Treino';
+      
+      if (confirm(`Deseja enviar ${typeLabel} para ${targetStudents.length} atletas via WhatsApp?\n\nO sistema abrirá uma janela por vez com intervalo de 10 segundos.`)) {
+          setNotifyActivity(activity);
+          setNotifyQueue(targetStudents);
+          setNotifyCurrentIndex(0);
+          setNotifyIsRunning(true);
+          setNotifyModalOpen(true);
+          setNotifyLogs([`Iniciando envio para ${targetStudents.length} atletas...`]);
+          setNotifyCountdown(1);
+      }
+  };
+
+  useEffect(() => {
+      if (!notifyModalOpen || !notifyIsRunning || !notifyActivity) {
+          if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+          return;
+      }
+
+      if (notifyCurrentIndex >= notifyQueue.length) {
+          setNotifyIsRunning(false);
+          setNotifyLogs(prev => [...prev, "✅ Todos os comunicados foram enviados!"]);
+          return;
+      }
+
+      if (notifyCountdown > 0) {
+          notifyTimerRef.current = setTimeout(() => {
+              setNotifyCountdown(prev => prev - 1);
+          }, 1000);
+      } else {
+          processNotifyItem(notifyQueue[notifyCurrentIndex]);
+      }
+
+      return () => {
+          if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+      };
+  }, [notifyModalOpen, notifyIsRunning, notifyCountdown, notifyCurrentIndex, notifyQueue, notifyActivity]);
+
+  const processNotifyItem = (student: Student) => {
+      if (!notifyActivity) return;
+
+      const phone = student.guardian.phone.replace(/\D/g, '');
+      
+      if (phone) {
+          const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
+          const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+          const date = formatDate(notifyActivity.date);
+          
+          let message = `Olá ${student.guardian.name}, aqui é da Escolinha Garotos do Martinica! ${emoji}\n\n` +
+              `*COMUNICADO: ${type}*\n` +
+              `Atleta: *${student.name}*\n\n` +
+              `📌 *${notifyActivity.title}*\n` +
+              `📅 Data: ${date}\n` +
+              `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+
+          if (notifyActivity.location) {
+              message += `📍 Local: ${notifyActivity.location}\n`;
+          }
+
+          if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0) {
+              message += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
+          }
+
+          message += `\nContamos com a presença! Por favor, confirme.\nObrigado!`;
+          
+          const encodedMessage = encodeURIComponent(message);
+          const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
+          
+          const win = window.open(url, '_blank');
+          if (win) {
+              setNotifyLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
+          } else {
+              setNotifyLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}`, ...prev]);
+          }
+      } else {
+          setNotifyLogs(prev => [`❌ Sem telefone para ${student.name}`, ...prev]);
+      }
+
+      setNotifyCurrentIndex(prev => prev + 1);
+      setNotifyCountdown(10); // 10s delay for next
+  };
+
 
   const handleExportAttendanceReport = () => {
       const doc = new jsPDF();
@@ -336,6 +439,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 </div>
                                 {!isGuardian && (
                                     <>
+                                        <button 
+                                            onClick={(e) => handleOpenNotify(e, activity)}
+                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title={isGame ? "Convocar para Jogo" : "Notificar Treino"}
+                                        >
+                                            <Megaphone className="w-4 h-4" />
+                                        </button>
                                         <button 
                                             onClick={(e) => handleOpenEdit(e, activity)}
                                             className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
@@ -645,6 +755,64 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     </div>
                 </form>
              </div>
+        </div>
+      )}
+
+      {/* Notification Modal */}
+      {notifyModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                   <Megaphone className="w-5 h-5 text-blue-600" /> Comunicado em Massa
+               </h3>
+               {!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>}
+            </div>
+
+            <div className="mb-6">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Progresso:</span>
+                    <span>{Math.min(notifyCurrentIndex + 1, notifyQueue.length)} de {notifyQueue.length}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${((notifyCurrentIndex) / notifyQueue.length) * 100}%` }}></div>
+                </div>
+                
+                {notifyIsRunning ? (
+                    <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                        Próximo envio em {notifyCountdown}s...
+                        <span className="text-xs font-normal text-gray-500">Mantenha esta janela aberta e permita pop-ups!</span>
+                    </div>
+                ) : (
+                    <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">
+                        Processo Finalizado
+                    </div>
+                )}
+            </div>
+            
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">
+                {notifyLogs.map((log, i) => (
+                    <div key={i} className="mb-1">{log}</div>
+                ))}
+                {notifyLogs.length === 0 && <div className="text-gray-500">Aguardando início...</div>}
+            </div>
+
+            <div className="flex justify-end gap-2">
+                {notifyIsRunning ? (
+                    <button onClick={() => setNotifyIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">
+                        <Pause className="w-4 h-4" /> Pausar
+                    </button>
+                ) : (
+                    <button onClick={() => setNotifyIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={notifyCurrentIndex >= notifyQueue.length}>
+                        <Play className="w-4 h-4" /> Continuar
+                    </button>
+                )}
+                <button onClick={() => setNotifyModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Fechar
+                </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
