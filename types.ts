@@ -96,6 +96,7 @@ export interface Activity {
   description?: string;
   recurrence?: 'weekly' | 'none';
   attendance: string[]; // List of Student IDs present
+  feePayments?: string[]; // Novo campo: Lista de IDs que pagaram a taxa
 }
 
 export interface Transaction {

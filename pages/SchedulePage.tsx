@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -12,10 +12,11 @@ interface SchedulePageProps {
   onAddActivity: (activity: Omit<Activity, 'id'>) => void;
   onUpdateActivity: (activity: Activity) => void;
   onUpdateAttendance: (activityId: string, studentId: string) => void;
+  onUpdateFeePayment?: (activityId: string, studentId: string) => void; // Nova prop opcional
   currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, currentUser }) => {
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,7 +36,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       groupId: '',
       participants: [],
       recurrence: 'none',
-      attendance: []
+      attendance: [],
+      feePayments: []
   });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
@@ -84,7 +86,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           groupId: '',
           participants: [],
           recurrence: 'none',
-          attendance: []
+          attendance: [],
+          feePayments: []
       });
       setTargetType('GROUP');
       setSelectedStudentIds(new Set());
@@ -106,7 +109,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           groupId: activity.groupId || '',
           participants: activity.participants || [],
           recurrence: activity.recurrence || 'none',
-          attendance: activity.attendance
+          attendance: activity.attendance,
+          feePayments: activity.feePayments || []
       });
 
       if (activity.participants && activity.participants.length > 0) {
@@ -213,6 +217,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       });
 
       doc.save('Relatorio_Presenca_Geral.pdf');
+  };
+  
+  // Cálculo do total arrecadado na atividade selecionada
+  const calculateTotalCollected = (activity: Activity) => {
+      if (!activity.fee || activity.fee <= 0 || !activity.feePayments) return 0;
+      return activity.feePayments.length * activity.fee;
   };
 
   return (
@@ -335,19 +345,26 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             })}
         </div>
 
-        {/* Attendance Panel */}
+        {/* Attendance & Fee Panel */}
         <div className="lg:col-span-1">
             {selectedActivity ? (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 sticky top-4 max-h-[calc(100vh-2rem)] flex flex-col">
                     <div className="p-5 border-b border-gray-100 bg-gray-50 rounded-t-xl">
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start mb-2">
                             <div>
                                 <h3 className="font-bold text-gray-900">Lista de Presença</h3>
                                 <p className="text-sm text-gray-500">{selectedActivity.title}</p>
                             </div>
                             {selectedActivity.type === 'GAME' && selectedActivity.fee && (
-                                <div className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md">
-                                    Taxa: R$ {selectedActivity.fee}
+                                <div className="text-right">
+                                    <div className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md mb-1 inline-block">
+                                        Taxa: R$ {selectedActivity.fee}
+                                    </div>
+                                    {!isGuardian && (
+                                        <div className="text-xs text-gray-500 font-semibold">
+                                            Total: R$ {calculateTotalCollected(selectedActivity).toFixed(2)}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -356,28 +373,62 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         {getAttendeesList(selectedActivity).length > 0 ? (
                             getAttendeesList(selectedActivity).map(student => {
                                 const isPresent = selectedActivity.attendance.includes(student.id);
+                                const isFeePaid = selectedActivity.feePayments?.includes(student.id);
+                                const showFeeButton = selectedActivity.type === 'GAME' && selectedActivity.fee && selectedActivity.fee > 0;
+
                                 return (
                                     <div key={student.id} 
-                                        onClick={() => !isGuardian && onUpdateAttendance(selectedActivity.id, student.id)}
-                                        className={`flex items-center justify-between p-3 mb-1 rounded-lg transition-colors ${!isGuardian ? 'cursor-pointer' : ''} ${
-                                            isPresent ? 'bg-green-50 border border-green-100' : 'bg-red-50 hover:bg-red-100 border border-red-100'
-                                        }`}
+                                        className={`flex items-center justify-between p-3 mb-1 rounded-lg transition-colors border border-gray-100 hover:bg-gray-50`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <img src={student.photoUrl} className="w-8 h-8 rounded-full object-cover" alt="" />
-                                            <span className={`text-sm font-medium ${isPresent ? 'text-green-900' : 'text-red-900'}`}>
-                                                {student.name}
-                                            </span>
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-900 block">
+                                                    {student.name}
+                                                </span>
+                                                {/* Status Text for Mobile */}
+                                                <div className="flex gap-2 md:hidden mt-1">
+                                                    {isPresent ? <span className="text-[10px] text-green-600 font-bold">Presente</span> : <span className="text-[10px] text-red-400">Ausente</span>}
+                                                    {showFeeButton && isFeePaid && <span className="text-[10px] text-green-600 font-bold">Pago</span>}
+                                                    {showFeeButton && !isFeePaid && <span className="text-[10px] text-orange-400">Pendente</span>}
+                                                </div>
+                                            </div>
                                         </div>
-                                        {isPresent ? (
-                                            <div className="flex items-center gap-1 text-green-700 text-xs font-bold uppercase">
-                                                Presente <CheckCircle className="w-5 h-5 fill-current" />
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-1 text-red-500 text-xs font-bold uppercase">
-                                                Ausente <XCircle className="w-5 h-5" />
-                                            </div>
-                                        )}
+                                        
+                                        <div className="flex items-center gap-2">
+                                            {/* Attendance Toggle */}
+                                            {!isGuardian ? (
+                                                <button
+                                                    onClick={() => onUpdateAttendance(selectedActivity.id, student.id)}
+                                                    className={`p-2 rounded-full transition-colors ${isPresent ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                                    title={isPresent ? "Marcar Ausente" : "Marcar Presente"}
+                                                >
+                                                    {isPresent ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                                                </button>
+                                            ) : (
+                                                <div className={`p-2 rounded-full ${isPresent ? 'bg-green-100 text-green-600' : 'bg-red-50 text-red-300'}`}>
+                                                    {isPresent ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                                                </div>
+                                            )}
+
+                                            {/* Fee Payment Toggle (Only for Games with Fee) */}
+                                            {showFeeButton && (
+                                                !isGuardian ? (
+                                                    <button
+                                                        onClick={() => onUpdateFeePayment && onUpdateFeePayment(selectedActivity.id, student.id)}
+                                                        className={`p-2 rounded-full transition-colors ${isFeePaid ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-orange-50 text-orange-300 hover:bg-orange-100'}`}
+                                                        title={isFeePaid ? "Marcar como Não Pago" : "Marcar como Pago"}
+                                                    >
+                                                        <DollarSign className="w-5 h-5" />
+                                                    </button>
+                                                ) : (
+                                                     // Guardian View of Fee
+                                                    <div className={`p-2 rounded-full ${isFeePaid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}>
+                                                        <DollarSign className="w-5 h-5" />
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
                                     </div>
                                 )
                             })

@@ -178,7 +178,8 @@ function App() {
                  startTime: a.start_time,
                  endTime: a.end_time,
                  recurrence: a.recurrence,
-                 attendance: a.attendance || []
+                 attendance: a.attendance || [],
+                 feePayments: a.fee_payments || [] // Mapeia fee_payments
              })));
         }
 
@@ -607,7 +608,8 @@ function App() {
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance
+          attendance: a.attendance,
+          fee_payments: a.feePayments || [] // Save fee payments
       };
       const { data, error } = await supabase.from('activities').insert([payload]).select().single();
       if(data && !error) {
@@ -626,7 +628,8 @@ function App() {
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance
+          attendance: a.attendance,
+          fee_payments: a.feePayments || []
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
       if(!error) {
@@ -644,6 +647,23 @@ function App() {
       const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, attendance: newAttendance } : a));
+      }
+  };
+
+  const handleUpdateFeePayment = async (aid: string, sid: string) => {
+      const activity = activities.find(a => a.id === aid);
+      if(!activity) return;
+
+      // Inicializa feePayments se não existir
+      const currentFeePayments = activity.feePayments || [];
+      
+      const newFeePayments = currentFeePayments.includes(sid)
+        ? currentFeePayments.filter(id => id !== sid)
+        : [...currentFeePayments, sid];
+
+      const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
+      if(!error) {
+          setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
       }
   };
 
@@ -912,6 +932,7 @@ function App() {
                   onAddActivity={handleAddActivity} 
                   onUpdateActivity={handleUpdateActivity}
                   onUpdateAttendance={handleUpdateAttendance}
+                  onUpdateFeePayment={handleUpdateFeePayment}
                   currentUser={currentUser}
                />;
       case 'finance':
