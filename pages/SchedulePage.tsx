@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -31,6 +31,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       title: '',
       type: 'TRAINING',
       fee: 0,
+      location: '',
       date: new Date().toISOString().split('T')[0],
       startTime: '14:00',
       endTime: '15:30',
@@ -81,6 +82,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           title: '',
           type: 'TRAINING',
           fee: 0,
+          location: '',
           date: new Date().toISOString().split('T')[0],
           startTime: '14:00',
           endTime: '15:30',
@@ -104,6 +106,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           title: activity.title,
           type: activity.type || 'TRAINING',
           fee: activity.fee || 0,
+          location: activity.location || '',
           date: activity.date,
           startTime: activity.startTime,
           endTime: activity.endTime,
@@ -297,6 +300,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         </span>
                                     )}
                                 </h4>
+                                {activity.location && (
+                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-600">
+                                        <MapPin className="w-3 h-3 text-red-500" />
+                                        {activity.location}
+                                    </div>
+                                )}
                                 <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
                                     <span className="flex items-center gap-1">
                                         <CalendarIcon className="w-4 h-4" />
@@ -376,6 +385,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             <div>
                                 <h3 className="font-bold text-gray-900">Lista de Presença</h3>
                                 <p className="text-sm text-gray-500">{selectedActivity.title}</p>
+                                {selectedActivity.location && <p className="text-xs text-gray-400 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3" /> {selectedActivity.location}</p>}
                             </div>
                             {selectedActivity.type === 'GAME' && selectedActivity.fee && (
                                 <div className="text-right">
@@ -498,8 +508,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     </div>
 
                     {newActivity.type === 'GAME' && (
-                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                             <div className="flex items-center gap-2 mb-2">
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 space-y-3">
+                             <div className="flex items-center gap-2">
                                  <input 
                                     type="checkbox" 
                                     id="hasFee"
@@ -523,6 +533,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                      />
                                  </div>
                              )}
+                             <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Local / Endereço</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border rounded-lg p-2 bg-white"
+                                    placeholder="Ex: Rua das Flores, 123 - Campo do Real"
+                                    value={newActivity.location}
+                                    onChange={(e) => setNewActivity({...newActivity, location: e.target.value})}
+                                />
+                             </div>
                         </div>
                     )}
 

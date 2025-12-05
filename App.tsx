@@ -7,10 +7,9 @@ import { GroupsPage } from './pages/GroupsPage';
 import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
-import { AICoachPage } from './pages/AICoachPage';
 import { UsersPage } from './pages/UsersPage';
 import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
-import { Menu, Loader2, Trophy, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
+import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
 
@@ -172,6 +171,7 @@ function App() {
                  title: a.title,
                  type: a.activity_type || 'TRAINING', // Mapeia coluna activity_type
                  fee: a.fee || 0,
+                 location: a.location || '', // Mapeia coluna location
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -604,6 +604,7 @@ function App() {
           title: a.title,
           activity_type: a.type, 
           fee: a.fee, 
+          location: a.location, // Mapeado
           group_id: a.groupId || null,
           participants: a.participants,
           start_time: a.startTime,
@@ -657,6 +658,7 @@ function App() {
           title: a.title,
           activity_type: a.type, 
           fee: a.fee,
+          location: a.location, // Mapeado
           group_id: a.groupId || null,
           participants: a.participants,
           date: a.date,
@@ -1000,10 +1002,6 @@ function App() {
                 onDeleteUser={handleDeleteUser}
             /> : 
             <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
-      case 'ai-coach':
-         const totalIncome = transactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, c) => acc + c.amount, 0);
-         const totalExpense = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, c) => acc + c.amount, 0);
-         return <AICoachPage income={totalIncome} expense={totalExpense} />;
       default:
         return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
     }
@@ -1038,7 +1036,6 @@ function App() {
                         {currentPage === 'schedule' && 'Agenda'}
                         {currentPage === 'finance' && 'Fluxo de Caixa'}
                         {currentPage === 'users' && 'Gestão de Usuários'}
-                        {currentPage === 'ai-coach' && 'Inteligência Artificial'}
                     </h1>
                 </div>
             </div>

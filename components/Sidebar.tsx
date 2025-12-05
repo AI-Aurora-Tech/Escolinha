@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Trophy, Shirt, Ticket, X, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Shirt, Ticket, X, Settings } from 'lucide-react';
 import { User, UserRole } from '../types';
 
 interface SidebarProps {
@@ -23,7 +24,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
     // Finance hidden for Guardians here because they access payments inside "Meus Filhos" -> "Histórico Financeiro"
     { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
-    { id: 'ai-coach', label: 'IA Coach', icon: Trophy, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
   ];
 
   return (
