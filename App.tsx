@@ -598,30 +598,65 @@ function App() {
   };
   
   const handleAddActivity = async (a: any) => { 
-      const payload = {
+      setIsLoading(true);
+      const payloadList = [];
+      const basePayload = {
           title: a.title,
-          activity_type: a.type, // Map to DB column
-          fee: a.fee, // Map to DB column
+          activity_type: a.type, 
+          fee: a.fee, 
           group_id: a.groupId || null,
           participants: a.participants,
-          date: a.date,
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: a.attendance,
-          fee_payments: a.feePayments || [] // Save fee payments
+          fee_payments: a.feePayments || [] 
       };
-      const { data, error } = await supabase.from('activities').insert([payload]).select().single();
-      if(data && !error) {
-           setActivities(prev => [...prev, { ...a, id: data.id }]);
+
+      const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
+      const startYear = startDate.getFullYear();
+
+      // Se for recorrente, gerar para o resto do ano
+      if (a.recurrence === 'weekly') {
+          const current = new Date(startDate);
+          while (current.getFullYear() === startYear) {
+               const dateStr = current.toISOString().split('T')[0];
+               payloadList.push({
+                   ...basePayload,
+                   date: dateStr
+               });
+               // Adicionar 7 dias
+               current.setDate(current.getDate() + 7);
+          }
+      } else {
+          // Atividade pontual
+          payloadList.push({
+              ...basePayload,
+              date: a.date
+          });
       }
+      
+      const { data, error } = await supabase.from('activities').insert(payloadList).select();
+      
+      if(data && !error) {
+           const newActivities = data.map((newItem: any) => ({
+               ...a,
+               id: newItem.id,
+               date: newItem.date
+           }));
+           setActivities(prev => [...prev, ...newActivities]);
+      } else {
+          console.error(error);
+          alert('Erro ao agendar atividades.');
+      }
+      setIsLoading(false);
   };
   
   const handleUpdateActivity = async (a: any) => { 
       const payload = {
           title: a.title,
-          activity_type: a.type, // Map to DB column
-          fee: a.fee, // Map to DB column
+          activity_type: a.type, 
+          fee: a.fee,
           group_id: a.groupId || null,
           participants: a.participants,
           date: a.date,
@@ -635,6 +670,17 @@ function App() {
       if(!error) {
           setActivities(prev => prev.map(act => act.id === a.id ? a : act));
       }
+  };
+
+  const handleDeleteActivity = async (id: string) => {
+      setIsLoading(true);
+      const { error } = await supabase.from('activities').delete().eq('id', id);
+      if (!error) {
+          setActivities(prev => prev.filter(a => a.id !== id));
+      } else {
+          alert("Erro ao excluir atividade.");
+      }
+      setIsLoading(false);
   };
   
   const handleUpdateAttendance = async (aid: string, sid: string) => { 
@@ -933,6 +979,7 @@ function App() {
                   onUpdateActivity={handleUpdateActivity}
                   onUpdateAttendance={handleUpdateAttendance}
                   onUpdateFeePayment={handleUpdateFeePayment}
+                  onDeleteActivity={handleDeleteActivity}
                   currentUser={currentUser}
                />;
       case 'finance':

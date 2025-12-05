@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -12,11 +12,12 @@ interface SchedulePageProps {
   onAddActivity: (activity: Omit<Activity, 'id'>) => void;
   onUpdateActivity: (activity: Activity) => void;
   onUpdateAttendance: (activityId: string, studentId: string) => void;
-  onUpdateFeePayment?: (activityId: string, studentId: string) => void; // Nova prop opcional
+  onUpdateFeePayment?: (activityId: string, studentId: string) => void; 
+  onDeleteActivity?: (activityId: string) => void;
   currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, currentUser }) => {
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -124,6 +125,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setHasFee(!!activity.fee && activity.fee > 0);
       setStudentSearch('');
       setShowAddModal(true);
+  };
+
+  const handleDelete = (e: React.MouseEvent, activityId: string) => {
+      e.stopPropagation();
+      if (confirm('Tem certeza que deseja excluir esta atividade?')) {
+          if (onDeleteActivity) {
+              onDeleteActivity(activityId);
+          }
+          if (selectedActivityId === activityId) {
+              setSelectedActivityId(null);
+          }
+      }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -313,13 +326,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     {isPast ? 'Concluído' : 'Agendado'}
                                 </div>
                                 {!isGuardian && (
-                                    <button 
-                                        onClick={(e) => handleOpenEdit(e, activity)}
-                                        className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                        title="Editar Atividade"
-                                    >
-                                        <Edit className="w-4 h-4" />
-                                    </button>
+                                    <>
+                                        <button 
+                                            onClick={(e) => handleOpenEdit(e, activity)}
+                                            className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                            title="Editar Atividade"
+                                        >
+                                            <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleDelete(e, activity.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                            title="Excluir Atividade"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -511,7 +533,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 value={newActivity.recurrence} 
                                 onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as 'weekly' | 'none'})}>
                                  <option value="none">Pontual</option>
-                                 <option value="weekly">Recorrente (Semanal)</option>
+                                 <option value="weekly">Recorrente (Semanal - Ano todo)</option>
                              </select>
                         </div>
                         <div>
