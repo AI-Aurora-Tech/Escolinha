@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
@@ -153,23 +154,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
      const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
      
      const queue: Transaction[] = [];
-     const logs: string[] = [];
-
-     // We need to iterate all active students
+     
      const activeStudents = students.filter(s => s.active);
-
-     // Pre-load current month transactions to avoid re-fetching inside loop (using props data)
-     // But wait, props.transactions might be stale if we just generated.
-     // ideally we would call a backend function, but let's use what we have and simulate.
-     // Actually, we should rely on what we have in 'transactions'.
-     
-     // Note: Generating transactions here would require updating App state or DB directly.
-     // Ideally we trigger the generation in App.tsx then wait, but for simplicity let's assume
-     // the user clicked "Gerar Cobranças (Automático)" in Finance Page or we rely on existing ones.
-     // However, the prompt implies "Gerar ... e enviar".
-     // Let's assume runTuitionJob in App.tsx ran on mount.
-     
-     // BUT, to be safe, let's filter what exists pending for THIS month or Late.
      
      activeStudents.forEach(student => {
          // Find transaction for this month
@@ -1430,7 +1416,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          {/* Other filters can remain visible for Guardians to filter their own children if they have many */}
           <div className="md:col-span-2 relative">
              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
              <input 
@@ -1900,7 +1885,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             {!isGuardian && (
                                 <button 
                                     type="submit" 
-                                    form="student-form" // Connects to the form ID
+                                    form="student-form" 
                                     className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
                                 >
                                     {editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}
@@ -1913,3 +1898,115 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           </div>
         </div>
       )}
+
+      {/* PIX Modal */}
+      {showPixModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 mx-auto"><QrCode className="w-5 h-5 text-green-600" /> Pagamento PIX</h3>
+                    <button onClick={() => setShowPixModal(false)} className="text-gray-400 hover:text-gray-600 absolute right-6"><X className="w-5 h-5" /></button>
+                </div>
+                
+                {pixLoading ? (
+                    <div className="py-10 flex flex-col items-center">
+                        <Loader2 className="w-10 h-10 text-green-500 animate-spin mb-3" />
+                        <p className="text-sm text-gray-500">Gerando QR Code...</p>
+                    </div>
+                ) : pixData ? (
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600">Escaneie o QR Code abaixo com seu aplicativo de banco:</p>
+                        <div className="bg-gray-100 p-4 rounded-lg inline-block">
+                            {pixData.qrCodeBase64 && <img src={`data:image/jpeg;base64,${pixData.qrCodeBase64}`} alt="QR Code PIX" className="w-48 h-48 mix-blend-multiply" />}
+                        </div>
+                        <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                             <p className="text-xs font-bold text-green-800 mb-1 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Aguardando pagamento...</p>
+                             <p className="text-[10px] text-green-600">A baixa será automática assim que confirmado.</p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100">
+                            <p className="text-xs text-gray-500 mb-2">Ou copie o código:</p>
+                            <button onClick={copyPixCode} className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-xs font-mono hover:bg-gray-200 transition-colors">
+                                <Copy className="w-3 h-3" /> Copiar Código Pix
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-red-500 py-4">Erro ao carregar dados do PIX.</p>
+                )}
+            </div>
+        </div>
+      )}
+
+      {/* Manual Charge Modal */}
+      {showChargeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-gray-900">Nova Cobrança Avulsa</h3>
+                    <button onClick={() => setShowChargeModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                </div>
+                <form onSubmit={handleSaveManualCharge} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label>
+                        <input required type="text" className="w-full border rounded-lg p-2" placeholder="Ex: Uniforme, Taxa de Excursão"
+                            value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label>
+                        <input required type="number" step="0.01" min="0" className="w-full border rounded-lg p-2"
+                            value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label>
+                        <input required type="date" className="w-full border rounded-lg p-2"
+                            value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} />
+                    </div>
+                    <button type="submit" className="w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 font-bold">Criar Cobrança</button>
+                </form>
+            </div>
+        </div>
+      )}
+
+      {/* Bulk Send Modal */}
+      {isBulkModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      {hasZApi ? <Zap className="w-6 h-6 text-yellow-500" /> : <MessageCircle className="w-6 h-6 text-green-500" />}
+                      Envio em Massa
+                  </h3>
+                  
+                  {bulkIsRunning ? (
+                      <div className="text-center py-8">
+                          <div className="w-16 h-16 border-4 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-4"></div>
+                          <p className="text-lg font-bold text-gray-800">Enviando cobranças...</p>
+                          <p className="text-sm text-gray-500 mt-2">
+                              {bulkCurrentIndex} de {bulkQueue.length} processados
+                          </p>
+                          <div className="mt-4 bg-gray-100 rounded-full h-2 w-full overflow-hidden">
+                              <div className="bg-primary-500 h-full transition-all duration-300" style={{ width: `${(bulkCurrentIndex / bulkQueue.length) * 100}%` }}></div>
+                          </div>
+                          <p className="text-xs text-orange-600 mt-4 font-medium animate-pulse">
+                              Próximo envio em {bulkCountdown}s... {hasZApi ? "(Automático)" : "(Não feche a janela)"}
+                          </p>
+                      </div>
+                  ) : (
+                      <div className="text-center py-8">
+                          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                          <p className="text-lg font-bold text-gray-800">Processo Finalizado!</p>
+                          <button onClick={() => setIsBulkModalOpen(false)} className="mt-6 px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900">Fechar</button>
+                      </div>
+                  )}
+
+                  <div className="bg-gray-900 rounded-lg p-4 h-40 overflow-y-auto text-xs font-mono text-green-400">
+                      {bulkLogs.map((log, i) => (
+                          <div key={i}>{log}</div>
+                      ))}
+                      <div ref={(el) => el?.scrollIntoView({ behavior: "smooth" })} />
+                  </div>
+              </div>
+          </div>
+      )}
+    </div>
+  );
+};
