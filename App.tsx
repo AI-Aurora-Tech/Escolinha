@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -554,7 +552,7 @@ function App() {
         rg: studentData.rg,
         cpf: studentData.cpf,
         phone: studentData.phone,
-        medical_expiry: studentData.medicalCertificateExpiry,
+        medical_expiry: studentData.medicalCertificateExpiry || null, // Allow empty to be null
         photo_url: finalPhotoUrl,
         address: studentData.address,
         guardian: studentData.guardian,
@@ -599,7 +597,7 @@ function App() {
         rg: s.rg,
         cpf: s.cpf,
         phone: s.phone,
-        medical_expiry: s.medicalCertificateExpiry,
+        medical_expiry: s.medicalCertificateExpiry || null, // Allow empty to be null
         photo_url: s.photoUrl,
         address: s.address,
         guardian: s.guardian,
@@ -654,7 +652,7 @@ function App() {
           rg: updatedStudent.rg,
           cpf: updatedStudent.cpf,
           phone: updatedStudent.phone,
-          medical_expiry: updatedStudent.medicalCertificateExpiry,
+          medical_expiry: updatedStudent.medicalCertificateExpiry || null, // Allow empty to be null
           photo_url: finalPhotoUrl,
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
