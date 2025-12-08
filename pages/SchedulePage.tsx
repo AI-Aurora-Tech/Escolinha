@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, CalendarRange } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -18,6 +18,9 @@ interface SchedulePageProps {
 }
 
 export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, currentUser }) => {
+  // --- DATE SELECTION STATE ---
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -26,6 +29,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
+
+  // --- REPORT STATE ---
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [reportEndDate, setReportEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
 
   // --- NOTIFICATION STATE ---
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -56,7 +64,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const selectedActivity = selectedActivityId ? activities.find(a => a.id === selectedActivityId) || null : null;
 
-  const sortedActivities = [...activities].sort((a, b) => {
+  // Filter activities by the SELECTED DATE
+  const dailyActivities = activities
+    .filter(a => a.date === selectedDate)
+    .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
+
+  // Keep full sorted list for Report Export if needed
+  const allSortedActivities = [...activities].sort((a, b) => {
       return new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime();
   });
 
@@ -76,6 +90,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       return dateString;
   };
 
+  const handleNavigateDate = (days: number) => {
+      const current = new Date(selectedDate + 'T00:00:00');
+      current.setDate(current.getDate() + days);
+      setSelectedDate(current.toISOString().split('T')[0]);
+      setSelectedActivityId(null); // Clear selection when changing days
+  };
+
+  const handleGoToday = () => {
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedActivityId(null);
+  };
+
   const toggleStudentSelection = (id: string) => {
       const newSet = new Set(selectedStudentIds);
       if (newSet.has(id)) {
@@ -93,7 +119,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           type: 'TRAINING',
           fee: 0,
           location: '',
-          date: new Date().toISOString().split('T')[0],
+          date: selectedDate, // Use currently selected date
           startTime: '14:00',
           endTime: '15:30',
           groupId: '',
@@ -276,72 +302,161 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setNotifyCountdown(10); // 10s delay for next
   };
 
+  // --- REPORT GENERATION LOGIC ---
 
-  const handleExportAttendanceReport = () => {
+  const handleExportSingleActivityPDF = (e: React.MouseEvent, activity: Activity) => {
+      e.stopPropagation();
+      const doc = new jsPDF();
+      
+      const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
+      const group = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
+      const date = formatDate(activity.date);
+      
+      doc.setFontSize(16);
+      doc.setTextColor(249, 115, 22); // Orange
+      doc.text(`Relatório de Atividade: ${type}`, 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.text(`Título: ${activity.title}`, 14, 30);
+      doc.text(`Data: ${date} - ${activity.startTime} às ${activity.endTime}`, 14, 35);
+      doc.text(`Grupo: ${group}`, 14, 40);
+      if (activity.location) doc.text(`Local: ${activity.location}`, 14, 45);
+
+      const expectedStudents = getAttendeesList(activity);
+      const isGameWithFee = activity.type === 'GAME' && activity.fee && activity.fee > 0;
+
+      const reportRows = expectedStudents.map(student => {
+          const isPresent = activity.attendance.includes(student.id);
+          let status = isPresent ? 'PRESENTE' : 'AUSENTE';
+          
+          let payStatus = '-';
+          if (isGameWithFee) {
+              payStatus = activity.feePayments?.includes(student.id) ? 'PAGO' : 'PENDENTE';
+          }
+
+          return [student.name, status, payStatus];
+      });
+
+      autoTable(doc, {
+          startY: 50,
+          head: [['Atleta', 'Presença', 'Taxa']],
+          body: reportRows,
+          headStyles: { fillColor: [249, 115, 22] },
+          didParseCell: (data) => {
+               if (data.section === 'body') {
+                   if (data.column.index === 1 && data.cell.raw === 'AUSENTE') data.cell.styles.textColor = [220, 38, 38];
+                   if (data.column.index === 1 && data.cell.raw === 'PRESENTE') data.cell.styles.textColor = [22, 163, 74];
+                   if (data.column.index === 2 && data.cell.raw === 'PENDENTE') data.cell.styles.textColor = [220, 38, 38];
+                   if (data.column.index === 2 && data.cell.raw === 'PAGO') data.cell.styles.textColor = [22, 163, 74];
+               }
+          }
+      });
+      
+      // Summary
+      const presentCount = expectedStudents.filter(s => activity.attendance.includes(s.id)).length;
+      let summaryY = (doc as any).lastAutoTable.finalY + 10;
+      
+      doc.setFontSize(10);
+      doc.text(`Total Presentes: ${presentCount} / ${expectedStudents.length}`, 14, summaryY);
+      
+      if (isGameWithFee) {
+          const paidCount = expectedStudents.filter(s => activity.feePayments?.includes(s.id)).length;
+          const totalCollected = paidCount * (activity.fee || 0);
+          doc.text(`Taxas Pagas: ${paidCount} / ${expectedStudents.length}`, 14, summaryY + 5);
+          doc.text(`Total Arrecadado: R$ ${totalCollected.toFixed(2)}`, 14, summaryY + 10);
+      }
+
+      doc.save(`Atividade_${date.replace(/\//g, '-')}_${activity.title}.pdf`);
+  };
+
+  const handleExportPeriodReport = () => {
+      if (!reportStartDate || !reportEndDate) {
+          alert("Selecione o período.");
+          return;
+      }
+
+      const activitiesInRange = allSortedActivities.filter(a => 
+          a.date >= reportStartDate && a.date <= reportEndDate
+      );
+
+      if (activitiesInRange.length === 0) {
+          alert("Nenhuma atividade encontrada neste período.");
+          return;
+      }
+
       const doc = new jsPDF();
       doc.setFontSize(18);
-      doc.text('Relatório Geral de Frequência', 14, 20);
+      doc.setTextColor(249, 115, 22);
+      doc.text('Relatório Geral de Atividades', 14, 20);
+      
       doc.setFontSize(10);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 28);
-
+      doc.setTextColor(0);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+      
       const reportRows: any[] = [];
-      const activitiesToExport = sortedActivities;
 
-      activitiesToExport.forEach(activity => {
+      activitiesInRange.forEach(activity => {
           const expectedStudents = getAttendeesList(activity);
-          const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+          const isGameWithFee = activity.type === 'GAME' && activity.fee && activity.fee > 0;
+          const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
+          const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
 
           expectedStudents.forEach(student => {
               const isPresent = activity.attendance.includes(student.id);
-              const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
-              const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
-              
               let status = isPresent ? 'PRESENTE' : 'AUSENTE';
-              if (!isPast && !isPresent) status = 'AGENDADO';
+              
+              let payStatus = '-';
+              if (isGameWithFee) {
+                  payStatus = activity.feePayments?.includes(student.id) ? 'PAGO' : 'PENDENTE';
+              }
 
               reportRows.push([
                   formatDate(activity.date),
-                  `${type}: ${activity.title}`,
+                  activity.title,
                   groupName,
+                  type,
                   student.name,
-                  status
+                  status,
+                  payStatus
               ]);
           });
       });
 
-      if (reportRows.length === 0) {
-          alert("Não há dados de atividades para exportar.");
-          return;
-      }
-
       autoTable(doc, {
           startY: 35,
-          head: [['Data', 'Atividade', 'Grupo/Tipo', 'Aluno', 'Status']],
+          head: [['Data', 'Atividade', 'Grupo', 'Tipo', 'Aluno', 'Status', 'Taxa']],
           body: reportRows,
           styles: { fontSize: 8 },
-          headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+          headStyles: { fillColor: [249, 115, 22] },
           didParseCell: (data) => {
-              if (data.section === 'body' && data.column.index === 4) {
-                  const status = data.cell.raw;
-                  if (status === 'AUSENTE') {
-                      data.cell.styles.textColor = [220, 38, 38];
-                      data.cell.styles.fontStyle = 'bold';
-                  } else if (status === 'PRESENTE') {
-                      data.cell.styles.textColor = [22, 163, 74];
-                  } else {
-                      data.cell.styles.textColor = [100, 116, 139];
+              if (data.section === 'body') {
+                  if (data.column.index === 5) {
+                      if (data.cell.raw === 'AUSENTE') data.cell.styles.textColor = [220, 38, 38];
+                      if (data.cell.raw === 'PRESENTE') data.cell.styles.textColor = [22, 163, 74];
+                  }
+                  if (data.column.index === 6) {
+                      if (data.cell.raw === 'PENDENTE') data.cell.styles.textColor = [220, 38, 38];
+                      if (data.cell.raw === 'PAGO') data.cell.styles.textColor = [22, 163, 74];
                   }
               }
           }
       });
 
-      doc.save('Relatorio_Presenca_Geral.pdf');
+      doc.save(`Relatorio_Periodo_${formatDate(reportStartDate)}_a_${formatDate(reportEndDate)}.pdf`);
+      setShowReportModal(false);
   };
   
   // Cálculo do total arrecadado na atividade selecionada
   const calculateTotalCollected = (activity: Activity) => {
       if (!activity.fee || activity.fee <= 0 || !activity.feePayments) return 0;
       return activity.feePayments.length * activity.fee;
+  };
+
+  const dayOfWeekNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  const getDayName = (dateStr: string) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      return dayOfWeekNames[d.getDay()];
   };
 
   return (
@@ -351,15 +466,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
                 <button 
-                    onClick={handleExportAttendanceReport}
-                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+                    onClick={() => setShowReportModal(true)}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors text-sm"
                 >
                     <FileText className="w-4 h-4" />
-                    Exportar Relatório
+                    Relatório Geral
                 </button>
                 <button 
                     onClick={handleOpenAdd}
-                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors"
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm"
                 >
                     <CalendarIcon className="w-4 h-4" />
                     Agendar
@@ -368,122 +483,182 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         )}
       </div>
 
+      {/* --- DATE NAVIGATION BAR --- */}
+      <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button 
+                onClick={() => handleNavigateDate(-1)} 
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                title="Dia Anterior"
+              >
+                  <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 min-w-[200px]">
+                  <CalendarIcon className="w-4 h-4 text-primary-600" />
+                  <input 
+                      type="date" 
+                      className="bg-transparent outline-none text-gray-800 font-medium text-sm"
+                      value={selectedDate}
+                      onChange={(e) => {
+                          if (e.target.value) {
+                              setSelectedDate(e.target.value);
+                              setSelectedActivityId(null);
+                          }
+                      }}
+                  />
+                  <span className="text-xs text-gray-400 font-normal">| {getDayName(selectedDate)}</span>
+              </div>
+              <button 
+                onClick={() => handleNavigateDate(1)} 
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                title="Próximo Dia"
+              >
+                  <ChevronRight className="w-5 h-5" />
+              </button>
+          </div>
+          <button 
+            onClick={handleGoToday}
+            className="text-sm text-primary-600 font-medium hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-colors"
+          >
+              Ir para Hoje
+          </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Activity List */}
         <div className="lg:col-span-2 space-y-4">
-            {sortedActivities.map(activity => {
-                const group = groups.find(g => g.id === activity.groupId);
-                const isPast = new Date(activity.date + 'T' + activity.endTime) < new Date();
-                const participantCount = activity.groupId 
-                    ? students.filter(s => s.groupId === activity.groupId).length 
-                    : (activity.participants?.length || 0);
-                const isGame = activity.type === 'GAME';
-                
-                return (
-                    <div 
-                        key={activity.id} 
-                        className={`bg-white p-5 rounded-xl border transition-all cursor-pointer hover:shadow-md relative group ${
-                            selectedActivityId === activity.id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'
-                        }`}
-                        onClick={() => setSelectedActivityId(activity.id)}
-                    >
-                        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                            <div>
-                                <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-                                    {isGame ? <Trophy className="w-4 h-4 text-yellow-500" /> : <CalendarIcon className="w-4 h-4 text-primary-500" />}
-                                    {activity.title}
-                                    {activity.recurrence === 'weekly' && (
-                                        <span title="Recorrente (Semanal)" className="bg-blue-100 text-blue-700 p-1 rounded-full">
-                                            <Repeat className="w-3 h-3" />
-                                        </span>
-                                    )}
-                                    {isGame && activity.fee && activity.fee > 0 && (
-                                        <span title={`Taxa: R$ ${activity.fee}`} className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
-                                            <Coins className="w-3 h-3" /> R$ {activity.fee}
-                                        </span>
-                                    )}
-                                </h4>
-                                {activity.location && (
-                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-600">
-                                        <MapPin className="w-3 h-3 text-red-500" />
-                                        {activity.location}
-                                    </div>
-                                )}
-                                <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
-                                    <span className="flex items-center gap-1">
-                                        <CalendarIcon className="w-4 h-4" />
-                                        {formatDate(activity.date)}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="w-4 h-4" />
-                                        {activity.startTime} - {activity.endTime}
-                                    </span>
-                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-gray-700">
-                                        {group ? (
-                                            <>
-                                                <Users className="w-3 h-3" />
-                                                {group.name}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <UserIcon className="w-3 h-3" />
-                                                {participantCount} Alunos
-                                            </>
+            {dailyActivities.length > 0 ? (
+                dailyActivities.map(activity => {
+                    const group = groups.find(g => g.id === activity.groupId);
+                    const isPast = new Date(activity.date + 'T' + activity.endTime) < new Date();
+                    const participantCount = activity.groupId 
+                        ? students.filter(s => s.groupId === activity.groupId).length 
+                        : (activity.participants?.length || 0);
+                    const isGame = activity.type === 'GAME';
+                    
+                    return (
+                        <div 
+                            key={activity.id} 
+                            className={`bg-white p-5 rounded-xl border transition-all cursor-pointer hover:shadow-md relative group ${
+                                selectedActivityId === activity.id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'
+                            }`}
+                            onClick={() => setSelectedActivityId(activity.id)}
+                        >
+                            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                                <div>
+                                    <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                                        {isGame ? <Trophy className="w-4 h-4 text-yellow-500" /> : <CalendarIcon className="w-4 h-4 text-primary-500" />}
+                                        {activity.title}
+                                        {activity.recurrence === 'weekly' && (
+                                            <span title="Recorrente (Semanal)" className="bg-blue-100 text-blue-700 p-1 rounded-full">
+                                                <Repeat className="w-3 h-3" />
+                                            </span>
                                         )}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 self-end sm:self-auto">
-                                <div className={`px-3 py-1 rounded-full text-xs font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
-                                    {isPast ? 'Concluído' : 'Agendado'}
-                                </div>
-                                {!isGuardian && (
-                                    <>
-                                        <button 
-                                            onClick={(e) => handleOpenNotify(e, activity)}
-                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                            title={isGame ? "Convocar para Jogo" : "Notificar Treino"}
-                                        >
-                                            <Megaphone className="w-4 h-4" />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleOpenEdit(e, activity)}
-                                            className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                            title="Editar Atividade"
-                                        >
-                                            <Edit className="w-4 h-4" />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleDelete(e, activity.id)}
-                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                            title="Excluir Atividade"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                        <div className="mt-4 flex items-center gap-2">
-                             <div className="flex -space-x-2 overflow-hidden">
-                                {activity.attendance.slice(0, 5).map(studentId => {
-                                    const st = students.find(s => s.id === studentId);
-                                    if(!st) return null;
-                                    return <img key={st.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src={st.photoUrl} alt={st.name} title={st.name} />
-                                })}
-                                {activity.attendance.length > 5 && (
-                                    <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center text-[10px] font-medium text-gray-600">
-                                        +{activity.attendance.length - 5}
+                                        {isGame && activity.fee && activity.fee > 0 && (
+                                            <span title={`Taxa: R$ ${activity.fee}`} className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
+                                                <Coins className="w-3 h-3" /> R$ {activity.fee}
+                                            </span>
+                                        )}
+                                    </h4>
+                                    {activity.location && (
+                                        <div className="flex items-center gap-1 mt-1 text-xs text-gray-600">
+                                            <MapPin className="w-3 h-3 text-red-500" />
+                                            {activity.location}
+                                        </div>
+                                    )}
+                                    <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
+                                        <span className="flex items-center gap-1">
+                                            <Clock className="w-4 h-4" />
+                                            {activity.startTime} - {activity.endTime}
+                                        </span>
+                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-gray-700">
+                                            {group ? (
+                                                <>
+                                                    <Users className="w-3 h-3" />
+                                                    {group.name}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <UserIcon className="w-3 h-3" />
+                                                    {participantCount} Alunos
+                                                </>
+                                            )}
+                                        </span>
                                     </div>
-                                )}
-                             </div>
-                             <span className="text-xs text-gray-500">
-                                {activity.attendance.length > 0 ? `${activity.attendance.length} presentes` : 'Nenhuma presença confirmada'}
-                             </span>
+                                </div>
+                                <div className="flex items-center gap-2 self-end sm:self-auto">
+                                    <div className={`px-3 py-1 rounded-full text-xs font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
+                                        {isPast ? 'Concluído' : 'Agendado'}
+                                    </div>
+                                    {!isGuardian && (
+                                        <>
+                                            <button 
+                                                onClick={(e) => handleOpenNotify(e, activity)}
+                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title={isGame ? "Convocar para Jogo" : "Notificar Treino"}
+                                            >
+                                                <Megaphone className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleExportSingleActivityPDF(e, activity)}
+                                                className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                                                title="Relatório desta atividade"
+                                            >
+                                                <FileText className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleOpenEdit(e, activity)}
+                                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                                title="Editar Atividade"
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleDelete(e, activity.id)}
+                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                                title="Excluir Atividade"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2">
+                                <div className="flex -space-x-2 overflow-hidden">
+                                    {activity.attendance.slice(0, 5).map(studentId => {
+                                        const st = students.find(s => s.id === studentId);
+                                        if(!st) return null;
+                                        return <img key={st.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src={st.photoUrl} alt={st.name} title={st.name} />
+                                    })}
+                                    {activity.attendance.length > 5 && (
+                                        <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center text-[10px] font-medium text-gray-600">
+                                            +{activity.attendance.length - 5}
+                                        </div>
+                                    )}
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                    {activity.attendance.length > 0 ? `${activity.attendance.length} presentes` : 'Nenhuma presença confirmada'}
+                                </span>
+                            </div>
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })
+            ) : (
+                <div className="bg-white p-12 rounded-xl border border-gray-100 text-center flex flex-col items-center justify-center h-64">
+                    <CalendarIcon className="w-12 h-12 text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900">Dia Livre</h3>
+                    <p className="text-gray-500">Nenhuma atividade agendada para {formatDate(selectedDate)}.</p>
+                    {!isGuardian && (
+                         <button 
+                            onClick={handleOpenAdd}
+                            className="mt-4 text-primary-600 font-medium hover:text-primary-700 hover:underline"
+                        >
+                            Agendar uma atividade agora
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
 
         {/* Attendance & Fee Panel */}
@@ -493,7 +668,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div className="p-5 border-b border-gray-100 bg-gray-50 rounded-t-xl">
                         <div className="flex justify-between items-start mb-2">
                             <div>
-                                <h3 className="font-bold text-gray-900">Lista de Presença</h3>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="font-bold text-gray-900">Lista de Presença</h3>
+                                    {!isGuardian && (
+                                        <button 
+                                            onClick={(e) => handleExportSingleActivityPDF(e, selectedActivity)}
+                                            className="text-gray-400 hover:text-orange-600 transition-colors"
+                                            title="Baixar Relatório PDF"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
                                 <p className="text-sm text-gray-500">{selectedActivity.title}</p>
                                 {selectedActivity.location && <p className="text-xs text-gray-400 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3" /> {selectedActivity.location}</p>}
                             </div>
@@ -638,8 +824,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         step="0.01"
                                         className="w-full border rounded-lg p-2 bg-white"
                                         placeholder="0,00"
-                                        value={newActivity.fee}
-                                        onChange={(e) => setNewActivity({...newActivity, fee: parseFloat(e.target.value)})}
+                                        value={newActivity.fee === 0 ? '' : newActivity.fee}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value);
+                                            setNewActivity({...newActivity, fee: isNaN(val) ? 0 : val})
+                                        }}
                                      />
                                  </div>
                              )}
@@ -754,6 +943,45 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         </button>
                     </div>
                 </form>
+             </div>
+        </div>
+      )}
+
+      {/* Report Period Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold flex items-center gap-2"><FileText className="w-5 h-5 text-orange-600" /> Relatório Geral</h3>
+                    <button onClick={() => setShowReportModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Data Início</label>
+                        <input 
+                            type="date" 
+                            className="w-full border rounded-lg p-2" 
+                            value={reportStartDate} 
+                            onChange={(e) => setReportStartDate(e.target.value)} 
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Data Fim</label>
+                        <input 
+                            type="date" 
+                            className="w-full border rounded-lg p-2" 
+                            value={reportEndDate} 
+                            onChange={(e) => setReportEndDate(e.target.value)} 
+                        />
+                    </div>
+                    <button 
+                        onClick={handleExportPeriodReport}
+                        className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                        <FileText className="w-4 h-4" /> Gerar PDF do Período
+                    </button>
+                </div>
              </div>
         </div>
       )}

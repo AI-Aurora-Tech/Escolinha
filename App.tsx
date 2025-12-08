@@ -600,17 +600,22 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
+
+      // Robust Sanitization
+      const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
+      const locationValue = a.location || '';
+      
       const basePayload = {
           title: a.title,
           activity_type: a.type, 
-          fee: a.fee, 
-          location: a.location, // Mapeado
+          fee: feeValue, 
+          location: locationValue, 
           group_id: a.groupId || null,
-          participants: a.participants,
+          participants: a.participants || [],
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance,
+          attendance: a.attendance || [],
           fee_payments: a.feePayments || [] 
       };
 
@@ -647,30 +652,37 @@ function App() {
            }));
            setActivities(prev => [...prev, ...newActivities]);
       } else {
-          console.error(error);
-          alert('Erro ao agendar atividades.');
+          console.error("Supabase Error:", error);
+          alert(`Erro ao agendar atividades: ${error?.message || 'Erro desconhecido'}`);
       }
       setIsLoading(false);
   };
   
   const handleUpdateActivity = async (a: any) => { 
+      // Robust Sanitization
+      const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
+      const locationValue = a.location || '';
+
       const payload = {
           title: a.title,
           activity_type: a.type, 
-          fee: a.fee,
-          location: a.location, // Mapeado
+          fee: feeValue,
+          location: locationValue,
           group_id: a.groupId || null,
-          participants: a.participants,
+          participants: a.participants || [],
           date: a.date,
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance,
+          attendance: a.attendance || [],
           fee_payments: a.feePayments || []
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
       if(!error) {
           setActivities(prev => prev.map(act => act.id === a.id ? a : act));
+      } else {
+          console.error("Supabase Update Error:", error);
+          alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
       }
   };
 
