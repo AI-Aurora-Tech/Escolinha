@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, RefreshCw } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
@@ -11,9 +11,10 @@ interface FinancePageProps {
   plans: Plan[];
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (t: Transaction) => void;
+  onRunTuitionJob?: () => Promise<void>;
 }
 
-export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, onAddTransaction, onUpdateTransaction }) => {
+export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, onAddTransaction, onUpdateTransaction, onRunTuitionJob }) => {
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
   
   // Settings State
@@ -333,6 +334,16 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+                {onRunTuitionJob && (
+                    <button 
+                        onClick={() => { if(confirm('Deseja verificar e gerar mensalidades a vencer agora?')) onRunTuitionJob(); }}
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-orange-100 text-orange-700 border border-orange-200 px-4 py-2 rounded-lg hover:bg-orange-200 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"
+                        title="Verificar e gerar cobranças pendentes"
+                    >
+                        <RefreshCw className="w-4 h-4" /> Gerar Cobranças (Automático)
+                    </button>
+                )}
+
                 <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center">
                     <Calendar className="w-4 h-4 text-gray-400" />
                     <input 

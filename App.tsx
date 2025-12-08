@@ -13,6 +13,14 @@ import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucid
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
 
+// Helper for safe local date string YYYY-MM-DD without UTC conversion shifts
+const getLocalDateStr = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -45,6 +53,144 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
+
+  // --- TUITION GENERATION JOB (10 Days Before Rule) ---
+  const runTuitionJob = async (currentStudents: Student[], currentPlans: Plan[], currentTransactions: Transaction[]) => {
+      // Só roda se for Admin ou Professor
+      if (currentUser?.role === UserRole.RESPONSAVEL) return;
+
+      const today = new Date();
+      today.setHours(0,0,0,0); // Normalize today to start of day
+
+      const newTransactionsPayload: any[] = [];
+      
+      // Datas para verificar: Mês Atual e Próximo Mês (Relative to today)
+      const monthsToCheck = [0, 1]; 
+
+      for (const student of currentStudents) {
+          if (!student.active || !student.planId) continue;
+          
+          const plan = currentPlans.find(p => p.id === student.planId);
+          if (!plan) continue;
+
+          for (const offset of monthsToCheck) {
+              // 1. Construct the target Due Date safely in local time
+              const checkDate = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+              const processingYear = checkDate.getFullYear();
+              const processingMonth = checkDate.getMonth();
+              
+              let dueDay = plan.dueDay;
+              const maxDaysInMonth = new Date(processingYear, processingMonth + 1, 0).getDate();
+              if (dueDay > maxDaysInMonth) dueDay = maxDaysInMonth;
+
+              const targetDueDate = new Date(processingYear, processingMonth, dueDay);
+              targetDueDate.setHours(0,0,0,0);
+              
+              const targetDueDateStr = getLocalDateStr(targetDueDate);
+              const targetMonthPrefix = targetDueDateStr.substring(0, 7); // "YYYY-MM"
+
+              // 2. Calculate Trigger Date (10 days before)
+              const triggerDate = new Date(targetDueDate);
+              triggerDate.setDate(targetDueDate.getDate() - 10);
+              triggerDate.setHours(0,0,0,0);
+
+              // Regra: Se Hoje >= (Vencimento - 10 dias)
+              // This covers cases where we passed the trigger date but haven't generated yet
+              if (today.getTime() >= triggerDate.getTime()) {
+                  
+                  // 3. Verify existence (Check if ANY income transaction exists for this student in this Month)
+                  // This prevents duplicates if dueDay changed, but ensures monthly billing
+                  const alreadyExists = currentTransactions.some(t => 
+                      t.studentId === student.id && 
+                      t.type === TransactionType.INCOME &&
+                      t.date.startsWith(targetMonthPrefix)
+                  );
+
+                  const inQueue = newTransactionsPayload.some(t => 
+                      t.student_id === student.id && 
+                      t.date.startsWith(targetMonthPrefix)
+                  );
+
+                  if (!alreadyExists && !inQueue) {
+                      // 4. Generate
+                      const monthName = targetDueDate.toLocaleString('pt-BR', { month: 'long' });
+                      const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                      const description = `Mensalidade ${capitalizedMonth}/${processingYear}`;
+                      
+                      const externalReference = crypto.randomUUID();
+                      let paymentLink = '';
+
+                      // Try generate link MP
+                      try {
+                          if (student.guardian.cpf) {
+                              const mpResult = await createMPPreference({
+                                  title: description,
+                                  price: plan.price,
+                                  externalReference: externalReference,
+                                  payer: {
+                                      name: student.guardian.name,
+                                      email: student.guardian.email,
+                                      phone: student.guardian.phone,
+                                      identification: { type: 'CPF', number: student.guardian.cpf }
+                                  }
+                              });
+                              if (mpResult) {
+                                  paymentLink = mpResult.init_point;
+                              }
+                          }
+                      } catch (e) { console.warn("Erro silencioso MP Job", e); }
+
+                      newTransactionsPayload.push({
+                          description: description,
+                          amount: plan.price,
+                          type: TransactionType.INCOME,
+                          date: targetDueDateStr,
+                          status: targetDueDate < today ? PaymentStatus.LATE : PaymentStatus.PENDING,
+                          student_id: student.id,
+                          plan_id: plan.id,
+                          payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                          payment_link: paymentLink,
+                          external_reference: externalReference
+                      });
+                  }
+              }
+          }
+      }
+
+      // Batch Insert
+      if (newTransactionsPayload.length > 0) {
+          const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
+          if (data && !error) {
+              const mappedTxs = data.map((t: any) => ({
+                  id: t.id,
+                  description: t.description,
+                  amount: t.amount,
+                  type: t.type,
+                  date: t.date,
+                  status: t.status,
+                  studentId: t.student_id,
+                  planId: t.plan_id,
+                  paymentMethod: t.payment_method,
+                  paymentLink: t.payment_link,
+                  externalReference: t.external_reference,
+                  preferenceId: t.preference_id
+              }));
+              setTransactions(prev => [...prev, ...mappedTxs]);
+              console.log(`Job: Geradas ${mappedTxs.length} novas mensalidades.`);
+          } else {
+              console.error("Erro no Job de Mensalidades:", error);
+          }
+      } else {
+          console.log("Job: Nenhuma nova mensalidade necessária.");
+      }
+  };
+
+  const handleManualTuitionJob = async () => {
+    setIsLoading(true);
+    await runTuitionJob(students, plans, transactions);
+    setIsLoading(false);
+    alert("Verificação de mensalidades concluída.");
+  };
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
@@ -105,8 +251,12 @@ function App() {
         }
 
         // Mappers to match Typescript Interfaces
+        let mappedStudents: Student[] = [];
+        let mappedPlans: Plan[] = [];
+        let mappedTransactions: Transaction[] = [];
+
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => ({
+             mappedStudents = studentsData.map((s: any) => ({
                  id: s.id,
                  name: s.name,
                  birthDate: s.birth_date,
@@ -127,17 +277,18 @@ function App() {
 
         if (groupsData) setGroups(groupsData);
         if (plansData) {
-            setPlans(plansData.map((p: any) => ({
+            mappedPlans = plansData.map((p: any) => ({
                 id: p.id,
                 name: p.name,
                 price: p.price,
                 dueDay: p.due_day,
                 description: p.description
-            })));
+            }));
+            setPlans(mappedPlans);
         }
 
         if (transactionsData) {
-             setTransactions(transactionsData.map((t: any) => ({
+             mappedTransactions = transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
                  amount: t.amount,
@@ -148,10 +299,10 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
-                 // Mapeamento correto: Banco (snake_case) -> App (camelCase)
                  externalReference: t.external_reference, 
                  preferenceId: t.preference_id
-             })));
+             }));
+             setTransactions(mappedTransactions);
         }
 
         if (activitiesData) {
@@ -169,9 +320,9 @@ function App() {
              setActivities(relevantActivities.map((a: any) => ({
                  id: a.id,
                  title: a.title,
-                 type: a.activity_type || 'TRAINING', // Mapeia coluna activity_type
+                 type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
-                 location: a.location || '', // Mapeia coluna location
+                 location: a.location || '',
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -179,8 +330,14 @@ function App() {
                  endTime: a.end_time,
                  recurrence: a.recurrence,
                  attendance: a.attendance || [],
-                 feePayments: a.fee_payments || [] // Mapeia fee_payments
+                 feePayments: a.fee_payments || []
              })));
+        }
+
+        // --- EXECUTE AUTOMATED JOBS ---
+        // Run tuition check only if data loaded and user is Staff
+        if (currentUser?.role !== UserRole.RESPONSAVEL && mappedStudents.length > 0 && mappedPlans.length > 0) {
+            runTuitionJob(mappedStudents, mappedPlans, mappedTransactions);
         }
 
     } catch (error) {
@@ -368,79 +525,6 @@ function App() {
       setCurrentPage('dashboard');
   };
 
-  // Re-declaring key handlers to prevent errors in render 
-  const generateAnnualTuition = async (student: Student, plan: Plan) => {
-    const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    const newTransactionsPayload = [];
-    
-    for (let month = currentMonth; month <= 11; month++) {
-        let dueYear = currentYear;
-        const targetDate = new Date(dueYear, month, plan.dueDay);
-        if (targetDate.getMonth() !== month) targetDate.setDate(0);
-
-        const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
-        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-        const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth}`;
-        
-        const externalReference = crypto.randomUUID();
-        let paymentLink = '';
-        try {
-            const mpResult = await createMPPreference({
-                title: description,
-                price: plan.price,
-                externalReference: externalReference,
-                payer: {
-                    name: student.guardian.name,
-                    email: student.guardian.email,
-                    phone: student.guardian.phone,
-                    identification: { type: 'CPF', number: student.guardian.cpf }
-                }
-            });
-            if (mpResult) {
-                paymentLink = mpResult.init_point;
-            }
-        } catch (e) { console.warn("Could not generate MP Link"); }
-
-        newTransactionsPayload.push({
-            description: description,
-            amount: plan.price,
-            type: TransactionType.INCOME,
-            date: targetDate.toISOString().split('T')[0],
-            status: PaymentStatus.PENDING,
-            student_id: student.id,
-            plan_id: plan.id,
-            payment_link: paymentLink,
-            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-            // Mapeamento correto: App (camelCase) -> Banco (snake_case)
-            external_reference: externalReference 
-        });
-    }
-
-    if (newTransactionsPayload.length > 0) {
-        const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
-        if (data && !error) {
-             const mappedTxs = data.map((t: any) => ({
-                 id: t.id,
-                 description: t.description,
-                 amount: t.amount,
-                 type: t.type,
-                 date: t.date,
-                 status: t.status,
-                 studentId: t.student_id,
-                 planId: t.plan_id,
-                 paymentMethod: t.payment_method,
-                 paymentLink: t.payment_link,
-                 externalReference: t.external_reference
-             }));
-             setTransactions(prev => [...prev, ...mappedTxs]);
-        } else {
-            console.error("Erro ao gerar mensalidades:", error);
-        }
-    }
-  };
-
   const uploadPhoto = async (photoDataUrl: string, studentName: string): Promise<string | undefined> => {
       if (!photoDataUrl || !photoDataUrl.startsWith('data:')) return photoDataUrl;
       try {
@@ -497,9 +581,10 @@ function App() {
              documents: data.documents
         };
         setStudents(prev => [...prev, newStudent]);
+        
+        // Em vez de gerar o ano todo, rodamos o job para gerar apenas a próxima se estiver em dia
         if (newStudent.active && newStudent.planId) {
-            const plan = plans.find(p => p.id === newStudent.planId);
-            if (plan) await generateAnnualTuition(newStudent, plan);
+             runTuitionJob([newStudent], plans, transactions);
         }
     } else { alert("Erro ao salvar aluno."); }
     setIsLoading(false);
@@ -545,13 +630,9 @@ function App() {
           
           setStudents(prev => [...prev, ...newStudents]);
           
-          // Generate tuition for each
-          for (const ns of newStudents) {
-              if (ns.active && ns.planId) {
-                  const plan = plans.find(p => p.id === ns.planId);
-                  if (plan) await generateAnnualTuition(ns, plan);
-              }
-          }
+          // Trigger automated check
+          runTuitionJob(newStudents, plans, transactions);
+          
           alert(`${newStudents.length} alunos importados com sucesso!`);
       } else {
           alert("Erro na importação em massa.");
@@ -626,7 +707,7 @@ function App() {
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
-               const dateStr = current.toISOString().split('T')[0];
+               const dateStr = getLocalDateStr(current);
                payloadList.push({
                    ...basePayload,
                    date: dateStr
@@ -1021,6 +1102,7 @@ function App() {
                 plans={plans} 
                 onAddTransaction={handleAddTransaction} 
                 onUpdateTransaction={handleUpdateTransaction}
+                onRunTuitionJob={handleManualTuitionJob}
             /> : 
             <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
       case 'users':
