@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { checkMPPaymentStatus, createPixPayment, getPaymentStatus, createMPPreference } from '../services/mercadoPago';
+import { getZApiCredentials, sendZApiMessage } from '../services/zapiService';
 
 interface StudentsPageProps {
   students: Student[];
@@ -78,6 +79,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [bulkCountdown, setBulkCountdown] = useState(10);
   const [bulkLogs, setBulkLogs] = useState<string[]>([]);
   const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hasZApi, setHasZApi] = useState(false); // To determine sending method
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
   const isAdmin = currentUser?.role === UserRole.ADMIN;
@@ -134,11 +136,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   }, [monitoredPayments, pixData, transactions]); 
 
   // --- BULK SEND LOGIC ---
-  const handleStartBulkSend = () => {
-      // Lógica: Percorrer todos os alunos ATIVOS.
-      // Para cada aluno, encontrar a transação PENDENTE ou ATRASADA mais antiga (prioridade para dívidas antigas).
-      // Adicionar à fila.
-      
+  const handleStartBulkSend = async () => {
+      // Check for Z-API configuration first
+      const zApiCreds = await getZApiCredentials();
+      const zApiAvailable = !!zApiCreds;
+      setHasZApi(zApiAvailable);
+
       const activeStudents = students.filter(s => s.active);
       const queue: Transaction[] = [];
 
@@ -149,10 +152,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 t.type === TransactionType.INCOME && 
                 (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
             )
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ordenar por data: mais antiga primeiro
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
           if (studentPendingTxs.length > 0) {
-              // Adiciona a transação mais antiga (próxima a vencer ou atrasada)
               queue.push(studentPendingTxs[0]);
           }
       });
@@ -162,13 +164,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
 
-      if (confirm(`Encontradas ${queue.length} cobranças pendentes (próxima a vencer ou atrasada de cada aluno). Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
+      const methodMsg = zApiAvailable 
+          ? "O envio será feito AUTOMATICAMENTE via Z-API (WhatsApp) em segundo plano."
+          : "O envio abrirá janelas do WhatsApp Web. Por favor, permita pop-ups.";
+
+      if (confirm(`Encontradas ${queue.length} cobranças pendentes.\n\n${methodMsg}\n\nDeseja iniciar?`)) {
           setBulkQueue(queue);
           setBulkCurrentIndex(0);
           setBulkIsRunning(true);
           setIsBulkModalOpen(true);
-          setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
-          setBulkCountdown(1); // Começa quase imediatamente
+          setBulkLogs([`Iniciando fila com ${queue.length} cobranças... Modo: ${zApiAvailable ? 'Automático (API)' : 'Manual (Pop-up)'}`]);
+          setBulkCountdown(1); 
       }
   };
 
@@ -214,7 +220,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           try {
               const externalReference = tx.externalReference || crypto.randomUUID();
               
-              // Try MP Preference first (better for links)
               if (student.guardian.cpf) {
                   const mpResult = await createMPPreference({
                     title: tx.description,
@@ -230,7 +235,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 
                 if (mpResult) {
                     finalLink = mpResult.init_point;
-                    // Update TX in DB silently
                     onUpdateTransaction({ 
                         ...tx, 
                         paymentLink: finalLink, 
@@ -253,21 +257,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   `Link para pagamento:\n${finalLink}\n\n` +
                   `Obrigado!`;
               
-              const encodedMessage = encodeURIComponent(message);
-              const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
-              
-              // Open window
-              const win = window.open(url, '_blank');
-              if (win) {
-                  setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
+              if (hasZApi) {
+                  // SEND VIA API
+                  const sent = await sendZApiMessage(phone, message);
+                  if (sent) {
+                      setBulkLogs(prev => [`✅ Enviado (API) para ${student.name}`, ...prev]);
+                  } else {
+                      setBulkLogs(prev => [`❌ Falha API para ${student.name}`, ...prev]);
+                  }
               } else {
-                  setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}. Permita pop-ups!`, ...prev]);
+                  // SEND VIA WINDOW OPEN
+                  const encodedMessage = encodeURIComponent(message);
+                  const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
+                  const win = window.open(url, '_blank');
+                  if (win) {
+                      setBulkLogs(prev => [`✅ Aberto para ${student.name}`, ...prev]);
+                  } else {
+                      setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}.`, ...prev]);
+                  }
               }
           } else {
               setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
           }
       } else {
-          setBulkLogs(prev => [`❌ Falha no link para ${student.name}. CPF do responsável: ${student.guardian.cpf ? 'OK' : 'Faltando'}`, ...prev]);
+          setBulkLogs(prev => [`❌ Falha no link para ${student.name}.`, ...prev]);
       }
 
       nextBulkItem();
@@ -275,7 +288,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const nextBulkItem = () => {
       setBulkCurrentIndex(prev => prev + 1);
-      setBulkCountdown(10); // Reset countdown for next
+      // If using API, wait longer (10s) to avoid spam ban. If window open, 8s is fine.
+      setBulkCountdown(hasZApi ? 15 : 10); 
   };
 
 
@@ -1836,8 +1850,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 {bulkIsRunning ? (
                     <div className="bg-purple-50 text-purple-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
-                        Próximo envio em {bulkCountdown}s...
-                        <span className="text-xs font-normal text-gray-500">Permita pop-ups no navegador!</span>
+                        {hasZApi 
+                           ? `Enviando via API (Automático) em ${bulkCountdown}s...`
+                           : `Abrindo WhatsApp Web em ${bulkCountdown}s...`
+                        }
+                        {!hasZApi && <span className="text-xs font-normal text-gray-500">Permita pop-ups no navegador!</span>}
                     </div>
                 ) : (
                     <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">

@@ -15,6 +15,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/mp/, ''),
       },
+      '/api/zapi': {
+        target: 'https://api.z-api.io',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/zapi/, ''),
+      },
     },
   },
 });

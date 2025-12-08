@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, RefreshCw } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, RefreshCw, Smartphone } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
+import { getZApiCredentials, saveZApiCredentials } from '../services/zapiService';
 
 interface FinancePageProps {
   transactions: Transaction[];
@@ -19,6 +20,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   
   // Settings State
   const [mpToken, setMpToken] = useState('');
+  const [zApiInstance, setZApiInstance] = useState('');
+  const [zApiToken, setZApiToken] = useState('');
   const [loadingToken, setLoadingToken] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,20 +47,28 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   const [installments, setInstallments] = useState(1);
   const [installmentDates, setInstallmentDates] = useState<string[]>([]);
 
-  // Load Token on Mount
+  // Load Tokens on Mount
   useEffect(() => {
-    const loadToken = async () => {
-        const token = await getMPAccessToken();
-        if (token) setMpToken(token);
+    const loadTokens = async () => {
+        const mp = await getMPAccessToken();
+        if (mp) setMpToken(mp);
+
+        const zapi = await getZApiCredentials();
+        if (zapi) {
+            setZApiInstance(zapi.instanceId);
+            setZApiToken(zapi.token);
+        }
     };
-    loadToken();
+    loadTokens();
   }, []);
 
-  const handleSaveToken = async () => {
+  const handleSaveSettings = async () => {
       setLoadingToken(true);
-      const success = await saveMPAccessToken(mpToken);
-      if (success) alert('Token salvo com sucesso!');
-      else alert('Erro ao salvar token.');
+      const mpSuccess = await saveMPAccessToken(mpToken);
+      const zApiSuccess = await saveZApiCredentials(zApiInstance, zApiToken);
+      
+      if (mpSuccess && zApiSuccess) alert('Configurações salvas com sucesso!');
+      else alert('Erro ao salvar algumas configurações.');
       setLoadingToken(false);
   };
 
@@ -251,43 +262,74 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
 
       {activeTab === 'SETTINGS' ? (
           <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm max-w-2xl mx-auto">
-              <div className="mb-6 border-b border-gray-100 pb-4">
-                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                      <Settings className="w-6 h-6 text-primary-600" /> Configuração Mercado Pago
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">Configure sua integração para gerar links de pagamento automáticos.</p>
-              </div>
-              
-              <div className="space-y-4">
+              <div className="space-y-8">
+                  {/* Mercado Pago Section */}
                   <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (Produção)</label>
-                      <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <div className="mb-4 border-b border-gray-100 pb-2">
+                          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                              <Lock className="w-5 h-5 text-blue-500" /> Mercado Pago
+                          </h3>
+                          <p className="text-xs text-gray-500">Configuração para geração de Links e PIX Copia e Cola.</p>
+                      </div>
+                      <div className="space-y-3">
+                          <label className="block text-sm font-medium text-gray-700">Access Token (Produção)</label>
                           <input 
                               type="password" 
                               value={mpToken}
                               onChange={(e) => setMpToken(e.target.value)}
-                              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                              placeholder="APP_USR-0000000000000000-000000-00000000000000000000000000000000-000000000"
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                              placeholder="APP_USR-..."
                           />
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                          Você encontra este token no painel de desenvolvedores do Mercado Pago. Certifique-se de usar a credencial de "Produção".
-                      </p>
+                  </div>
+
+                  {/* Z-API Section */}
+                  <div>
+                      <div className="mb-4 border-b border-gray-100 pb-2">
+                          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                              <Smartphone className="w-5 h-5 text-green-500" /> Z-API (WhatsApp)
+                          </h3>
+                          <p className="text-xs text-gray-500">Configuração para envio automático de mensagens.</p>
+                      </div>
+                      <div className="space-y-3">
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700">ID da Instância</label>
+                              <input 
+                                  type="text" 
+                                  value={zApiInstance}
+                                  onChange={(e) => setZApiInstance(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="Ex: 3B9..."
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700">Token da Instância</label>
+                              <input 
+                                  type="password" 
+                                  value={zApiToken}
+                                  onChange={(e) => setZApiToken(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="Ex: 350..."
+                              />
+                          </div>
+                      </div>
                   </div>
                   
-                  <button 
-                      onClick={handleSaveToken}
-                      disabled={loadingToken}
-                      className="flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-sm font-medium disabled:opacity-50"
-                  >
-                      <Save className="w-4 h-4" />
-                      {loadingToken ? 'Salvando...' : 'Salvar Token'}
-                  </button>
+                  <div className="pt-4">
+                      <button 
+                          onClick={handleSaveSettings}
+                          disabled={loadingToken}
+                          className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-sm font-medium disabled:opacity-50"
+                      >
+                          <Save className="w-4 h-4" />
+                          {loadingToken ? 'Salvando...' : 'Salvar Todas as Configurações'}
+                      </button>
+                  </div>
               </div>
           </div>
       ) : (
       <>
+        {/* ... (Previous Dashboard/Charts code remains same) ... */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-4">
