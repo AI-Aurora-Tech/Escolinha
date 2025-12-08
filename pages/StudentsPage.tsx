@@ -80,6 +80,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
+  const isAdmin = currentUser?.role === UserRole.ADMIN;
 
   // Inicializar filtro se passado via prop
   useEffect(() => {
@@ -1247,37 +1248,45 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         {/* HIDE ACTION BUTTONS FOR GUARDIANS */}
         {!isGuardian && (
             <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                <button 
-                    onClick={handleStartBulkSend}
-                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"
-                    title="Enviar cobrança da próxima mensalidade pendente para todos os alunos"
-                >
-                    <Zap className="w-4 h-4" />
-                    Enviar Cobranças (1 a 1)
-                </button>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleImportExcel} 
-                    accept=".xlsx, .xls" 
-                    className="hidden" 
-                />
-                <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
-                title="Importar de Excel"
-                >
-                <Upload className="w-4 h-4" />
-                Importar
-                </button>
-                <button 
-                onClick={handleDownloadTemplate}
-                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"
-                title="Baixar Modelo Excel"
-                >
-                <FileSpreadsheet className="w-4 h-4" />
-                Modelo
-                </button>
+                {isAdmin && (
+                  <button 
+                      onClick={handleStartBulkSend}
+                      className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"
+                      title="Enviar cobrança da próxima mensalidade pendente para todos os alunos"
+                  >
+                      <Zap className="w-4 h-4" />
+                      Enviar Cobranças (1 a 1)
+                  </button>
+                )}
+                
+                {isAdmin && (
+                  <>
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImportExcel} 
+                        accept=".xlsx, .xls" 
+                        className="hidden" 
+                    />
+                    <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
+                    title="Importar de Excel"
+                    >
+                    <Upload className="w-4 h-4" />
+                    Importar
+                    </button>
+                    <button 
+                    onClick={handleDownloadTemplate}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"
+                    title="Baixar Modelo Excel"
+                    >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Modelo
+                    </button>
+                  </>
+                )}
+
                 <button 
                 onClick={handleExportExcel}
                 className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"
@@ -1294,13 +1303,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <FileText className="w-4 h-4" />
                 PDF
                 </button>
-                <button 
-                onClick={handleOpenNew}
-                className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"
-                >
-                <Plus className="w-4 h-4" />
-                Novo Aluno
-                </button>
+                
+                {isAdmin && (
+                  <button 
+                  onClick={handleOpenNew}
+                  className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"
+                  >
+                  <Plus className="w-4 h-4" />
+                  Novo Aluno
+                  </button>
+                )}
             </div>
         )}
       </div>
@@ -1608,7 +1620,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
                                     Plano Atual: {plans.find(p => p.id === studentForm.planId)?.name || 'Sem plano'}
                                 </div>
-                                {!isGuardian && (
+                                {isAdmin && (
                                     <button 
                                         onClick={() => setShowChargeModal(true)}
                                         className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 flex items-center gap-1.5 shadow-sm transition-colors"
@@ -1625,7 +1637,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     <div><p className="text-xs font-bold text-orange-800 uppercase">Seleção em Lote</p><p className="text-sm font-semibold text-gray-900">{selectedFinanceIds.size} parcelas • Total: R$ {selectedTotal.toFixed(2)}</p></div>
                                 </div>
                                 <div className="flex gap-2">
-                                    {!isGuardian && (
+                                    {isAdmin && (
                                         <button onClick={() => sendBatchChargeMessage(selectedTransactions)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"><MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)</button>
                                     )}
                                     <button onClick={() => initiatePixPayment()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"><QrCode className="w-3.5 h-3.5" /> Pagar Combo (PIX)</button>
@@ -1690,15 +1702,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             <td className="px-4 py-3 text-right">
                                                 {tx.status !== PaymentStatus.PAID && !isCancelled && (
                                                     <div className="flex justify-end gap-2">
-                                                        {isLate && tx.paymentLink && !isGuardian && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
-                                                        {(tx.paymentLink || tx.externalReference) && !isGuardian && (
+                                                        {isLate && tx.paymentLink && isAdmin && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
+                                                        {(tx.paymentLink || tx.externalReference) && isAdmin && (
                                                             <button onClick={() => checkStatus(tx)} disabled={isChecking} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors flex items-center gap-1 border border-blue-200" title="Verificar Pagamento no Mercado Pago">
                                                                 {isChecking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}Verificar
                                                             </button>
                                                         )}
                                                         {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> Pagar (PIX)</button>)}
                                                         
-                                                        {showPayButton && !isGuardian && (
+                                                        {showPayButton && isAdmin && (
                                                             <button 
                                                                 onClick={() => handleSendPixToWhatsApp(tx)}
                                                                 disabled={isSendingPix}
@@ -1710,8 +1722,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                             </button>
                                                         )}
 
-                                                        {!isGuardian && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>}
-                                                        {!isGuardian && <button onClick={() => handleCancelTransaction(tx)} className="px-3 py-1.5 bg-gray-100 text-gray-500 border border-gray-200 rounded text-xs hover:bg-gray-200 hover:text-red-600 transition-colors" title="Cancelar/Ignorar Cobrança"><Ban className="w-3 h-3" /></button>}
+                                                        {isAdmin && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>}
+                                                        {isAdmin && <button onClick={() => handleCancelTransaction(tx)} className="px-3 py-1.5 bg-gray-100 text-gray-500 border border-gray-200 rounded text-xs hover:bg-gray-200 hover:text-red-600 transition-colors" title="Cancelar/Ignorar Cobrança"><Ban className="w-3 h-3" /></button>}
                                                     </div>
                                                 )}
                                             </td>
