@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -696,8 +697,8 @@ function App() {
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance || [],
-          fee_payments: a.feePayments || [] 
+          attendance: [],
+          fee_payments: [] 
       };
 
       const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
@@ -729,7 +730,11 @@ function App() {
            const newActivities = data.map((newItem: any) => ({
                ...a,
                id: newItem.id,
-               date: newItem.date
+               date: newItem.date,
+               // CRITICAL: Initialize arrays to prevent white screen crash on render
+               attendance: [],
+               feePayments: [],
+               participants: a.participants || []
            }));
            setActivities(prev => [...prev, ...newActivities]);
       } else {
@@ -799,9 +804,13 @@ function App() {
   const handleUpdateAttendance = async (aid: string, sid: string) => { 
       const activity = activities.find(a => a.id === aid);
       if(!activity) return;
-      const newAttendance = activity.attendance.includes(sid) 
-        ? activity.attendance.filter(id => id !== sid)
-        : [...activity.attendance, sid];
+      
+      // Safety check
+      const currentAttendance = activity.attendance || [];
+
+      const newAttendance = currentAttendance.includes(sid) 
+        ? currentAttendance.filter(id => id !== sid)
+        : [...currentAttendance, sid];
       
       const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
       if(!error) {

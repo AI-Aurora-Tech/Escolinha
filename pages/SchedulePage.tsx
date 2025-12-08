@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useMemo } from 'react';
 import { Activity, Group, Student, User, UserRole } from '../types';
 import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy } from 'lucide-react';
@@ -168,7 +170,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         const activityStudents = getActivityStudents(activity);
         
         const rows = activityStudents.map(s => {
-            const isPresent = activity.attendance.includes(s.id);
+            const isPresent = activity.attendance?.includes(s.id);
             const hasPaid = activity.feePayments?.includes(s.id);
             
             let paymentStatus = '-';
@@ -242,7 +244,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
              
              if (isGroupMatch || isParticipant) {
                  convocations++;
-                 if (game.attendance.includes(student.id)) {
+                 if (game.attendance?.includes(student.id)) {
                      attended++;
                  }
              }
@@ -297,10 +299,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         const activityStudents = getActivityStudents(activity);
         
         const rows = activityStudents.map(s => {
-            const isPresent = activity.attendance.includes(s.id);
+            const isPresent = activity.attendance?.includes(s.id);
             const hasPaid = activity.feePayments?.includes(s.id);
             let payment = '-';
-            if (activity.type === 'GAME' && activity.fee > 0) payment = hasPaid ? 'PAGO' : 'PENDENTE';
+            if (activity.type === 'GAME' && activity.fee && activity.fee > 0) payment = hasPaid ? 'PAGO' : 'PENDENTE';
 
             return [s.name, isPresent ? 'SIM' : 'NÃO', payment];
         });
@@ -351,7 +353,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           baseMessage += `📅 Data: ${dateStr}\n`;
           baseMessage += `⏰ Horário: ${activity.startTime}\n`;
           baseMessage += `📍 Local: ${activity.location || 'A definir'}\n`;
-          if (activity.fee > 0) baseMessage += `💰 Taxa: R$ ${activity.fee.toFixed(2)}\n`;
+          if (activity.fee && activity.fee > 0) baseMessage += `💰 Taxa: R$ ${activity.fee.toFixed(2)}\n`;
       } else {
           baseMessage += `💪 *LEMBRETE DE TREINO*\n`;
           baseMessage += `📅 Data: ${dateStr}\n`;
@@ -433,7 +435,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           {filteredActivities.length > 0 ? (
               filteredActivities.map(activity => {
                   const activityStudents = getActivityStudents(activity);
-                  const presentCount = activity.attendance.length;
+                  const presentCount = activity.attendance ? activity.attendance.length : 0;
                   const totalCount = activityStudents.length;
                   const isExpanded = expandedActivityId === activity.id;
                   const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual/Misto';
@@ -531,7 +533,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                   {activityStudents.length > 0 ? (
                                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                           {activityStudents.map(student => {
-                                              const isPresent = activity.attendance.includes(student.id);
+                                              const isPresent = activity.attendance?.includes(student.id);
                                               const hasPaid = activity.feePayments?.includes(student.id);
 
                                               return (
@@ -540,7 +542,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                                           <img src={student.photoUrl} alt="" className="w-8 h-8 rounded-full bg-gray-200 border border-gray-100" />
                                                           <div className="overflow-hidden">
                                                             <p className="text-sm font-medium text-gray-700 truncate">{student.name}</p>
-                                                            {activity.type === 'GAME' && activity.fee > 0 && (
+                                                            {activity.type === 'GAME' && activity.fee && activity.fee > 0 && (
                                                                 <p className={`text-[10px] font-bold ${hasPaid ? 'text-green-600' : 'text-red-500'}`}>
                                                                     {hasPaid ? 'Taxa Paga' : 'Taxa Pendente'}
                                                                 </p>
@@ -549,7 +551,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                                       </div>
                                                       <div className="flex items-center gap-1">
                                                           {/* Fee Toggle */}
-                                                          {activity.type === 'GAME' && activity.fee > 0 && canEdit && (
+                                                          {activity.type === 'GAME' && activity.fee && activity.fee > 0 && canEdit && (
                                                               <button 
                                                                 onClick={() => onUpdateFeePayment(activity.id, student.id)}
                                                                 title={hasPaid ? "Marcar como não pago" : "Marcar como pago"}
