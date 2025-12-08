@@ -659,6 +659,15 @@ function App() {
   };
   
   const handleUpdateActivity = async (a: any) => { 
+      // 1. Encontrar a atividade existente para preservar arrays que não vêm no form de edição
+      const existingActivity = activities.find(act => act.id === a.id);
+      if (!existingActivity) return;
+
+      // 2. Mesclar arrays existentes se 'a' não os tiver
+      const finalParticipants = a.participants || existingActivity.participants || [];
+      const finalAttendance = a.attendance || existingActivity.attendance || [];
+      const finalFeePayments = a.feePayments || existingActivity.feePayments || [];
+
       // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
@@ -669,17 +678,26 @@ function App() {
           fee: feeValue,
           location: locationValue,
           group_id: a.groupId || null,
-          participants: a.participants || [],
+          participants: finalParticipants,
           date: a.date,
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: a.attendance || [],
-          fee_payments: a.feePayments || []
+          attendance: finalAttendance,
+          fee_payments: finalFeePayments
       };
+      
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
+      
       if(!error) {
-          setActivities(prev => prev.map(act => act.id === a.id ? a : act));
+          // Update local state by merging
+          setActivities(prev => prev.map(act => act.id === a.id ? { 
+              ...act, 
+              ...a,
+              participants: finalParticipants,
+              attendance: finalAttendance,
+              feePayments: finalFeePayments
+          } : act));
       } else {
           console.error("Supabase Update Error:", error);
           alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
