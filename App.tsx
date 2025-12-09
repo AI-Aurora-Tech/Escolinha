@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -319,23 +318,36 @@ function App() {
                  );
              }
 
-             setActivities(relevantActivities.map((a: any) => ({
-                 id: a.id,
-                 title: a.title,
-                 type: a.activity_type || 'TRAINING',
-                 fee: a.fee || 0,
-                 location: a.location || '',
-                 score: a.score || '', // Novo campo
-                 goals: a.goals || [], // Novo campo
-                 groupId: a.group_id,
-                 participants: a.participants || [],
-                 date: a.date,
-                 startTime: a.start_time,
-                 endTime: a.end_time,
-                 recurrence: a.recurrence,
-                 attendance: a.attendance || [],
-                 feePayments: a.fee_payments || []
-             })));
+             setActivities(relevantActivities.map((a: any) => {
+                 // UNPACK METADATA FROM DESCRIPTION (JSON fallback)
+                 let meta: any = {};
+                 try {
+                     if (a.description && (a.description.startsWith('{') || a.description.startsWith('['))) {
+                         meta = JSON.parse(a.description);
+                     }
+                 } catch (e) { /* ignore */ }
+
+                 return {
+                     id: a.id,
+                     title: a.title,
+                     // Prioritize metadata (JSON) then column if exists, default to training
+                     type: meta.type || a.activity_type || 'TRAINING',
+                     fee: meta.fee !== undefined ? meta.fee : (a.fee || 0),
+                     location: meta.location || a.location || '',
+                     score: meta.score || a.score || '', 
+                     goals: meta.goals || a.goals || [], 
+                     feePayments: meta.feePayments || a.fee_payments || [], // Unpack feePayments
+
+                     groupId: a.group_id,
+                     participants: a.participants || [],
+                     date: a.date,
+                     startTime: a.start_time,
+                     endTime: a.end_time,
+                     recurrence: a.recurrence,
+                     attendance: a.attendance || [],
+                     description: a.description // Keep original
+                 };
+             }));
         }
 
         // --- EXECUTE AUTOMATED JOBS ---
@@ -690,13 +702,22 @@ function App() {
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
       
+      // PACK EXTRA FIELDS INTO DESCRIPTION
+      const metadata = {
+          type: a.type,
+          fee: feeValue,
+          location: locationValue,
+          score: a.score || '',
+          goals: a.goals || [],
+          feePayments: []
+      };
+
       const basePayload = {
           title: a.title,
-          activity_type: a.type, 
-          fee: feeValue, 
-          location: locationValue,
-          score: a.score || '', 
-          goals: a.goals || [], 
+          // activity_type: a.type, // Remove to avoid column error
+          // fee: feeValue,         // Remove
+          // location: locationValue, // Remove
+          description: JSON.stringify(metadata), // Store here
           group_id: a.groupId || null,
           participants: a.participants || [],
           start_time: a.startTime,
@@ -766,14 +787,20 @@ function App() {
       // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
-
-      const payload = {
-          title: a.title,
-          activity_type: a.type, 
+      
+      // Pack into description
+      const metadata = {
+          type: a.type,
           fee: feeValue,
           location: locationValue,
           score: finalScore,
           goals: finalGoals,
+          feePayments: finalFeePayments
+      };
+
+      const payload = {
+          title: a.title,
+          description: JSON.stringify(metadata),
           group_id: a.groupId || null,
           participants: finalParticipants,
           date: a.date,
@@ -781,7 +808,7 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: finalAttendance,
-          fee_payments: finalFeePayments
+          // fee_payments: finalFeePayments // Do not send if column missing
       };
       
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
@@ -841,8 +868,18 @@ function App() {
       const newFeePayments = currentFeePayments.includes(sid)
         ? currentFeePayments.filter(id => id !== sid)
         : [...currentFeePayments, sid];
+        
+      // Pack into metadata because column might not exist
+      const metadata = {
+          type: activity.type,
+          fee: activity.fee,
+          location: activity.location,
+          score: activity.score,
+          goals: activity.goals,
+          feePayments: newFeePayments
+      };
 
-      const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
+      const { error } = await supabase.from('activities').update({ description: JSON.stringify(metadata) }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
       }
@@ -858,7 +895,7 @@ function App() {
           student_id: t.studentId || null,
           plan_id: t.planId || null,
           payment_method: t.paymentMethod,
-          payment_link: t.paymentLink,
+          payment_link: t.payment_link,
           // Mapeamento correto: App (camelCase) -> Banco (snake_case)
           external_reference: t.externalReference
       };
