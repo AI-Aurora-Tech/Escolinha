@@ -87,6 +87,9 @@ export interface Activity {
   id: string;
   title: string;
   type: 'TRAINING' | 'GAME'; // Novo campo
+  opponent?: string; // Novo campo: Adversário
+  teamA?: string; // Novo campo: Time da Casa / Time A
+  teamB?: string; // Novo campo: Time Visitante / Time B
   fee?: number; // Novo campo: Taxa do jogo
   location?: string; // Novo campo: Local do jogo
   score?: string; // Novo campo: Placar (ex: 3x1)

@@ -1,11 +1,8 @@
 
 
-
-
-
 import React, { useState, useMemo } from 'react';
 import { Activity, Group, Student, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy, Minus, PlusCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy, Minus, PlusCircle, BarChart2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -61,6 +58,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
     fee: 0,
     recurrence: 'none',
     score: '',
+    opponent: '',
+    teamA: 'Garotos do Martinica',
+    teamB: 'Visitante',
     goals: []
   };
   const [form, setForm] = useState(initialForm);
@@ -117,6 +117,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           fee: activity.fee || 0,
           recurrence: activity.recurrence || 'none',
           score: activity.score || '',
+          opponent: activity.opponent || '',
+          teamA: activity.teamA || 'Garotos do Martinica',
+          teamB: activity.teamB || (activity.opponent ? activity.opponent : 'Visitante'),
           goals: activity.goals || []
       });
       setSelectedScorerId('');
@@ -176,6 +179,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
   // --- REPORT GENERATION ---
 
   const handleExportAttendanceReport = () => {
+    // ... (Existing code for Attendance Report) ...
     const start = reportStartDate;
     const end = reportEndDate;
 
@@ -263,7 +267,103 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
     doc.save(`Relatorio_Atividades_${start}_${end}.pdf`);
   };
 
+  const handleExportRanking = () => {
+    const start = reportStartDate;
+    const end = reportEndDate;
+
+    // Filter only GAMES in range
+    const gamesInRange = activities.filter(a => 
+        a.type === 'GAME' && 
+        a.date >= start && 
+        a.date <= end
+    );
+
+    if (gamesInRange.length === 0) {
+        alert("Nenhum JOGO encontrado no período selecionado para gerar o ranking.");
+        return;
+    }
+
+    // Process Ranking
+    const rankings = students.map(student => {
+        let matchesPlayed = 0;
+        let goalsScored = 0;
+
+        gamesInRange.forEach(game => {
+             // Check if student was present in this game
+             if (game.attendance?.includes(student.id)) {
+                 matchesPlayed++;
+             }
+             // Check goals
+             const studentGoalData = game.goals?.find(g => g.studentId === student.id);
+             if (studentGoalData) {
+                 goalsScored += studentGoalData.count;
+             }
+        });
+
+        return {
+            name: student.name,
+            group: groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo',
+            matchesPlayed,
+            goalsScored,
+            avgGoals: matchesPlayed > 0 ? (goalsScored / matchesPlayed).toFixed(2) : '0.00'
+        };
+    })
+    // Filter out students who haven't played AND haven't scored (cleanup)
+    .filter(r => r.matchesPlayed > 0 || r.goalsScored > 0)
+    // Sort by Goals (Desc), then Matches Played (Desc)
+    .sort((a, b) => b.goalsScored - a.goalsScored || b.matchesPlayed - a.matchesPlayed);
+
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFillColor(234, 88, 12); // Orange-600
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text("RANKING DE ATLETAS", 105, 20, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 105, 30, { align: 'center' });
+    doc.text(`Total de Jogos Computados: ${gamesInRange.length}`, 105, 35, { align: 'center' });
+
+    doc.setTextColor(0, 0, 0);
+
+    const tableData = rankings.map((r, index) => [
+        (index + 1).toString() + 'º',
+        r.name,
+        r.group,
+        r.matchesPlayed.toString(),
+        r.goalsScored.toString(),
+        r.avgGoals
+    ]);
+
+    autoTable(doc, {
+        startY: 50,
+        head: [['Rank', 'Atleta', 'Categoria', 'Jogos (Presença)', 'Gols', 'Média Gols']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [50, 50, 50] },
+        columnStyles: {
+            0: { halign: 'center', fontStyle: 'bold', cellWidth: 15 },
+            3: { halign: 'center' },
+            4: { halign: 'center', fontStyle: 'bold', textColor: [22, 163, 74] }, // Green text for goals
+            5: { halign: 'center' }
+        },
+        didParseCell: (data) => {
+            // Highlight Top 3
+            if (data.section === 'body' && data.row.index < 3) {
+                 data.cell.styles.fontStyle = 'bold';
+                 if (data.row.index === 0) data.cell.styles.fillColor = [255, 255, 224]; // Light Gold
+            }
+        }
+    });
+
+    doc.save(`Ranking_Atletas_${start}_${end}.pdf`);
+  };
+
   const handleExportGameStats = () => {
+    // ... (Existing code for Game Stats - keeping it for backward compatibility or different view) ...
     const start = reportStartDate;
     const end = reportEndDate;
 
@@ -307,11 +407,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
             totalGoals
         };
     })
-    .sort((a, b) => b.totalGoals - a.totalGoals || b.convocations - a.convocations); // Ordenar por gols, depois jogos
+    .filter(s => s.convocations > 0) // Only those convocated
+    .sort((a, b) => b.totalGoals - a.totalGoals || b.convocations - a.convocations); 
 
     const doc = new jsPDF();
     doc.setFontSize(18);
-    doc.text(`Estatísticas de Jogos e Artilharia`, 14, 20);
+    doc.text(`Estatísticas Gerais (Convocação vs Presença)`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 14, 26);
     doc.text(`Total de Jogos no Período: ${gamesInRange.length}`, 14, 32);
@@ -329,51 +430,129 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         startY: 38,
         head: [['Atleta', 'Grupo', 'Jogos (Convocado)', 'Presenças', 'Gols', '% Freq.']],
         body: tableData,
-        headStyles: { fillColor: [234, 88, 12] }, // Orange-600
-        alternateRowStyles: { fillColor: [255, 247, 237] } // Orange-50
+        headStyles: { fillColor: [100, 100, 100] }, 
+        alternateRowStyles: { fillColor: [245, 245, 245] }
     });
 
-    doc.save(`Estatisticas_Jogos_${start}_${end}.pdf`);
+    doc.save(`Estatisticas_Gerais_${start}_${end}.pdf`);
   };
 
-  const handleExportSingleActivityPDF = (activity: Activity) => {
-        const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto/Individual';
+  // Generate a dedicated Game Report (Súmula)
+  const handleExportGameReport = (activity: Activity) => {
         const doc = new jsPDF();
         
-        doc.setFontSize(16);
-        doc.text(activity.title, 14, 20);
+        // --- HEADER ---
+        doc.setFillColor(33, 33, 33); // Dark Gray
+        doc.rect(0, 0, 210, 40, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text("SÚMULA DO JOGO", 105, 20, { align: 'center' });
         doc.setFontSize(10);
-        doc.text(`Data: ${formatDate(activity.date)} - Horário: ${activity.startTime}`, 14, 28);
-        doc.text(`Grupo: ${groupName} | Tipo: ${activity.type === 'GAME' ? 'JOGO' : 'TREINO'}`, 14, 34);
-        if (activity.location) doc.text(`Local: ${activity.location}`, 14, 40);
-        if (activity.score) doc.text(`Placar Final: ${activity.score}`, 14, 46);
+        doc.setFont("helvetica", "normal");
+        doc.text("Garotos do Martinica", 105, 30, { align: 'center' });
+
+        // --- MATCH INFO ---
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.text(`Data: ${formatDate(activity.date)}`, 14, 50);
+        doc.text(`Horário: ${activity.startTime} - ${activity.endTime}`, 14, 56);
+        doc.text(`Local: ${activity.location || 'Não informado'}`, 14, 62);
+        const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto';
+        doc.text(`Categoria: ${groupName}`, 14, 68);
+
+        // --- SCOREBOARD ---
+        const teamA = activity.teamA || 'Time A';
+        const teamB = activity.teamB || 'Time B';
+        const score = activity.score || '- x -';
+
+        doc.setFillColor(245, 245, 245);
+        doc.roundedRect(14, 75, 182, 35, 3, 3, 'F');
+        
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.text(teamA, 40, 95, { align: 'center', maxWidth: 60 });
+        doc.text("X", 105, 95, { align: 'center' });
+        doc.text(teamB, 170, 95, { align: 'center', maxWidth: 60 });
+
+        doc.setFontSize(28);
+        doc.setTextColor(234, 88, 12); // Orange
+        doc.text(score, 105, 85, { align: 'center' });
+
+        // Calculate Result Status
+        let status = "JOGO REALIZADO";
+        let statusColor = [100, 100, 100]; // Gray
+        
+        if (activity.score && activity.score.includes('x')) {
+            const [goalsA, goalsB] = activity.score.split('x').map(s => parseInt(s.trim()));
+            if (!isNaN(goalsA) && !isNaN(goalsB)) {
+                if (goalsA > goalsB) { status = "VITÓRIA"; statusColor = [0, 128, 0]; }
+                else if (goalsB > goalsA) { status = "DERROTA"; statusColor = [200, 0, 0]; }
+                else { status = "EMPATE"; statusColor = [204, 153, 0]; }
+            }
+        }
+        
+        doc.setFontSize(12);
+        doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+        doc.text(status, 105, 105, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+
+        // --- GOAL SCORERS ---
+        let currentY = 120;
+        if (activity.goals && activity.goals.length > 0) {
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text("Gols da Partida", 14, currentY);
+            currentY += 8;
+            
+            const goalData = activity.goals.map(g => {
+                const s = students.find(st => st.id === g.studentId);
+                return [s?.name || 'Desconhecido', g.count.toString()];
+            });
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Atleta', 'Gols']],
+                body: goalData,
+                theme: 'striped',
+                headStyles: { fillColor: [50, 50, 50] },
+                columnStyles: { 0: { cellWidth: 150 }, 1: { cellWidth: 30, halign: 'center' } }
+            });
+            
+            // @ts-ignore
+            currentY = doc.lastAutoTable.finalY + 15;
+        }
+
+        // --- ATTENDANCE LIST ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("Escalação / Lista de Presença", 14, currentY);
+        currentY += 5;
 
         const activityStudents = getActivityStudents(activity);
-        
         const rows = activityStudents.map(s => {
             const isPresent = activity.attendance?.includes(s.id);
             const hasPaid = activity.feePayments?.includes(s.id);
-            const goals = activity.goals?.find(g => g.studentId === s.id)?.count || 0;
-            
             let payment = '-';
-            if (activity.type === 'GAME' && activity.fee && activity.fee > 0) payment = hasPaid ? 'PAGO' : 'PENDENTE';
-
-            return [s.name, isPresent ? 'SIM' : 'NÃO', payment, goals > 0 ? goals.toString() : '-'];
+            if (activity.fee && activity.fee > 0) payment = hasPaid ? 'Sim' : 'Não';
+            return [s.name, isPresent ? 'Presente' : 'Ausente', payment];
         });
 
         autoTable(doc, {
-            startY: 55,
-            head: [['Atleta', 'Presença', 'Taxa', 'Gols']],
+            startY: currentY,
+            head: [['Atleta', 'Status', 'Taxa Paga']],
             body: rows,
-            headStyles: { fillColor: [249, 115, 22] },
+            theme: 'grid',
+            headStyles: { fillColor: [234, 88, 12] },
             didParseCell: (data) => {
                 if (data.section === 'body' && data.column.index === 1) {
-                    data.cell.styles.textColor = data.cell.raw === 'SIM' ? [0,128,0] : [200,0,0];
+                    data.cell.styles.textColor = data.cell.raw === 'Presente' ? [0,128,0] : [200,0,0];
                 }
             }
         });
 
-        doc.save(`Relatorio_${activity.title.replace(/\s+/g, '_')}.pdf`);
+        doc.save(`Sumula_${formatDate(activity.date)}_${teamA}_vs_${teamB}.pdf`);
   };
 
   // Helper to get students for an activity
@@ -389,6 +568,61 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           return students.filter(s => targetParticipants.includes(s.id));
       }
       return students.filter(s => s.active); // Fallback: all active if no filter (rare)
+  };
+
+  const handleExportSingleActivityPDF = (activity: Activity) => {
+    const activityStudents = getActivityStudents(activity);
+    
+    if (activityStudents.length === 0) {
+        alert("Nenhum aluno vinculado a esta atividade.");
+        return;
+    }
+
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`Lista de Presença`, 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Atividade: ${activity.title}`, 14, 28);
+    doc.text(`Data: ${formatDate(activity.date)}  |  Horário: ${activity.startTime} - ${activity.endTime}`, 14, 34);
+    
+    const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto/Individual';
+    doc.text(`Grupo: ${groupName}`, 14, 40);
+
+    const rows = activityStudents.map(s => {
+        const isPresent = activity.attendance?.includes(s.id);
+        const hasPaid = activity.feePayments?.includes(s.id);
+        
+        let paymentStatus = '-';
+        if (activity.fee && activity.fee > 0) {
+            paymentStatus = hasPaid ? 'PAGO' : 'PENDENTE';
+        }
+
+        return [
+            s.name,
+            s.phone || '-',
+            isPresent ? 'PRESENTE' : 'AUSENTE',
+            paymentStatus
+        ];
+    });
+
+    autoTable(doc, {
+        startY: 45,
+        head: [['Atleta', 'Telefone', 'Status', 'Taxa']],
+        body: rows,
+        headStyles: { fillColor: [66, 66, 66] },
+        didParseCell: (data) => {
+             if (data.section === 'body') {
+                 if (data.column.index === 2) { // Status
+                     data.cell.styles.textColor = data.cell.raw === 'PRESENTE' ? [22, 163, 74] : [220, 38, 38];
+                 }
+                 if (data.column.index === 3 && data.cell.raw !== '-') { // Taxa
+                     data.cell.styles.textColor = data.cell.raw === 'PAGO' ? [22, 163, 74] : [220, 38, 38];
+                 }
+             }
+        }
+    });
+
+    doc.save(`Lista_${activity.title.replace(/\s+/g, '_')}_${activity.date}.pdf`);
   };
 
   // --- BULK WHATSAPP MESSAGE (CONVOCAÇÃO) ---
@@ -407,7 +641,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
       
       if (activity.type === 'GAME') {
           baseMessage += `🗓 *CONVOCAÇÃO DE JOGO*\n`;
-          baseMessage += `🆚 ${activity.title}\n`;
+          // Use Team A vs Team B if available, otherwise just Title/Opponent
+          const matchup = activity.teamA && activity.teamB 
+            ? `${activity.teamA} x ${activity.teamB}`
+            : `${activity.title} ${activity.opponent ? 'vs ' + activity.opponent : ''}`;
+            
+          baseMessage += `🆚 ${matchup}\n`;
           baseMessage += `📅 Data: ${dateStr}\n`;
           baseMessage += `⏰ Horário: ${activity.startTime}\n`;
           baseMessage += `📍 Local: ${activity.location || 'A definir'}\n`;
@@ -498,6 +737,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                   const isExpanded = expandedActivityId === activity.id;
                   const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual/Misto';
                   
+                  // Determine display title for games
+                  const displayTitle = activity.type === 'GAME' && activity.teamA && activity.teamB 
+                    ? `${activity.teamA} x ${activity.teamB}`
+                    : activity.title;
+
                   // Calculate Fee stats
                   const paidCount = activity.feePayments?.length || 0;
                   const potentialFee = totalCount * (activity.fee || 0);
@@ -514,7 +758,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                   </div>
                                   <div>
                                       <h3 className="font-bold text-gray-900 text-lg leading-tight flex items-center gap-2">
-                                        {activity.title}
+                                        {displayTitle}
+                                        {activity.type === 'GAME' && !activity.teamA && activity.opponent && (
+                                            <span className="text-gray-500 font-normal">vs {activity.opponent}</span>
+                                        )}
                                         {activity.score && (
                                             <span className="bg-orange-100 text-orange-800 text-xs px-2 py-0.5 rounded border border-orange-200">
                                                 {activity.score}
@@ -601,16 +848,26 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                       </div>
                                   )}
 
-                                  <div className="flex justify-between items-center mb-4">
+                                  <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
                                       <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                                           Lista de Atletas ({totalCount})
                                       </h4>
-                                      <button 
-                                        onClick={() => handleExportSingleActivityPDF(activity)}
-                                        className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 px-2 py-1 rounded shadow-sm"
-                                      >
-                                          <Download className="w-3 h-3" /> PDF
-                                      </button>
+                                      <div className="flex gap-2">
+                                          {activity.type === 'GAME' && (
+                                              <button 
+                                                onClick={() => handleExportGameReport(activity)}
+                                                className="text-xs flex items-center gap-1 text-white bg-primary-600 hover:bg-primary-700 border border-primary-600 px-3 py-1.5 rounded shadow-sm font-medium transition-colors"
+                                              >
+                                                  <FileText className="w-3.5 h-3.5" /> Súmula do Jogo
+                                              </button>
+                                          )}
+                                          <button 
+                                            onClick={() => handleExportSingleActivityPDF(activity)}
+                                            className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 px-3 py-1.5 rounded shadow-sm font-medium"
+                                          >
+                                              <Download className="w-3.5 h-3.5" /> Lista PDF
+                                          </button>
+                                      </div>
                                   </div>
                                   
                                   {activityStudents.length > 0 ? (
@@ -737,6 +994,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                               </div>
                               <Download className="w-4 h-4 text-gray-400" />
                           </button>
+                          
+                          <button 
+                            onClick={handleExportRanking}
+                            className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md transition-all group"
+                          >
+                              <div className="flex items-center gap-3">
+                                  <div className="bg-yellow-100 text-yellow-600 p-2 rounded-lg group-hover:bg-yellow-500 group-hover:text-white transition-colors">
+                                      <BarChart2 className="w-5 h-5" />
+                                  </div>
+                                  <div className="text-left">
+                                      <h4 className="font-bold text-gray-800 text-sm">Ranking Geral de Atletas</h4>
+                                      <p className="text-xs text-gray-500">Ranking por Gols e Partidas Jogadas.</p>
+                                  </div>
+                              </div>
+                              <Download className="w-4 h-4 text-gray-400" />
+                          </button>
 
                           <button 
                             onClick={handleExportGameStats}
@@ -747,8 +1020,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                       <Trophy className="w-5 h-5" />
                                   </div>
                                   <div className="text-left">
-                                      <h4 className="font-bold text-gray-800 text-sm">Estatísticas de Jogos</h4>
-                                      <p className="text-xs text-gray-500">Ranking de convocações e artilharia.</p>
+                                      <h4 className="font-bold text-gray-800 text-sm">Estatísticas (Convocação)</h4>
+                                      <p className="text-xs text-gray-500">Compare convocações vs presença real.</p>
                                   </div>
                               </div>
                               <Download className="w-4 h-4 text-gray-400" />
@@ -775,7 +1048,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                       <div>
                           <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Título / Descrição</label>
                           <input required type="text" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
-                              placeholder="Ex: Treino Tático, Amistoso vs Time X" 
+                              placeholder="Ex: Treino Tático, Amistoso" 
                               value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -825,6 +1098,40 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                       {/* Campos específicos para Jogo */}
                       {form.type === 'GAME' && (
                           <div className="space-y-4 border-t border-gray-100 pt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Time A</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50 focus:bg-white"
+                                            placeholder="Ex: Garotos do Martinica"
+                                            value={form.teamA} 
+                                            onChange={e => setForm({...form, teamA: e.target.value})} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Time B</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50 focus:bg-white"
+                                            placeholder="Ex: Visitante"
+                                            value={form.teamB} 
+                                            onChange={e => setForm({...form, teamB: e.target.value})} 
+                                        />
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Adversário (Ref.)</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
+                                        placeholder="Ex: Escolinha do Futuro"
+                                        value={form.opponent} 
+                                        onChange={e => setForm({...form, opponent: e.target.value})} 
+                                    />
+                                </div>
+
                                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
                                     <label className="block text-xs font-bold text-orange-800 uppercase mb-1 flex items-center gap-1">
                                         <DollarSign className="w-3 h-3" /> Taxa Extra (Opcional)

@@ -332,6 +332,9 @@ function App() {
                      title: a.title,
                      // Prioritize metadata (JSON) then column if exists, default to training
                      type: meta.type || a.activity_type || 'TRAINING',
+                     opponent: meta.opponent || '', // Extract opponent
+                     teamA: meta.teamA || '', // Extract teamA
+                     teamB: meta.teamB || '', // Extract teamB
                      fee: meta.fee !== undefined ? meta.fee : (a.fee || 0),
                      location: meta.location || a.location || '',
                      score: meta.score || a.score || '', 
@@ -705,6 +708,9 @@ function App() {
       // PACK EXTRA FIELDS INTO DESCRIPTION
       const metadata = {
           type: a.type,
+          opponent: a.opponent || '', // Pack opponent
+          teamA: a.teamA || '', // Pack teamA
+          teamB: a.teamB || '', // Pack teamB
           fee: feeValue,
           location: locationValue,
           score: a.score || '',
@@ -791,6 +797,9 @@ function App() {
       // Pack into description
       const metadata = {
           type: a.type,
+          opponent: a.opponent || '', // Pack opponent
+          teamA: a.teamA || '', // Pack teamA
+          teamB: a.teamB || '', // Pack teamB
           fee: feeValue,
           location: locationValue,
           score: finalScore,
@@ -872,6 +881,9 @@ function App() {
       // Pack into metadata because column might not exist
       const metadata = {
           type: activity.type,
+          opponent: activity.opponent,
+          teamA: activity.teamA,
+          teamB: activity.teamB,
           fee: activity.fee,
           location: activity.location,
           score: activity.score,
