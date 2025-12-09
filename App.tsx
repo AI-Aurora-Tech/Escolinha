@@ -1171,6 +1171,7 @@ function App() {
             <FinancePage 
                 transactions={transactions} 
                 plans={plans} 
+                students={students}
                 onAddTransaction={handleAddTransaction} 
                 onUpdateTransaction={handleUpdateTransaction}
                 onRunTuitionJob={handleManualTuitionJob}

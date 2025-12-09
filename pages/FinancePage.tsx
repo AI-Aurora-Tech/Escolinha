@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, RefreshCw, Smartphone } from 'lucide-react';
+import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, RefreshCw, Smartphone, User as UserIcon } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
@@ -10,12 +11,13 @@ import { getZApiCredentials, saveZApiCredentials } from '../services/zapiService
 interface FinancePageProps {
   transactions: Transaction[];
   plans: Plan[];
+  students: Student[];
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (t: Transaction) => void;
   onRunTuitionJob?: () => Promise<void>;
 }
 
-export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, onAddTransaction, onUpdateTransaction, onRunTuitionJob }) => {
+export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, onAddTransaction, onUpdateTransaction, onRunTuitionJob }) => {
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
   
   // Settings State
@@ -195,13 +197,22 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
 
     doc.setTextColor(0, 0, 0); 
 
-    const tableRows = exportData.map(t => [
-        new Date(t.date).toLocaleDateString('pt-BR'),
-        t.description,
-        t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
-        t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente',
-        `R$ ${t.amount.toFixed(2)}`
-    ]);
+    const tableRows = exportData.map(t => {
+        const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+        let desc = t.description;
+        // If student exists and name is NOT already part of the description string, prepend it for the PDF report.
+        if(student && !t.description.includes(student.name)){
+             desc = `${student.name} - ${t.description}`;
+        }
+        
+        return [
+            new Date(t.date).toLocaleDateString('pt-BR'),
+            desc,
+            t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
+            t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente',
+            `R$ ${t.amount.toFixed(2)}`
+        ]
+    });
 
     autoTable(doc, {
         startY: 70,
@@ -329,7 +340,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
           </div>
       ) : (
       <>
-        {/* ... (Previous Dashboard/Charts code remains same) ... */}
+        {/* Dashboard Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-4">
@@ -433,48 +444,62 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {filteredTransactions.length > 0 ? (
-                            filteredTransactions.map(t => (
-                            <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
-                                <td className="px-6 py-4 font-medium text-gray-900">{t.description}</td>
-                                <td className="px-6 py-4">
-                                    {t.type === TransactionType.INCOME ? (
-                                        <span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100">
-                                            <ArrowUpCircle className="w-3 h-3 mr-1" /> Receita
+                            filteredTransactions.map(t => {
+                                const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+                                return (
+                                <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4 font-medium text-gray-900">
+                                        {student ? (
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-gray-800 text-sm flex items-center gap-1">
+                                                    <UserIcon className="w-3 h-3 text-primary-600" />
+                                                    {student.name}
+                                                </span>
+                                                <span className="text-xs text-gray-500">{t.description}</span>
+                                            </div>
+                                        ) : (
+                                            t.description
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {t.type === TransactionType.INCOME ? (
+                                            <span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100">
+                                                <ArrowUpCircle className="w-3 h-3 mr-1" /> Receita
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100">
+                                                <ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">
+                                        {getPaymentMethodLabel(t.paymentMethod)}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                            t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-600'
+                                        }`}>
+                                            {t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}
                                         </span>
-                                    ) : (
-                                        <span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100">
-                                            <ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa
-                                        </span>
-                                    )}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-600">
-                                    {getPaymentMethodLabel(t.paymentMethod)}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <span className={`text-xs font-medium px-2 py-1 rounded ${
-                                        t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-600'
-                                    }`}>
-                                        {t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}
-                                    </span>
-                                </td>
-                                <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
-                                    {t.type === TransactionType.EXPENSE && '- '}
-                                    R$ {t.amount.toFixed(2)}
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                    {t.status === PaymentStatus.PENDING && (
-                                        <button 
-                                            onClick={() => handleOpenPayModal(t)}
-                                            className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors"
-                                            title="Dar Baixa (Marcar como Pago)"
-                                        >
-                                            <CheckCircle className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </td>
-                            </tr>
-                            ))
+                                    </td>
+                                    <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
+                                        {t.type === TransactionType.EXPENSE && '- '}
+                                        R$ {t.amount.toFixed(2)}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        {t.status === PaymentStatus.PENDING && (
+                                            <button 
+                                                onClick={() => handleOpenPayModal(t)}
+                                                className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors"
+                                                title="Dar Baixa (Marcar como Pago)"
+                                            >
+                                                <CheckCircle className="w-5 h-5" />
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            )})
                         ) : (
                             <tr>
                                 <td colSpan={7} className="p-8 text-center text-gray-500">
