@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -115,7 +116,7 @@ function App() {
                       // 4. Generate
                       const monthName = targetDueDate.toLocaleString('pt-BR', { month: 'long' });
                       const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                      // Alteração aqui: Adicionar o nome do aluno na descrição
+                      // Descrição com Nome do Aluno e Mês
                       const description = `${student.name} - Mensalidade ${capitalizedMonth}/${processingYear}`;
                       
                       const externalReference = crypto.randomUUID();
@@ -554,7 +555,7 @@ function App() {
         rg: studentData.rg,
         cpf: studentData.cpf,
         phone: studentData.phone,
-        medical_expiry: studentData.medicalCertificateExpiry ? studentData.medicalCertificateExpiry : null, // Prevent empty string
+        medical_expiry: studentData.medicalCertificateExpiry ? studentData.medicalCertificateExpiry : null, 
         photo_url: finalPhotoUrl,
         address: studentData.address,
         guardian: studentData.guardian,
@@ -599,7 +600,7 @@ function App() {
         rg: s.rg,
         cpf: s.cpf,
         phone: s.phone,
-        medical_expiry: s.medicalCertificateExpiry ? s.medicalCertificateExpiry : null, // Prevent empty string
+        medical_expiry: s.medicalCertificateExpiry ? s.medicalCertificateExpiry : null,
         photo_url: s.photoUrl,
         address: s.address,
         guardian: s.guardian,
@@ -654,7 +655,7 @@ function App() {
           rg: updatedStudent.rg,
           cpf: updatedStudent.cpf,
           phone: updatedStudent.phone,
-          medical_expiry: updatedStudent.medicalCertificateExpiry ? updatedStudent.medicalCertificateExpiry : null, // Prevent empty string
+          medical_expiry: updatedStudent.medicalCertificateExpiry ? updatedStudent.medicalCertificateExpiry : null,
           photo_url: finalPhotoUrl,
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
