@@ -9,7 +9,7 @@ import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
 import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
-import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
+import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon, Key, X, Check } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
 
@@ -45,6 +45,11 @@ function App() {
   const [pageData, setPageData] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Change Password State
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [changePasswordData, setChangePasswordData] = useState({ new: '', confirm: '' });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   
   // App State
   const [students, setStudents] = useState<Student[]>([]);
@@ -531,6 +536,39 @@ function App() {
           setIsLoggingIn(false);
       }
   };
+  
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (changePasswordData.new !== changePasswordData.confirm) {
+        alert("As senhas não coincidem.");
+        return;
+    }
+    if (changePasswordData.new.length < 6) {
+        alert("A senha deve ter pelo menos 6 caracteres.");
+        return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+        const { error } = await supabase
+            .from('app_users')
+            .update({ password: changePasswordData.new })
+            .eq('id', currentUser?.id);
+
+        if (error) {
+            throw error;
+        }
+
+        alert("Senha alterada com sucesso!");
+        setIsChangePasswordModalOpen(false);
+        setChangePasswordData({ new: '', confirm: '' });
+    } catch (err) {
+        console.error("Error changing password:", err);
+        alert("Erro ao alterar senha. Tente novamente.");
+    } finally {
+        setIsChangingPassword(false);
+    }
+  };
 
   const handleLogout = () => {
       setCurrentUser(null);
@@ -905,7 +943,7 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.planId || null,
+          plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.payment_link,
           // Mapeamento correto: App (camelCase) -> Banco (snake_case)
@@ -927,7 +965,7 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.planId || null,
+          plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.payment_link
       };
@@ -1198,6 +1236,7 @@ function App() {
         currentPage={currentPage} 
         onNavigate={handleNavigate} 
         onLogout={handleLogout} 
+        onChangePassword={() => setIsChangePasswordModalOpen(true)}
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
@@ -1237,6 +1276,58 @@ function App() {
             </div>
         ) : renderContent()}
       </main>
+
+      {/* Change Password Modal */}
+      {isChangePasswordModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                          <Key className="w-5 h-5 text-primary-600" /> Alterar Senha
+                      </h3>
+                      <button onClick={() => setIsChangePasswordModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                          <X className="w-5 h-5" />
+                      </button>
+                  </div>
+                  
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label>
+                          <input 
+                              type="password" 
+                              required
+                              className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500"
+                              placeholder="Mínimo 6 caracteres"
+                              value={changePasswordData.new}
+                              onChange={(e) => setChangePasswordData({...changePasswordData, new: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Nova Senha</label>
+                          <input 
+                              type="password" 
+                              required
+                              className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500"
+                              placeholder="Repita a senha"
+                              value={changePasswordData.confirm}
+                              onChange={(e) => setChangePasswordData({...changePasswordData, confirm: e.target.value})}
+                          />
+                      </div>
+                      
+                      <div className="pt-2">
+                          <button 
+                              type="submit" 
+                              disabled={isChangingPassword}
+                              className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                              {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                              Atualizar Senha
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
