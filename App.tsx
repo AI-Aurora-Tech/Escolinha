@@ -880,7 +880,7 @@ function App() {
           student_id: t.studentId || null,
           plan_id: t.planId || null,
           payment_method: t.paymentMethod,
-          payment_link: t.paymentLink
+          payment_link: t.payment_link
       };
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
