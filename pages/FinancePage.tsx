@@ -84,6 +84,16 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const balance = totalIncome - totalExpense;
 
+  // Helper para formatar data sem fuso horário (YYYY-MM-DD -> DD/MM/YYYY)
+  const formatDate = (dateString: string) => {
+      if (!dateString) return '-';
+      const parts = dateString.split('-');
+      if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return dateString;
+  };
+
   const getFilteredTransactions = () => {
       return transactions.filter(t => {
           const txDate = t.date;
@@ -185,7 +195,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
     doc.setFontSize(18);
     doc.text("Relatório Financeiro - Garotos do Martinica", 14, 20);
     doc.setFontSize(10);
-    doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`, 14, 28);
+    doc.text(`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`, 14, 28);
     doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 34);
 
     doc.setDrawColor(200, 200, 200);
@@ -216,7 +226,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         }
         
         return [
-            new Date(t.date).toLocaleDateString('pt-BR'),
+            formatDate(t.date),
             desc,
             t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
             t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente',
@@ -473,7 +483,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                 const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
                                 return (
                                 <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">{formatDate(t.date)}</td>
                                     <td className="px-6 py-4 font-medium text-gray-900">
                                         {student ? (
                                             <div className="flex flex-col">
