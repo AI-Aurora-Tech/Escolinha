@@ -89,6 +89,8 @@ export interface Activity {
   type: 'TRAINING' | 'GAME'; // Novo campo
   fee?: number; // Novo campo: Taxa do jogo
   location?: string; // Novo campo: Local do jogo
+  score?: string; // Novo campo: Placar (ex: 3x1)
+  goals?: { studentId: string; count: number }[]; // Novo campo: Artilharia
   groupId?: string; // Optional: Activity might be for specific students only
   participants?: string[]; // Optional: List of Student IDs if not a group activity
   date: string; // ISO String

@@ -325,6 +325,8 @@ function App() {
                  type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
                  location: a.location || '',
+                 score: a.score || '', // Novo campo
+                 goals: a.goals || [], // Novo campo
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -692,7 +694,9 @@ function App() {
           title: a.title,
           activity_type: a.type, 
           fee: feeValue, 
-          location: locationValue, 
+          location: locationValue,
+          score: a.score || '', 
+          goals: a.goals || [], 
           group_id: a.groupId || null,
           participants: a.participants || [],
           start_time: a.startTime,
@@ -735,7 +739,9 @@ function App() {
                // CRITICAL: Initialize arrays to prevent white screen crash on render
                attendance: [],
                feePayments: [],
-               participants: a.participants || []
+               participants: a.participants || [],
+               score: newItem.score || '',
+               goals: newItem.goals || []
            }));
            setActivities(prev => [...prev, ...newActivities]);
       } else {
@@ -754,6 +760,8 @@ function App() {
       const finalParticipants = a.participants || existingActivity.participants || [];
       const finalAttendance = a.attendance || existingActivity.attendance || [];
       const finalFeePayments = a.feePayments || existingActivity.feePayments || [];
+      const finalScore = a.score !== undefined ? a.score : (existingActivity.score || '');
+      const finalGoals = a.goals !== undefined ? a.goals : (existingActivity.goals || []);
 
       // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
@@ -764,6 +772,8 @@ function App() {
           activity_type: a.type, 
           fee: feeValue,
           location: locationValue,
+          score: finalScore,
+          goals: finalGoals,
           group_id: a.groupId || null,
           participants: finalParticipants,
           date: a.date,
@@ -783,7 +793,9 @@ function App() {
               ...a,
               participants: finalParticipants,
               attendance: finalAttendance,
-              feePayments: finalFeePayments
+              feePayments: finalFeePayments,
+              score: finalScore,
+              goals: finalGoals
           } : act));
       } else {
           console.error("Supabase Update Error:", error);

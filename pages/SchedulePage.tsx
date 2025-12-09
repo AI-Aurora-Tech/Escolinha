@@ -1,9 +1,11 @@
 
 
 
+
+
 import React, { useState, useMemo } from 'react';
 import { Activity, Group, Student, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy, Minus, PlusCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -48,7 +50,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
   const canEdit = !isGuardian;
 
   // Modal Form State
-  const initialForm = {
+  const initialForm: any = {
     title: '',
     type: 'TRAINING',
     groupId: '',
@@ -57,9 +59,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
     endTime: '15:30',
     location: '',
     fee: 0,
-    recurrence: 'none'
+    recurrence: 'none',
+    score: '',
+    goals: []
   };
   const [form, setForm] = useState(initialForm);
+  // Temporary state for adding a goal scorer in the modal
+  const [selectedScorerId, setSelectedScorerId] = useState('');
 
   // Helper Date Functions
   const formatDate = (dateString: string) => {
@@ -94,6 +100,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           ...initialForm,
           date: selectedDate.toISOString().split('T')[0] // Default to currently selected date
       });
+      setSelectedScorerId('');
       setIsModalOpen(true);
   };
 
@@ -108,8 +115,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           endTime: activity.endTime,
           location: activity.location || '',
           fee: activity.fee || 0,
-          recurrence: activity.recurrence || 'none'
+          recurrence: activity.recurrence || 'none',
+          score: activity.score || '',
+          goals: activity.goals || []
       });
+      setSelectedScorerId('');
       setIsModalOpen(true);
   };
 
@@ -130,6 +140,38 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
           onDeleteActivity(id);
       }
   };
+
+  // Goal Management Logic
+  const handleAddGoal = () => {
+      if (!selectedScorerId) return;
+      
+      const currentGoals = [...(form.goals || [])];
+      const existingEntry = currentGoals.find((g: any) => g.studentId === selectedScorerId);
+
+      if (existingEntry) {
+          existingEntry.count += 1;
+      } else {
+          currentGoals.push({ studentId: selectedScorerId, count: 1 });
+      }
+      setForm({ ...form, goals: currentGoals });
+      setSelectedScorerId('');
+  };
+
+  const handleRemoveGoal = (studentId: string) => {
+      const currentGoals = [...(form.goals || [])];
+      const existingEntry = currentGoals.find((g: any) => g.studentId === studentId);
+      
+      if (existingEntry) {
+          if (existingEntry.count > 1) {
+              existingEntry.count -= 1;
+          } else {
+              const index = currentGoals.indexOf(existingEntry);
+              currentGoals.splice(index, 1);
+          }
+          setForm({ ...form, goals: currentGoals });
+      }
+  };
+
 
   // --- REPORT GENERATION ---
 
@@ -155,14 +197,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
 
     activitiesInRange.forEach((activity) => {
         const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto/Individual';
-        
+        const scoreText = activity.score ? ` - Placar: ${activity.score}` : '';
+
         // Add Activity Header
         if (currentY > 250) { doc.addPage(); currentY = 20; }
         
         doc.setFillColor(240, 240, 240);
         doc.rect(14, currentY, 182, 8, 'F');
         doc.setFont("helvetica", "bold");
-        doc.text(`${formatDate(activity.date)} - ${activity.title} (${groupName})`, 16, currentY + 5);
+        doc.text(`${formatDate(activity.date)} - ${activity.title} (${groupName})${scoreText}`, 16, currentY + 5);
         doc.setFont("helvetica", "normal");
         
         currentY += 10;
@@ -172,6 +215,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         const rows = activityStudents.map(s => {
             const isPresent = activity.attendance?.includes(s.id);
             const hasPaid = activity.feePayments?.includes(s.id);
+            const goals = activity.goals?.find(g => g.studentId === s.id)?.count || 0;
             
             let paymentStatus = '-';
             if (activity.type === 'GAME' && activity.fee && activity.fee > 0) {
@@ -181,21 +225,23 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
             return [
                 s.name,
                 isPresent ? 'PRESENTE' : 'AUSENTE',
-                paymentStatus
+                paymentStatus,
+                goals > 0 ? goals.toString() : '-'
             ];
         });
 
         autoTable(doc, {
             startY: currentY,
-            head: [['Atleta', 'Presença', 'Taxa']],
+            head: [['Atleta', 'Presença', 'Taxa', 'Gols']],
             body: rows,
             theme: 'grid',
             headStyles: { fillColor: [100, 100, 100], fontSize: 8 },
             bodyStyles: { fontSize: 8 },
             columnStyles: { 
-                0: { cellWidth: 100 },
-                1: { cellWidth: 40 },
-                2: { cellWidth: 40 }
+                0: { cellWidth: 90 },
+                1: { cellWidth: 30 },
+                2: { cellWidth: 30 },
+                3: { cellWidth: 20 }
             },
             didParseCell: (data) => {
                  if (data.section === 'body') {
@@ -237,6 +283,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
     const statsData = students.map(student => {
         let convocations = 0;
         let attended = 0;
+        let totalGoals = 0;
 
         gamesInRange.forEach(game => {
              const isGroupMatch = game.groupId === student.groupId;
@@ -247,6 +294,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                  if (game.attendance?.includes(student.id)) {
                      attended++;
                  }
+                 const goalsInGame = game.goals?.find(g => g.studentId === student.id)?.count || 0;
+                 totalGoals += goalsInGame;
              }
         });
 
@@ -254,14 +303,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
             name: student.name,
             group: groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo',
             convocations,
-            attended
+            attended,
+            totalGoals
         };
     })
-    .sort((a, b) => b.convocations - a.convocations); // Ordenar por quem tem mais jogos
+    .sort((a, b) => b.totalGoals - a.totalGoals || b.convocations - a.convocations); // Ordenar por gols, depois jogos
 
     const doc = new jsPDF();
     doc.setFontSize(18);
-    doc.text(`Estatísticas de Convocações (Jogos)`, 14, 20);
+    doc.text(`Estatísticas de Jogos e Artilharia`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 14, 26);
     doc.text(`Total de Jogos no Período: ${gamesInRange.length}`, 14, 32);
@@ -271,12 +321,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         s.group,
         s.convocations.toString(),
         s.attended.toString(),
+        s.totalGoals.toString(),
         s.convocations > 0 ? `${Math.round((s.attended/s.convocations)*100)}%` : '0%'
     ]);
 
     autoTable(doc, {
         startY: 38,
-        head: [['Atleta', 'Grupo', 'Jogos (Convocado)', 'Presenças', '% Freq.']],
+        head: [['Atleta', 'Grupo', 'Jogos (Convocado)', 'Presenças', 'Gols', '% Freq.']],
         body: tableData,
         headStyles: { fillColor: [234, 88, 12] }, // Orange-600
         alternateRowStyles: { fillColor: [255, 247, 237] } // Orange-50
@@ -295,21 +346,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
         doc.text(`Data: ${formatDate(activity.date)} - Horário: ${activity.startTime}`, 14, 28);
         doc.text(`Grupo: ${groupName} | Tipo: ${activity.type === 'GAME' ? 'JOGO' : 'TREINO'}`, 14, 34);
         if (activity.location) doc.text(`Local: ${activity.location}`, 14, 40);
+        if (activity.score) doc.text(`Placar Final: ${activity.score}`, 14, 46);
 
         const activityStudents = getActivityStudents(activity);
         
         const rows = activityStudents.map(s => {
             const isPresent = activity.attendance?.includes(s.id);
             const hasPaid = activity.feePayments?.includes(s.id);
+            const goals = activity.goals?.find(g => g.studentId === s.id)?.count || 0;
+            
             let payment = '-';
             if (activity.type === 'GAME' && activity.fee && activity.fee > 0) payment = hasPaid ? 'PAGO' : 'PENDENTE';
 
-            return [s.name, isPresent ? 'SIM' : 'NÃO', payment];
+            return [s.name, isPresent ? 'SIM' : 'NÃO', payment, goals > 0 ? goals.toString() : '-'];
         });
 
         autoTable(doc, {
-            startY: 45,
-            head: [['Atleta', 'Presença', 'Taxa']],
+            startY: 55,
+            head: [['Atleta', 'Presença', 'Taxa', 'Gols']],
             body: rows,
             headStyles: { fillColor: [249, 115, 22] },
             didParseCell: (data) => {
@@ -323,14 +377,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
   };
 
   // Helper to get students for an activity
-  const getActivityStudents = (activity: Activity) => {
-      if (activity.groupId) {
-          return students.filter(s => s.groupId === activity.groupId && s.active);
+  const getActivityStudents = (activity: Activity | any) => {
+      // Logic duplicated for form preview where activity might be 'form' state which implies structure
+      const targetGroupId = activity.groupId || activity.group_id; 
+      const targetParticipants = activity.participants || [];
+
+      if (targetGroupId) {
+          return students.filter(s => s.groupId === targetGroupId && s.active);
       }
-      if (activity.participants && activity.participants.length > 0) {
-          return students.filter(s => activity.participants?.includes(s.id));
+      if (targetParticipants && targetParticipants.length > 0) {
+          return students.filter(s => targetParticipants.includes(s.id));
       }
-      return [];
+      return students.filter(s => s.active); // Fallback: all active if no filter (rare)
   };
 
   // --- BULK WHATSAPP MESSAGE (CONVOCAÇÃO) ---
@@ -455,7 +513,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                       <span className="text-[10px] font-bold uppercase">{activity.type === 'GAME' ? 'JOGO' : 'TREINO'}</span>
                                   </div>
                                   <div>
-                                      <h3 className="font-bold text-gray-900 text-lg leading-tight">{activity.title}</h3>
+                                      <h3 className="font-bold text-gray-900 text-lg leading-tight flex items-center gap-2">
+                                        {activity.title}
+                                        {activity.score && (
+                                            <span className="bg-orange-100 text-orange-800 text-xs px-2 py-0.5 rounded border border-orange-200">
+                                                {activity.score}
+                                            </span>
+                                        )}
+                                      </h3>
                                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
                                           <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {activity.startTime} - {activity.endTime}</div>
                                           <div className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {groupName}</div>
@@ -518,6 +583,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                           {/* Expanded Details Pane */}
                           {isExpanded && (
                               <div className="border-t border-gray-100 bg-gray-50 p-4 rounded-b-xl animate-in fade-in slide-in-from-top-2">
+                                  {/* Artilharia Summary if GAME */}
+                                  {activity.type === 'GAME' && activity.goals && activity.goals.length > 0 && (
+                                      <div className="mb-4 bg-white p-3 rounded-lg border border-gray-200">
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-1"><Trophy className="w-3 h-3 text-orange-500" /> Gols da Partida</h5>
+                                          <div className="flex flex-wrap gap-2">
+                                              {activity.goals.map((g, idx) => {
+                                                  const student = students.find(s => s.id === g.studentId);
+                                                  if (!student) return null;
+                                                  return (
+                                                      <span key={idx} className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full border border-gray-200">
+                                                          ⚽ {student.name} ({g.count})
+                                                      </span>
+                                                  );
+                                              })}
+                                          </div>
+                                      </div>
+                                  )}
+
                                   <div className="flex justify-between items-center mb-4">
                                       <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                                           Lista de Atletas ({totalCount})
@@ -665,7 +748,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                                   </div>
                                   <div className="text-left">
                                       <h4 className="font-bold text-gray-800 text-sm">Estatísticas de Jogos</h4>
-                                      <p className="text-xs text-gray-500">Ranking de convocações e participação.</p>
+                                      <p className="text-xs text-gray-500">Ranking de convocações e artilharia.</p>
                                   </div>
                               </div>
                               <Download className="w-4 h-4 text-gray-400" />
@@ -741,20 +824,80 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                       
                       {/* Campos específicos para Jogo */}
                       {form.type === 'GAME' && (
-                          <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                              <label className="block text-xs font-bold text-orange-800 uppercase mb-1 flex items-center gap-1">
-                                  <DollarSign className="w-3 h-3" /> Taxa Extra (Opcional)
-                              </label>
-                              <input 
-                                  type="number" 
-                                  min="0" 
-                                  step="0.50" 
-                                  className="w-full border border-orange-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-orange-500"
-                                  placeholder="0.00"
-                                  value={isNaN(form.fee) ? '' : form.fee} 
-                                  onChange={e => setForm({...form, fee: parseFloat(e.target.value) || 0})} 
-                              />
-                              <p className="text-[10px] text-orange-600 mt-1">Valor cobrado por atleta (ex: arbitragem, colete).</p>
+                          <div className="space-y-4 border-t border-gray-100 pt-4">
+                                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+                                    <label className="block text-xs font-bold text-orange-800 uppercase mb-1 flex items-center gap-1">
+                                        <DollarSign className="w-3 h-3" /> Taxa Extra (Opcional)
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        step="0.50" 
+                                        className="w-full border border-orange-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-orange-500"
+                                        placeholder="0.00"
+                                        value={isNaN(form.fee) ? '' : form.fee} 
+                                        onChange={e => setForm({...form, fee: parseFloat(e.target.value) || 0})} 
+                                    />
+                                    <p className="text-[10px] text-orange-600 mt-1">Valor cobrado por atleta (ex: arbitragem, colete).</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-bold text-gray-800">Resultado & Artilharia</h4>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Placar Final</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
+                                            placeholder="Ex: 3 x 2" 
+                                            value={form.score} 
+                                            onChange={e => setForm({...form, score: e.target.value})} 
+                                        />
+                                    </div>
+
+                                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Adicionar Gol</label>
+                                        <div className="flex gap-2 mb-3">
+                                            <select 
+                                                className="flex-1 border border-gray-300 rounded-lg p-2 text-sm"
+                                                value={selectedScorerId}
+                                                onChange={(e) => setSelectedScorerId(e.target.value)}
+                                            >
+                                                <option value="">Selecione o Atleta...</option>
+                                                {getActivityStudents(form).map(s => (
+                                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                                ))}
+                                            </select>
+                                            <button 
+                                                type="button" 
+                                                onClick={handleAddGoal}
+                                                disabled={!selectedScorerId}
+                                                className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                            >
+                                                <PlusCircle className="w-5 h-5" />
+                                            </button>
+                                        </div>
+
+                                        {form.goals && form.goals.length > 0 && (
+                                            <div className="space-y-2">
+                                                {form.goals.map((goal: any) => {
+                                                    const student = students.find(s => s.id === goal.studentId);
+                                                    if (!student) return null;
+                                                    return (
+                                                        <div key={goal.studentId} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 text-sm">
+                                                            <span className="font-medium flex items-center gap-1">⚽ {student.name}</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold">x{goal.count}</span>
+                                                                <button type="button" onClick={() => handleRemoveGoal(goal.studentId)} className="text-red-500 hover:text-red-700">
+                                                                    <Minus className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                           </div>
                       )}
                       
