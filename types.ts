@@ -58,12 +58,17 @@ export interface Address {
   state: string;
 }
 
+export interface DocumentStatus {
+  delivered: boolean;
+  isDigital: boolean;
+}
+
 export interface StudentDocuments {
-  rg: boolean;
-  cpf: boolean;
-  medical: boolean;
-  address: boolean;
-  school: boolean;
+  rg: DocumentStatus | boolean;
+  cpf: DocumentStatus | boolean;
+  medical: DocumentStatus | boolean;
+  address: DocumentStatus | boolean;
+  school: DocumentStatus | boolean;
 }
 
 export interface Student {
