@@ -115,7 +115,8 @@ function App() {
                       // 4. Generate
                       const monthName = targetDueDate.toLocaleString('pt-BR', { month: 'long' });
                       const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                      const description = `Mensalidade ${capitalizedMonth}/${processingYear}`;
+                      // Alteração aqui: Adicionar o nome do aluno na descrição
+                      const description = `${student.name} - Mensalidade ${capitalizedMonth}/${processingYear}`;
                       
                       const externalReference = crypto.randomUUID();
                       let paymentLink = '';
