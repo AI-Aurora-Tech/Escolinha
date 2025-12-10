@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { InventoryItem } from '../types';
-import { Plus, Edit, Trash2, Package, Search, AlertTriangle, Box, DollarSign, Filter, Minus, PlusCircle, X, Truck, Tag } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, Search, AlertTriangle, Box, DollarSign, Filter, Minus, PlusCircle, X, Truck, Info } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -31,7 +31,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ items, onAddItem, 
 
   const [form, setForm] = useState(initialFormState);
 
-  const categories = Array.from(new Set(items.map(i => i.category)));
+  // Get unique categories from items
+  const categories = Array.from(new Set(items.map(i => i.category))).filter(Boolean);
 
   const handleOpenNew = () => {
     setEditingId(null);
@@ -56,10 +57,27 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ items, onAddItem, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (editingId) {
+        // Modo Edição: Atualiza item único
         onUpdateItem({ ...form, id: editingId });
     } else {
-        onAddItem(form);
+        // Modo Criação: Verifica se há variações de tamanho separadas por vírgula
+        // Ex: "P, M, G" cria 3 itens
+        const sizeString = form.size || '';
+        const variations = sizeString.includes(',') 
+            ? sizeString.split(',').map(s => s.trim()).filter(s => s !== '')
+            : [sizeString.trim()]; 
+
+        // Se o array estiver vazio (usuário digitou apenas vírgulas), cria um item sem tamanho
+        if (variations.length === 0) variations.push('');
+
+        variations.forEach(sizeVar => {
+             onAddItem({
+                 ...form,
+                 size: sizeVar // Usa a variação específica
+             });
+        });
     }
     setIsModalOpen(false);
   };
@@ -300,10 +318,22 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ items, onAddItem, 
                               </datalist>
                           </div>
                           <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Tamanho / Variação</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                                  Tamanho / Variação
+                                  {!editingId && (
+                                    <span title="Separe por vírgula para criar vários (ex: P, M, G)" className="cursor-help">
+                                      <Info className="w-3 h-3 text-gray-400" />
+                                    </span>
+                                  )}
+                              </label>
                               <input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" 
-                                  placeholder="Ex: P, 38, Único"
+                                  placeholder={editingId ? "Ex: M" : "Ex: P, M, G (cria 3 itens)"}
                                   value={form.size} onChange={e => setForm({...form, size: e.target.value})} />
+                              {!editingId && form.size.includes(',') && (
+                                  <p className="text-[10px] text-primary-600 mt-1">
+                                      Serão criados {form.size.split(',').filter(s => s.trim()).length} itens diferentes.
+                                  </p>
+                              )}
                           </div>
                       </div>
 

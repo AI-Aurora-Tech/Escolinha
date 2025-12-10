@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
   ADMIN = 'ADMIN',
   PROFESSOR = 'PROFESSOR',
@@ -133,4 +134,16 @@ export interface User {
   role: UserRole;
   avatar: string;
   cpf?: string; // Para login de responsável
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: string;
+  size?: string;
+  quantity: number;
+  minQuantity: number;
+  salePrice?: number;
+  costPrice?: number;
+  supplier?: string;
 }
