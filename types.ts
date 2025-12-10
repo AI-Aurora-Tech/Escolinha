@@ -134,3 +134,15 @@ export interface User {
   avatar: string;
   cpf?: string; // Para login de responsável
 }
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: string; // ex: Uniforme, Bola, Cone
+  size?: string; // ex: P, M, G, 38, 40
+  quantity: number;
+  minQuantity: number; // Estoque mínimo para alerta
+  salePrice?: number; // Preço de Venda
+  costPrice?: number; // Preço de Custo
+  supplier?: string; // Fornecedor
+}
