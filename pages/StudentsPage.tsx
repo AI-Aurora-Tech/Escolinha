@@ -101,6 +101,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         setFinanceFilter('DEFAULTING');
     } else if (initialFilter === 'MISSING_DOCS') {
         setDocsFilter('MISSING_DOCS');
+    } else if (initialFilter === 'DOCS_OK') {
+        setDocsFilter('OK');
     }
   }, [initialFilter]);
 
