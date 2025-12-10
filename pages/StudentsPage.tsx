@@ -30,6 +30,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [medicalFilter, setMedicalFilter] = useState('ALL');
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
+  
+  // Novos filtros
+  const [groupFilter, setGroupFilter] = useState('ALL');
+  const [planFilter, setPlanFilter] = useState('ALL');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
@@ -673,7 +677,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (docsFilter === 'OK') matchesDocs = !missing;
     }
 
-    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs;
+    let matchesGroup = true;
+    if (groupFilter !== 'ALL') matchesGroup = s.groupId === groupFilter;
+
+    let matchesPlan = true;
+    if (planFilter !== 'ALL') matchesPlan = s.planId === planFilter;
+
+    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs && matchesGroup && matchesPlan;
   });
 
   const startCamera = async () => {
@@ -1113,6 +1123,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                    <option value="ALL">Todos Status</option>
                    <option value="ACTIVE">Ativos</option>
                    <option value="INACTIVE">Inativos</option>
+               </select>
+
+               <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+                   <option value="ALL">Todos Grupos</option>
+                   {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+               </select>
+
+               <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}>
+                   <option value="ALL">Todos Planos</option>
+                   {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                </select>
                
                {isAdmin && (
