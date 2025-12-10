@@ -1299,7 +1299,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     name: studentForm.guardian.name,
                     email: studentForm.guardian.email,
                     phone: studentForm.guardian.phone,
-                    identification: { type: 'CPF', number: studentForm.guardian.cpf }
+                    identification: { type: 'CPF', number: student.guardian.cpf }
                 }
             });
             if (mpResult) {

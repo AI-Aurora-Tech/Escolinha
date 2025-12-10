@@ -8,8 +8,7 @@ import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
-import { InventoryPage } from './pages/InventoryPage'; // Importar nova página
-import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod, InventoryItem } from './types';
+import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon, Key, X, Check } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
@@ -59,7 +58,6 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]); // Novo Estado
 
   // --- TUITION GENERATION JOB (10 Days Before Rule) ---
   const runTuitionJob = async (currentStudents: Student[], currentPlans: Plan[], currentTransactions: Transaction[]) => {
@@ -208,7 +206,6 @@ function App() {
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
-        const { data: inventoryData } = await supabase.from('inventory').select('*'); // Fetch Inventory
         
         // --- ROLE BASED FETCHING ---
         let studentsData;
@@ -294,20 +291,6 @@ function App() {
                 description: p.description
             }));
             setPlans(mappedPlans);
-        }
-        
-        if (inventoryData) {
-            setInventoryItems(inventoryData.map((i: any) => ({
-                id: i.id,
-                name: i.name,
-                category: i.category,
-                size: i.size,
-                quantity: i.quantity,
-                minQuantity: i.min_quantity,
-                salePrice: i.price, // Map existing 'price' to salePrice, assuming standard schema
-                costPrice: i.cost_price, // Assuming new column
-                supplier: i.supplier // Assuming new column
-            })));
         }
 
         if (transactionsData) {
@@ -615,8 +598,6 @@ function App() {
       }
   };
 
-  // --- CRUD HANDLERS ---
-  
   const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
     setIsLoading(true);
     let finalPhotoUrl = studentData.photoUrl;
@@ -777,7 +758,10 @@ function App() {
 
       const basePayload = {
           title: a.title,
-          description: JSON.stringify(metadata), 
+          // activity_type: a.type, // Remove to avoid column error
+          // fee: feeValue,         // Remove
+          // location: locationValue, // Remove
+          description: JSON.stringify(metadata), // Store here
           group_id: a.groupId || null,
           participants: a.participants || [],
           start_time: a.startTime,
@@ -851,9 +835,9 @@ function App() {
       // Pack into description
       const metadata = {
           type: a.type,
-          opponent: a.opponent || '', 
-          teamA: a.teamA || '', 
-          teamB: a.teamB || '', 
+          opponent: a.opponent || '', // Pack opponent
+          teamA: a.teamA || '', // Pack teamA
+          teamB: a.teamB || '', // Pack teamB
           fee: feeValue,
           location: locationValue,
           score: finalScore,
@@ -871,6 +855,7 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: finalAttendance,
+          // fee_payments: finalFeePayments // Do not send if column missing
       };
       
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
@@ -1044,61 +1029,6 @@ function App() {
       const { error } = await supabase.from('app_users').delete().eq('id', id);
       if(!error) setSystemUsers(prev => prev.filter(u => u.id !== id));
   };
-
-  // --- INVENTORY HANDLERS ---
-  const handleAddInventoryItem = async (item: Omit<InventoryItem, 'id'>) => {
-      const payload = {
-          name: item.name,
-          category: item.category,
-          size: item.size,
-          quantity: item.quantity,
-          min_quantity: item.minQuantity,
-          price: item.salePrice, // Mapping salePrice to DB 'price' column for compatibility
-          cost_price: item.costPrice, // Using cost_price column
-          supplier: item.supplier // Using supplier column
-      };
-      
-      // Note: If columns don't exist in DB, Supabase might ignore them or error. 
-      // This implementation assumes the schema update was applied.
-      const { data, error } = await supabase.from('inventory').insert([payload]).select().single();
-      if(data && !error) {
-          setInventoryItems(prev => [...prev, { 
-              ...item, 
-              id: data.id,
-              salePrice: item.salePrice, 
-              costPrice: item.costPrice,
-              supplier: item.supplier
-          }]);
-      } else {
-          console.error("Erro ao adicionar item:", error);
-      }
-  };
-
-  const handleUpdateInventoryItem = async (item: InventoryItem) => {
-      const payload = {
-          name: item.name,
-          category: item.category,
-          size: item.size,
-          quantity: item.quantity,
-          min_quantity: item.minQuantity,
-          price: item.salePrice,
-          cost_price: item.costPrice,
-          supplier: item.supplier
-      };
-      const { error } = await supabase.from('inventory').update(payload).eq('id', item.id);
-      if(!error) {
-          setInventoryItems(prev => prev.map(i => i.id === item.id ? item : i));
-      } else {
-          console.error("Erro ao atualizar item:", error);
-      }
-  };
-
-  const handleDeleteInventoryItem = async (id: string) => {
-      const { error } = await supabase.from('inventory').delete().eq('id', id);
-      if(!error) {
-          setInventoryItems(prev => prev.filter(i => i.id !== id));
-      }
-  };
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
@@ -1141,7 +1071,7 @@ function App() {
                                <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label>
                                   <input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                                </div>
+                               </div>
                                <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label>
                                   <input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} />
@@ -1274,14 +1204,6 @@ function App() {
                   onDeleteActivity={handleDeleteActivity}
                   currentUser={currentUser}
                />;
-      case 'inventory':
-         if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-         return <InventoryPage
-                  items={inventoryItems}
-                  onAddItem={handleAddInventoryItem}
-                  onUpdateItem={handleUpdateInventoryItem}
-                  onDeleteItem={handleDeleteInventoryItem}
-              />;
       case 'finance':
         return (currentUser!.role === UserRole.ADMIN) ? 
             <FinancePage 
@@ -1335,7 +1257,6 @@ function App() {
                         {currentPage === 'groups' && 'Gestão de Grupos'}
                         {currentPage === 'plans' && 'Planos e Mensalidades'}
                         {currentPage === 'schedule' && 'Agenda'}
-                        {currentPage === 'inventory' && 'Controle de Estoque'}
                         {currentPage === 'finance' && 'Fluxo de Caixa'}
                         {currentPage === 'users' && 'Gestão de Usuários'}
                     </h1>
