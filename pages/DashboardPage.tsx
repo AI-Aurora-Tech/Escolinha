@@ -19,6 +19,15 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   
   const activeStudents = students.filter(s => s.active).length;
   
+  // Helper para data de hoje local YYYY-MM-DD
+  const getTodayStr = () => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const monthlyRevenue = useMemo(() => {
     return transactions
       .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
@@ -33,14 +42,15 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
 
   // Calculate distinct students who are defaulting
   const defaultingStudentsCount = useMemo(() => {
-    const today = new Date();
+    const todayStr = getTodayStr();
     const defaulterIds = new Set(
         transactions
             .filter(t => 
                 t.type === TransactionType.INCOME && 
                 t.status !== PaymentStatus.PAID && 
+                t.status !== PaymentStatus.CANCELLED &&
                 t.studentId &&
-                new Date(t.date) < today
+                t.date < todayStr // Comparação estrita de string: Só é atrasado se data < hoje
             )
             .map(t => t.studentId)
     );
