@@ -50,8 +50,12 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   const missingDocsCount = useMemo(() => {
       return students.filter(s => {
           if (!s.active || !s.documents) return false;
-          // Retorna verdadeiro se algum documento estiver false (faltando)
-          return !s.documents.rg || !s.documents.cpf || !s.documents.medical || !s.documents.address || !s.documents.school;
+          // Helper to check if doc is delivered regardless of format (boolean or object)
+          const check = (doc: any) => {
+              if (typeof doc === 'boolean') return doc;
+              return doc?.delivered;
+          };
+          return !check(s.documents.rg) || !check(s.documents.cpf) || !check(s.documents.medical) || !check(s.documents.address) || !check(s.documents.school);
       }).length;
   }, [students]);
 

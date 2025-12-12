@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
@@ -278,7 +279,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
 
-  const initialFormState = {
+  const initialFormState: any = {
     name: '',
     birthDate: '',
     rg: '',
@@ -299,11 +300,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     },
     guardian: { name: '', phone: '', email: '', cpf: '' },
     documents: {
-        rg: false,
-        cpf: false,
-        medical: false,
-        address: false,
-        school: false
+        rg: { delivered: false, isDigital: false },
+        cpf: { delivered: false, isDigital: false },
+        medical: { delivered: false, isDigital: false },
+        address: { delivered: false, isDigital: false },
+        school: { delivered: false, isDigital: false }
     }
   };
 
@@ -339,7 +340,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const hasMissingDocs = (student: Student) => {
       if (!student.documents) return true;
-      return !student.documents.rg || !student.documents.cpf || !student.documents.medical || !student.documents.address || !student.documents.school;
+      const d = student.documents as any;
+      
+      const check = (doc: any) => {
+          if (typeof doc === 'boolean') return doc;
+          return doc?.delivered;
+      }
+
+      return !check(d.rg) || !check(d.cpf) || !check(d.medical) || !check(d.address) || !check(d.school);
   };
 
   const getStudentOverdueCount = (studentId: string) => {
@@ -365,13 +373,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           alert("Telefone do responsável não encontrado.");
           return;
       }
+      
+      const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
+      const d = student.documents as any;
 
       const missingList = [];
-      if (!student.documents?.rg) missingList.push("RG");
-      if (!student.documents?.cpf) missingList.push("CPF");
-      if (!student.documents?.medical) missingList.push("Atestado Médico");
-      if (!student.documents?.address) missingList.push("Comp. de Endereço");
-      if (!student.documents?.school) missingList.push("Declaração Escolar");
+      if (!getStatus(d.rg)) missingList.push("RG");
+      if (!getStatus(d.cpf)) missingList.push("CPF");
+      if (!getStatus(d.medical)) missingList.push("Atestado Médico");
+      if (!getStatus(d.address)) missingList.push("Comp. de Endereço");
+      if (!getStatus(d.school)) missingList.push("Declaração Escolar");
 
       if (missingList.length === 0) return;
 
@@ -516,6 +527,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
           if (mpResult && mpResult.qrCode) {
               const code = mpResult.qrCode;
+              // Fix: result.id -> mpResult.id
               setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
 
               const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
@@ -654,6 +666,22 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleOpenEdit = (student: Student) => {
       setEditingId(student.id);
+
+      // Normalize documents if they are boolean
+      const normalizeDocs = (docs: any) => {
+          if (!docs) return initialFormState.documents;
+          const newDocs: any = {};
+          ['rg', 'cpf', 'medical', 'address', 'school'].forEach(key => {
+              const val = docs[key];
+              if (typeof val === 'boolean') {
+                  newDocs[key] = { delivered: val, isDigital: false };
+              } else {
+                  newDocs[key] = val || { delivered: false, isDigital: false };
+              }
+          });
+          return newDocs;
+      };
+
       setStudentForm({
           name: student.name,
           birthDate: student.birthDate,
@@ -666,7 +694,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           active: student.active,
           address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
           guardian: { ...student.guardian },
-          documents: student.documents || { rg: false, cpf: false, medical: false, address: false, school: false }
+          documents: normalizeDocs(student.documents)
       });
       setCapturedImage(student.photoUrl || null);
       setActiveTab('DETAILS');
@@ -675,47 +703,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleOpenHistory = (student: Student) => {
-      setEditingId(student.id);
-      setStudentForm({
-          name: student.name,
-          birthDate: student.birthDate,
-          rg: student.rg,
-          cpf: student.cpf,
-          phone: student.phone,
-          medicalCertificateExpiry: student.medicalCertificateExpiry,
-          groupId: student.groupId,
-          planId: student.planId,
-          active: student.active,
-          address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
-          guardian: { ...student.guardian },
-          documents: student.documents || { rg: false, cpf: false, medical: false, address: false, school: false }
-      });
-      setCapturedImage(student.photoUrl || null);
+      handleOpenEdit(student);
       setActiveTab('FINANCE');
-      setSelectedFinanceIds(new Set());
-      setIsModalOpen(true);
   };
 
   const handleOpenAttendance = (student: Student) => {
-      setEditingId(student.id);
-      setStudentForm({
-          name: student.name,
-          birthDate: student.birthDate,
-          rg: student.rg,
-          cpf: student.cpf,
-          phone: student.phone,
-          medicalCertificateExpiry: student.medicalCertificateExpiry,
-          groupId: student.groupId,
-          planId: student.planId,
-          active: student.active,
-          address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
-          guardian: { ...student.guardian },
-          documents: student.documents || { rg: false, cpf: false, medical: false, address: false, school: false }
-      });
-      setCapturedImage(student.photoUrl || null);
+      handleOpenEdit(student);
       setActiveTab('ATTENDANCE'); 
-      setSelectedFinanceIds(new Set());
-      setIsModalOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -739,6 +733,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setSelectedFinanceIds(new Set());
   };
 
+  // ... (keeping other handlers like handlePayTransaction, handleCancelTransaction etc unchanged)
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
       const tx = transactions.find(t => t.id === id);
       if(tx) {
@@ -846,23 +841,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleExportExcel = () => {
-    const data = filteredStudents.map(s => ({
-        'Nome do Aluno': s.name,
-        'Data Nascimento': formatDate(s.birthDate),
-        'Idade': calculateAge(s.birthDate),
-        'RG': s.rg,
-        'CPF Aluno': s.cpf,
-        'Grupo': groups.find(g => g.id === s.groupId)?.name || 'N/A',
-        'Nome Responsável': s.guardian.name,
-        'CPF Responsável': s.guardian.cpf,
-        'Telefone': s.guardian.phone,
-        'Status': s.active ? 'Ativo' : 'Inativo',
-        'Atestado': isMedicalExpired(s.medicalCertificateExpiry) ? 'Vencido' : 'Válido',
-        'Inadimplente': getStudentOverdueCount(s.id) > 0 ? 'SIM' : 'NÃO',
-        'Docs Pendentes': hasMissingDocs(s) ? 'SIM' : 'NÃO',
-        'Cidade': s.address?.city || '',
-        'Bairro': s.address?.district || ''
-    }));
+    const data = filteredStudents.map(s => {
+        const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
+        const d = s.documents as any;
+        const missing = !getStatus(d.rg) || !getStatus(d.cpf) || !getStatus(d.medical) || !getStatus(d.address) || !getStatus(d.school);
+        
+        return {
+            'Nome do Aluno': s.name,
+            'Data Nascimento': formatDate(s.birthDate),
+            'Idade': calculateAge(s.birthDate),
+            'RG': s.rg,
+            'CPF Aluno': s.cpf,
+            'Grupo': groups.find(g => g.id === s.groupId)?.name || 'N/A',
+            'Nome Responsável': s.guardian.name,
+            'CPF Responsável': s.guardian.cpf,
+            'Telefone': s.guardian.phone,
+            'Status': s.active ? 'Ativo' : 'Inativo',
+            'Atestado': isMedicalExpired(s.medicalCertificateExpiry) ? 'Vencido' : 'Válido',
+            'Inadimplente': getStudentOverdueCount(s.id) > 0 ? 'SIM' : 'NÃO',
+            'Docs Pendentes': missing ? 'SIM' : 'NÃO',
+            'Cidade': s.address?.city || '',
+            'Bairro': s.address?.district || ''
+        }
+    });
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -1181,14 +1182,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
 
-  const toggleDoc = (field: keyof typeof studentForm.documents) => {
-      setStudentForm(prev => ({
-          ...prev,
-          documents: {
-              ...prev.documents,
-              [field]: !prev.documents[field]
+  const updateDoc = (field: string, subField: 'delivered' | 'isDigital', value: boolean) => {
+      setStudentForm(prev => {
+          const currentDoc = (prev.documents as any)[field] || { delivered: false, isDigital: false };
+          return {
+              ...prev,
+              documents: {
+                  ...prev.documents,
+                  [field]: { ...currentDoc, [subField]: value }
+              }
           }
-      }));
+      });
   };
 
   // Handler for Manual Charge
@@ -1573,11 +1577,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 <div className="pt-2">
                                     <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-2"><FolderCheck className="w-4 h-4 text-primary-600" /> Checklist de Entrega</h4>
                                     <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.rg} onChange={() => toggleDoc('rg')} className="rounded text-primary-600 focus:ring-primary-500" />RG Entregue</label>
-                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.cpf} onChange={() => toggleDoc('cpf')} className="rounded text-primary-600 focus:ring-primary-500" />CPF Entregue</label>
-                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.medical} onChange={() => toggleDoc('medical')} className="rounded text-primary-600 focus:ring-primary-500" />Atestado Médico Entregue</label>
-                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.address} onChange={() => toggleDoc('address')} className="rounded text-primary-600 focus:ring-primary-500" />Comp. Endereço Entregue</label>
-                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"><input type="checkbox" disabled={isGuardian} checked={studentForm.documents.school} onChange={() => toggleDoc('school')} className="rounded text-primary-600 focus:ring-primary-500" />Declaração Escolar Entregue</label>
+                                        {['rg', 'cpf', 'medical', 'address', 'school'].map((docKey) => {
+                                            const doc = (studentForm.documents as any)[docKey];
+                                            const isDelivered = doc?.delivered || false;
+                                            const isDigital = doc?.isDigital || false;
+                                            
+                                            const displayLabels: Record<string, string> = {
+                                                rg: 'RG', cpf: 'CPF', medical: 'Atestado Médico', address: 'Comp. Endereço', school: 'Declaração Escolar'
+                                            };
+
+                                            return (
+                                                <div key={docKey}>
+                                                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            disabled={isGuardian} 
+                                                            checked={isDelivered} 
+                                                            onChange={(e) => updateDoc(docKey, 'delivered', e.target.checked)} 
+                                                            className="rounded text-primary-600 focus:ring-primary-500" 
+                                                        />
+                                                        {displayLabels[docKey]} Entregue
+                                                    </label>
+                                                    {isDelivered && (
+                                                         <div className="ml-6 mt-1">
+                                                            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    disabled={isGuardian}
+                                                                    checked={isDigital}
+                                                                    onChange={(e) => updateDoc(docKey, 'isDigital', e.target.checked)}
+                                                                    className="rounded text-blue-600 focus:ring-blue-500 w-3 h-3"
+                                                                />
+                                                                Arquivo Digital
+                                                            </label>
+                                                         </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                                 <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 pt-2"><MapPin className="w-4 h-4 text-primary-600" /> Endereço</h4>
@@ -1597,207 +1634,371 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     </form>
                 </div>
             ) : activeTab === 'FINANCE' ? (
-                // FINANCE TAB
-                <div className="p-6 flex-1 overflow-y-auto">
-                    <div className="mb-6 flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
-                            <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                <Wallet className="w-5 h-5 text-primary-600" /> Histórico de Mensalidades
-                            </h4>
-                            <div className="flex items-center gap-3">
-                                <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
-                                    Plano Atual: {plans.find(p => p.id === studentForm.planId)?.name || 'Sem plano'}
-                                </div>
-                                {!isGuardian && (
-                                    <button 
-                                        onClick={() => setShowChargeModal(true)}
-                                        className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 flex items-center gap-1.5 shadow-sm transition-colors"
-                                    >
-                                        <PlusCircle className="w-3.5 h-3.5" /> Nova Cobrança
-                                    </button>
-                                )}
-                            </div>
+                // FINANCE HISTORY
+                <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                        <div className="flex items-center gap-2 bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold w-full md:w-auto">
+                            <Wallet className="w-4 h-4" /> Histórico Financeiro
                         </div>
+                        {!isGuardian && (
+                            <div className="flex gap-2 w-full md:w-auto">
+                                <button
+                                    onClick={() => setShowChargeModal(true)}
+                                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 text-sm font-medium"
+                                >
+                                    <PlusCircle className="w-4 h-4" /> Nova Cobrança
+                                </button>
+                                <button 
+                                    onClick={() => sendBatchChargeMessage(studentTransactions.filter(t => t.status !== PaymentStatus.PAID))}
+                                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"
+                                >
+                                    <MessageCircle className="w-4 h-4" /> Cobrar Tudo
+                                </button>
+                            </div>
+                        )}
+                        {/* Selected Actions */}
                         {selectedFinanceIds.size > 0 && (
-                             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-orange-100 p-2 rounded-full text-orange-600"><Calculator className="w-5 h-5" /></div>
-                                    <div><p className="text-xs font-bold text-orange-800 uppercase">Seleção em Lote</p><p className="text-sm font-semibold text-gray-900">{selectedFinanceIds.size} parcelas • Total: R$ {selectedTotal.toFixed(2)}</p></div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {!isGuardian && (
-                                        <button onClick={() => sendBatchChargeMessage(selectedTransactions)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center gap-1.5 shadow-sm"><MessageCircle className="w-3.5 h-3.5" /> Cobrar (WhatsApp)</button>
-                                    )}
-                                    <button onClick={() => initiatePixPayment()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"><QrCode className="w-3.5 h-3.5" /> Pagar Combo (PIX)</button>
-                                </div>
-                             </div>
+                            <div className="flex items-center gap-3 bg-indigo-50 p-2 rounded-lg border border-indigo-100 w-full md:w-auto justify-between md:justify-start">
+                                <span className="text-xs font-bold text-indigo-700 px-2">{selectedFinanceIds.size} selecionados (R$ {selectedTotal.toFixed(2)})</span>
+                                <button 
+                                    onClick={() => initiatePixPayment()}
+                                    className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm"
+                                >
+                                    <QrCode className="w-3 h-3" /> Pagar Combo (PIX)
+                                </button>
+                            </div>
                         )}
                     </div>
+                    
+                    <div className="space-y-3">
+                         {studentTransactions.length > 0 ? (
+                             studentTransactions.map(tx => {
+                                 const isSelected = selectedFinanceIds.has(tx.id);
+                                 const isLate = tx.status !== PaymentStatus.PAID && new Date(tx.date) < new Date();
+                                 const dueDate = formatDate(tx.date);
 
-                    <div className="overflow-hidden border border-gray-200 rounded-xl overflow-x-auto">
-                        <table className="w-full text-left text-sm min-w-[600px]">
-                            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
-                                <tr>
-                                    <th className="px-4 py-3 w-10 text-center"><Square className="w-4 h-4 text-gray-400 mx-auto" /></th>
-                                    <th className="px-4 py-3">Vencimento</th>
-                                    <th className="px-4 py-3">Descrição</th>
-                                    <th className="px-4 py-3">Valor</th>
-                                    <th className="px-4 py-3">Status</th>
-                                    <th className="px-4 py-3 text-right">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {studentTransactions.length > 0 ? (
-                                    studentTransactions.map(tx => {
-                                        const today = new Date();
-                                        const dueDate = new Date(tx.date);
-                                        const diffTime = dueDate.getTime() - today.getTime();
-                                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                        
-                                        const showPayButton = diffDays <= 10 && tx.status !== PaymentStatus.CANCELLED;
-                                        const isLate = dueDate < today && tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED;
-                                        const isPaid = tx.status === PaymentStatus.PAID;
-                                        const isCancelled = tx.status === PaymentStatus.CANCELLED;
-                                        const isSelected = selectedFinanceIds.has(tx.id);
-                                        const isChecking = checkingStatusId === tx.id;
-                                        const isSendingPix = sendingPixId === tx.id;
+                                 return (
+                                     <div key={tx.id} className={`p-4 rounded-xl border transition-all ${isLate ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'} hover:shadow-md`}>
+                                         <div className="flex justify-between items-start">
+                                             <div className="flex items-start gap-3">
+                                                 {/* Checkbox for Combo Payment */}
+                                                 {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
+                                                     <div onClick={() => toggleFinanceSelection(tx.id)} className="mt-1 cursor-pointer text-gray-400 hover:text-primary-600">
+                                                         {isSelected ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
+                                                     </div>
+                                                 )}
 
-                                        return (
-                                        <tr key={tx.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-orange-50' : ''}`}>
-                                            <td className="px-4 py-3 text-center">
-                                                {!isPaid && !isCancelled && (
-                                                    <button onClick={() => toggleFinanceSelection(tx.id)} className="text-gray-400 hover:text-primary-600">
-                                                        {isSelected ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
-                                                    </button>
-                                                )}
-                                            </td>
-                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{formatDate(tx.date)}</td>
-                                            <td className={`px-4 py-3 ${isCancelled ? 'text-gray-400 line-through' : ''}`}>{tx.description}</td>
-                                            <td className={`px-4 py-3 font-semibold ${isCancelled ? 'text-gray-400 line-through' : ''}`}>R$ {tx.amount.toFixed(2)}</td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                                                    tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
-                                                    isCancelled ? 'bg-gray-100 text-gray-500' :
-                                                    isLate ? 'bg-red-100 text-red-700' : 
-                                                    'bg-yellow-100 text-yellow-700'
-                                                }`}>
-                                                    {tx.status === PaymentStatus.PAID ? 'Pago' : 
-                                                     isCancelled ? 'Cancelado' :
-                                                     isLate ? 'Atrasado' : 'Pendente'}
-                                                </span>
-                                                {tx.status === PaymentStatus.PAID && (<div className="text-[10px] text-gray-500 mt-1">Via {tx.paymentMethod === PaymentMethod.PIX_MERCADO_PAGO ? 'PIX (MP)' : 'Dinheiro/Outro'}</div>)}
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                {tx.status !== PaymentStatus.PAID && !isCancelled && (
-                                                    <div className="flex justify-end gap-2">
-                                                        {isLate && tx.paymentLink && !isGuardian && (<button onClick={() => sendChargeMessage(tx)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-200" title="Enviar Cobrança via WhatsApp"><MessageCircle className="w-3 h-3" /> Cobrar</button>)}
-                                                        {(tx.paymentLink || tx.externalReference) && !isGuardian && (
-                                                            <button onClick={() => checkStatus(tx)} disabled={isChecking} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors flex items-center gap-1 border border-blue-200" title="Verificar Pagamento no Mercado Pago">
-                                                                {isChecking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}Verificar
-                                                            </button>
-                                                        )}
-                                                        {showPayButton && (<button onClick={() => initiatePixPayment(tx.id)} className="px-3 py-1.5 bg-[#009EE3] text-white rounded text-xs hover:bg-[#007eb5] transition-colors flex items-center gap-1" title="Pagar com Mercado Pago"><QrCode className="w-3 h-3" /> Pagar (PIX)</button>)}
-                                                        
-                                                        {showPayButton && !isGuardian && (
-                                                            <button 
-                                                                onClick={() => handleSendPixToWhatsApp(tx)}
-                                                                disabled={isSendingPix}
-                                                                className="px-3 py-1.5 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors flex items-center gap-1"
-                                                                title="Gerar PIX e Enviar no WhatsApp"
-                                                            >
-                                                                {isSendingPix ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                                                                PIX Zap
-                                                            </button>
-                                                        )}
+                                                 <div>
+                                                     <p className="font-bold text-gray-800 text-sm">{tx.description}</p>
+                                                     <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                                                         <Clock className="w-3 h-3" /> Vencimento: {dueDate}
+                                                     </p>
+                                                     {/* STATUS BADGE */}
+                                                     <div className="mt-2 flex items-center gap-2">
+                                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
+                                                             tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700 border-green-200' :
+                                                             tx.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500 border-gray-200' :
+                                                             isLate ? 'bg-red-100 text-red-700 border-red-200' :
+                                                             'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                                         }`}>
+                                                             {tx.status === PaymentStatus.PAID ? 'PAGO' : 
+                                                              tx.status === PaymentStatus.CANCELLED ? 'CANCELADO' :
+                                                              isLate ? 'ATRASADO' : 'PENDENTE'}
+                                                         </span>
+                                                         {tx.status === PaymentStatus.PAID && (
+                                                             <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                                                                <CheckCircle className="w-3 h-3" /> {tx.paymentMethod === PaymentMethod.PIX_MERCADO_PAGO ? 'Via PIX Automático' : 'Baixa Manual'}
+                                                             </span>
+                                                         )}
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                             <div className="text-right">
+                                                 <p className="font-bold text-gray-900">R$ {tx.amount.toFixed(2)}</p>
+                                                 {/* ACTIONS */}
+                                                 {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
+                                                     <div className="flex flex-col gap-2 mt-2">
+                                                         {/* Pagar com PIX */}
+                                                         <button 
+                                                            onClick={() => initiatePixPayment(tx.id)}
+                                                            className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md font-bold hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1 border border-indigo-100"
+                                                         >
+                                                             <QrCode className="w-3 h-3" /> Pagar Agora
+                                                         </button>
 
-                                                        {!isGuardian && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors" title="Baixa Manual (Dinheiro)">$</button>}
-                                                        {!isGuardian && <button onClick={() => handleCancelTransaction(tx)} className="px-3 py-1.5 bg-gray-100 text-gray-500 border border-gray-200 rounded text-xs hover:bg-gray-200 hover:text-red-600 transition-colors" title="Cancelar/Ignorar Cobrança"><Ban className="w-3 h-3" /></button>}
-                                                    </div>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    )})
-                                ) : (
-                                    <tr><td colSpan={6} className="p-8 text-center text-gray-500">Nenhuma mensalidade gerada ou registrada.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
+                                                         {!isGuardian && (
+                                                            <div className="flex gap-1 justify-end">
+                                                                {/* Check Status */}
+                                                                <button
+                                                                    onClick={() => checkStatus(tx)}
+                                                                    disabled={checkingStatusId === tx.id}
+                                                                    className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 disabled:opacity-50"
+                                                                    title="Verificar Status (Mercado Pago)"
+                                                                >
+                                                                    {checkingStatusId === tx.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                                                </button>
+                                                                {/* Send WhatsApp */}
+                                                                <button 
+                                                                    onClick={() => sendChargeMessage(tx)}
+                                                                    className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"
+                                                                    title="Enviar Cobrança WhatsApp"
+                                                                >
+                                                                    <Send className="w-3 h-3" />
+                                                                </button>
+                                                                {/* Send PIX Code */}
+                                                                <button 
+                                                                    onClick={() => handleSendPixToWhatsApp(tx)}
+                                                                    className="p-1.5 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
+                                                                    title="Enviar Código PIX WhatsApp"
+                                                                >
+                                                                    <QrCode className="w-3 h-3" />
+                                                                </button>
+                                                                {/* Manual Pay */}
+                                                                <button 
+                                                                    onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)}
+                                                                    className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                                                                    title="Baixa Manual (Dinheiro)"
+                                                                >
+                                                                    <CheckCircle className="w-3 h-3" />
+                                                                </button>
+                                                                {/* Cancel */}
+                                                                <button 
+                                                                    onClick={() => handleCancelTransaction(tx)}
+                                                                    className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-100"
+                                                                    title="Cancelar Cobrança"
+                                                                >
+                                                                    <Ban className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                         )}
+                                                     </div>
+                                                 )}
+                                             </div>
+                                         </div>
+                                         {/* Link Display if available */}
+                                         {tx.paymentLink && tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
+                                              <div className="mt-3 pt-2 border-t border-gray-100">
+                                                  <div className="flex items-center justify-between bg-gray-50 p-2 rounded text-xs text-gray-500">
+                                                      <span className="truncate max-w-[200px]">{tx.paymentLink}</span>
+                                                      <div className="flex gap-2">
+                                                          <button onClick={() => navigator.clipboard.writeText(tx.paymentLink!)} className="hover:text-primary-600"><Copy className="w-3 h-3" /></button>
+                                                          <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="hover:text-primary-600"><LinkIcon className="w-3 h-3" /></a>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                         )}
+                                     </div>
+                                 );
+                             })
+                         ) : (
+                             <div className="text-center py-10 text-gray-400">
+                                 <History className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                                 <p>Nenhum registro financeiro encontrado.</p>
+                             </div>
+                         )}
                     </div>
                 </div>
             ) : (
-                // ATTENDANCE TAB (Updated Logic)
-                 <div className="p-6 flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center"><p className="text-xs text-gray-500 font-semibold uppercase">Presença</p><div className="text-2xl font-bold text-gray-900 mt-1">{attendanceRate}%</div></div>
-                        <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center"><p className="text-xs text-green-700 font-semibold uppercase">Aulas Presente</p><div className="text-2xl font-bold text-green-800 mt-1">{attendanceStats.present}</div></div>
-                        <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center"><p className="text-xs text-red-700 font-semibold uppercase">Faltas</p><div className="text-2xl font-bold text-red-800 mt-1">{attendanceStats.absent}</div></div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-                        <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary-600" /> Histórico de Aulas</h4>
+                // ATTENDANCE TAB
+                <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="bg-purple-50 text-purple-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                            <CalendarCheck className="w-4 h-4" /> Frequência
+                        </div>
                         {!isGuardian && (
-                            <div className="flex flex-wrap gap-2 items-center">
-                                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2">
-                                    <input 
-                                        type="month" 
-                                        value={attendanceMonth} 
-                                        onChange={(e) => setAttendanceMonth(e.target.value)}
-                                        className="bg-transparent text-sm text-gray-600 outline-none py-1.5"
-                                    />
-                                </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handleExportStudentAttendance}
+                                    className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
+                                    title="Exportar PDF"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                </button>
                                 <button 
                                     onClick={handleSendAttendanceToWhatsApp}
-                                    className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-green-700 transition-colors shadow-sm font-medium" 
-                                    title="Enviar Relatório Mensal via WhatsApp"
+                                    className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-colors"
+                                    title="Enviar Relatório WhatsApp"
                                 >
-                                    <MessageCircle className="w-4 h-4" /> Enviar Zap
+                                    <MessageCircle className="w-4 h-4" />
                                 </button>
-                                <button onClick={handleExportStudentAttendance} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 hover:text-primary-600 transition-colors shadow-sm"><Download className="w-4 h-4" /> Exportar Histórico</button>
                             </div>
                         )}
                     </div>
-                    <div className="overflow-hidden border border-gray-200 rounded-xl max-h-[400px] overflow-y-auto overflow-x-auto">
-                        <table className="w-full text-left text-sm min-w-[500px]">
-                            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0"><tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Atividade</th><th className="px-4 py-3">Horário</th><th className="px-4 py-3 text-right">Status</th></tr></thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {studentActivities.length > 0 ? (
-                                    studentActivities.map(activity => {
-                                        const isPresent = activity.attendance.includes(editingId!);
-                                        const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
-                                        let statusBadge;
-                                        if (isPresent) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><CheckCircle className="w-3 h-3" /> Presente</span>); } 
-                                        else if (isPast) { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><XCircle className="w-3 h-3" /> Ausente</span>); } 
-                                        else { statusBadge = (<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><Clock className="w-3 h-3" /> Agendado</span>); }
-                                        return (<tr key={activity.id} className="hover:bg-gray-50"><td className="px-4 py-3">{formatDate(activity.date)}</td><td className="px-4 py-3 font-medium">{activity.title}</td><td className="px-4 py-3 text-gray-500">{activity.startTime} - {activity.endTime}</td><td className="px-4 py-3 text-right">{statusBadge}</td></tr>)})
-                                ) : (<tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma atividade registrada para este aluno.</td></tr>)}
-                            </tbody>
-                        </table>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center">
+                             <p className="text-xs text-gray-500 uppercase font-bold">Total Aulas</p>
+                             <p className="text-xl font-bold text-gray-900">{attendanceStats.total}</p>
+                        </div>
+                        <div className="bg-green-50 p-3 rounded-lg border border-green-100 text-center">
+                             <p className="text-xs text-green-600 uppercase font-bold">Presenças</p>
+                             <p className="text-xl font-bold text-green-700">{attendanceStats.present}</p>
+                        </div>
+                        <div className="bg-red-50 p-3 rounded-lg border border-red-100 text-center">
+                             <p className="text-xs text-red-600 uppercase font-bold">Faltas</p>
+                             <p className="text-xl font-bold text-red-700">{attendanceStats.absent}</p>
+                        </div>
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-center">
+                             <p className="text-xs text-blue-600 uppercase font-bold">Frequência</p>
+                             <p className="text-xl font-bold text-blue-700">{attendanceRate}%</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                         {studentActivities.length > 0 ? (
+                             studentActivities.map(activity => {
+                                 const isPresent = activity.attendance.includes(studentForm.id || editingId || '');
+                                 const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+                                 
+                                 return (
+                                     <div key={activity.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
+                                         <div className="flex items-center gap-3">
+                                             <div className={`w-2 h-2 rounded-full ${isPresent ? 'bg-green-500' : isPast ? 'bg-red-500' : 'bg-gray-300'}`}></div>
+                                             <div>
+                                                 <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                                                 <p className="text-xs text-gray-500">{formatDate(activity.date)} • {activity.startTime}</p>
+                                             </div>
+                                         </div>
+                                         <div>
+                                             {isPresent ? (
+                                                 <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded">Presente</span>
+                                             ) : isPast ? (
+                                                 <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">Falta</span>
+                                             ) : (
+                                                 <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">Agendado</span>
+                                             )}
+                                         </div>
+                                     </div>
+                                 )
+                             })
+                         ) : (
+                             <p className="text-center text-gray-400 py-8 text-sm">Nenhuma atividade registrada.</p>
+                         )}
                     </div>
                 </div>
             )}
             
-            {/* Footer with Actions (Only for DETAILS form tab) */}
-            {activeTab === 'DETAILS' && (
-                 <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex-shrink-0">
-                    <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
-                        <button type="button" onClick={handlePrintContract} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-indigo-600 font-medium hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors"><Printer className="w-4 h-4" /> Imprimir Contrato</button>
-                        <div className="flex gap-3 w-full sm:w-auto justify-end">
-                            <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="flex-1 sm:flex-none px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">
-                                {isGuardian ? 'Fechar' : 'Cancelar'}
+            <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-between items-center flex-shrink-0">
+                {!isGuardian && (
+                    <div className="flex gap-2">
+                        {editingId && (
+                            <button type="button" onClick={handlePrintContract} className="flex items-center gap-1 text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors">
+                                <Printer className="w-4 h-4" /> Contrato
                             </button>
-                            {!isGuardian && (
-                                <button 
-                                    type="submit" 
-                                    form="student-form" // Connects to the form ID
-                                    className="flex-1 sm:flex-none px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
-                                >
-                                    {editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}
-                                </button>
-                            )}
-                        </div>
+                        )}
                     </div>
-                 </div>
-            )}
+                )}
+                
+                <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">
+                        Fechar
+                    </button>
+                    {!isGuardian && activeTab === 'DETAILS' && (
+                        <button 
+                            type="submit" 
+                            form="student-form"
+                            className="px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
+                        >
+                            Salvar Aluno
+                        </button>
+                    )}
+                </div>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Manual Charge Modal */}
+      {showChargeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                  <h3 className="text-lg font-bold mb-4">Nova Cobrança Manual</h3>
+                  <form onSubmit={handleSaveManualCharge} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium mb-1">Descrição</label>
+                          <input required type="text" className="w-full border rounded-lg p-2" 
+                              placeholder="Ex: Uniforme, Taxa Extra..."
+                              value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">Valor (R$)</label>
+                          <input required type="number" step="0.01" className="w-full border rounded-lg p-2" 
+                              value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">Data de Vencimento</label>
+                          <input required type="date" className="w-full border rounded-lg p-2" 
+                              value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                          <button type="button" onClick={() => setShowChargeModal(false)} className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                          <button type="submit" className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Criar Cobrança</button>
+                      </div>
+                  </form>
+             </div>
+        </div>
+      )}
+
+      {/* PIX Modal */}
+      {showPixModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in fade-in zoom-in duration-200">
+                  <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-xl font-bold text-gray-800">Pagamento via PIX</h3>
+                      <button onClick={() => setShowPixModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+                  </div>
+                  
+                  {pixLoading ? (
+                      <div className="py-12 flex flex-col items-center gap-4">
+                          <Loader2 className="w-12 h-12 text-primary-600 animate-spin" />
+                          <p className="text-gray-500 font-medium">Gerando QR Code...</p>
+                      </div>
+                  ) : pixData ? (
+                      <div className="space-y-4">
+                          <div className="bg-green-50 text-green-800 text-sm p-3 rounded-lg border border-green-100 font-medium">
+                               Aguardando pagamento...
+                               <div className="text-xs font-normal mt-1 opacity-80">O sistema confirmará automaticamente.</div>
+                          </div>
+                          
+                          <div className="flex justify-center my-4">
+                               <img 
+                                  src={`data:image/png;base64,${pixData.qrCodeBase64}`} 
+                                  alt="QR Code PIX" 
+                                  className="w-48 h-48 border-4 border-gray-900 rounded-xl"
+                               />
+                          </div>
+
+                          <div className="relative">
+                              <textarea 
+                                  readOnly 
+                                  className="w-full text-xs p-3 border rounded-lg bg-gray-50 h-20 resize-none font-mono text-gray-600"
+                                  value={pixData.qrCode}
+                              />
+                              <button 
+                                  onClick={copyPixCode}
+                                  className="absolute bottom-2 right-2 bg-white shadow-sm border border-gray-200 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                                  title="Copiar Código"
+                              >
+                                  <Copy className="w-4 h-4 text-primary-600" />
+                              </button>
+                          </div>
+                          
+                          <p className="text-xs text-gray-400">Escaneie o QR Code ou copie o código acima para pagar no app do seu banco.</p>
+                      </div>
+                  ) : (
+                      <div className="py-8 text-red-500">Erro ao carregar dados do PIX.</div>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {/* Sending PIX Loading Overlay */}
+      {sendingPixId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center gap-4">
+                <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
+                <p className="font-medium text-gray-700">Gerando PIX e abrindo WhatsApp...</p>
+            </div>
         </div>
       )}
 
@@ -1807,7 +2008,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-4">
                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                   <Zap className="w-5 h-5 text-purple-600" /> Cobrança Automática
+                   <Zap className="w-5 h-5 text-purple-600" /> Envio em Massa (1 a 1)
                </h3>
                {!bulkIsRunning && <button onClick={() => setIsBulkModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>}
             </div>
@@ -1825,7 +2026,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div className="bg-purple-50 text-purple-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
                         Próximo envio em {bulkCountdown}s...
-                        <span className="text-xs font-normal text-gray-500">Permita pop-ups no navegador!</span>
+                        <span className="text-xs font-normal text-gray-500">Mantenha esta janela aberta e permita pop-ups!</span>
                     </div>
                 ) : (
                     <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">
@@ -1838,7 +2039,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 {bulkLogs.map((log, i) => (
                     <div key={i} className="mb-1">{log}</div>
                 ))}
-                {bulkLogs.length === 0 && <div className="text-gray-500">Aguardando início...</div>}
             </div>
 
             <div className="flex justify-end gap-2">
@@ -1857,122 +2057,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </div>
           </div>
         </div>
-      )}
-
-      {/* Manual Charge Modal */}
-      {showChargeModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Nova Cobrança Manual</h3>
-                <form onSubmit={handleSaveManualCharge} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                        <input 
-                            required 
-                            type="text" 
-                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
-                            placeholder="Ex: Uniforme, Excursão..."
-                            value={manualCharge.description}
-                            onChange={e => setManualCharge({...manualCharge, description: e.target.value})}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-                        <input 
-                            required 
-                            type="number" 
-                            min="0.01" 
-                            step="0.01" 
-                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
-                            value={manualCharge.amount}
-                            onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Data de Vencimento</label>
-                        <input 
-                            required 
-                            type="date" 
-                            className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none" 
-                            value={manualCharge.date}
-                            onChange={e => setManualCharge({...manualCharge, date: e.target.value})}
-                        />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button 
-                            type="button" 
-                            onClick={() => setShowChargeModal(false)}
-                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
-                        >
-                            Cancelar
-                        </button>
-                        <button 
-                            type="submit" 
-                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium"
-                        >
-                            Criar Cobrança
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-      )}
-
-      {/* Pix Modal (REAL) */}
-      {showPixModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-                  <div className="mx-auto w-12 h-12 bg-[#009EE3] rounded-full flex items-center justify-center text-white mb-4">
-                      <QrCode className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Pagamento via PIX</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                      {pixLoading 
-                        ? 'Gerando código PIX...' 
-                        : 'Escaneie o QR Code ou copie o código abaixo'}
-                  </p>
-                  
-                  {pixLoading ? (
-                      <div className="py-8 flex flex-col items-center">
-                          <Loader2 className="w-10 h-10 text-[#009EE3] animate-spin mb-4" />
-                          <p className="text-sm text-gray-600">Conectando com Mercado Pago...</p>
-                      </div>
-                  ) : pixData ? (
-                      <div className="flex flex-col items-center">
-                           <div className="bg-white border border-gray-200 p-2 rounded-lg mb-4">
-                               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`} alt="QR Code PIX" className="w-48 h-48 object-contain" />
-                           </div>
-                           
-                           <div className="w-full bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 relative">
-                                <p className="text-[10px] text-gray-500 break-all font-mono text-left h-12 overflow-hidden">{pixData.qrCode}</p>
-                                <button 
-                                    onClick={copyPixCode}
-                                    className="absolute top-2 right-2 p-1.5 bg-white shadow-sm border border-gray-200 rounded text-gray-600 hover:text-[#009EE3]"
-                                    title="Copiar Código"
-                                >
-                                    <Copy className="w-4 h-4" />
-                                </button>
-                           </div>
-
-                           <div className="flex items-center gap-2 text-xs text-green-600 font-medium animate-pulse mb-4">
-                               <RefreshCw className="w-3 h-3 animate-spin" /> Aguardando pagamento...
-                           </div>
-                           <p className="text-[10px] text-gray-400 mb-4">O sistema identificará o pagamento automaticamente.</p>
-                      </div>
-                  ) : (
-                      <div className="py-4 text-red-500 text-sm">Erro ao gerar PIX. Tente novamente.</div>
-                  )}
-
-                  <div className="mt-2">
-                      <button 
-                        onClick={() => { setShowPixModal(false); setPixData(null); }}
-                        className="w-full py-2.5 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                      >
-                          Fechar / Cancelar
-                      </button>
-                  </div>
-              </div>
-          </div>
       )}
     </div>
   );
