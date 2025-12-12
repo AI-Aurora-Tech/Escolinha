@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -118,8 +117,7 @@ function App() {
                  address: s.address, // JSONB
                  guardian: s.guardian, // JSONB
                  planId: s.plan_id,
-                 // Handle Array: If group_ids exists use it, else fallback to wrapping group_id
-                 groupIds: s.group_ids || (s.group_id ? [s.group_id] : []),
+                 groupId: s.group_id,
                  active: s.active,
                  documents: s.documents // JSONB
              }));
@@ -160,11 +158,9 @@ function App() {
              let relevantActivities = activitiesData;
              if (currentUser?.role === UserRole.RESPONSAVEL && students) {
                  const studentIds = students.map(s => s.id);
-                 // Get all groups any student belongs to
-                 const allStudentGroupIds = students.flatMap(s => s.groupIds);
-                 
+                 const studentGroupIds = students.map(s => s.groupId);
                  relevantActivities = activitiesData.filter((a: any) => 
-                    (a.group_id && allStudentGroupIds.includes(a.group_id)) || 
+                    (a.group_id && studentGroupIds.includes(a.group_id)) || 
                     (a.participants && a.participants.some((p: string) => studentIds.includes(p)))
                  );
              }
@@ -482,7 +478,7 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_ids: studentData.groupIds, // Send Array
+        group_id: studentData.groupId,
         active: studentData.active,
         documents: studentData.documents
     };
@@ -500,7 +496,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupIds: data.group_ids || [],
+             groupId: data.group_id,
              active: data.active,
              documents: data.documents
         };
@@ -526,7 +522,7 @@ function App() {
         address: s.address,
         guardian: s.guardian,
         plan_id: s.planId || null,
-        group_ids: s.groupIds || [],
+        group_id: s.groupId || null,
         active: s.active,
         documents: s.documents
       }));
@@ -546,7 +542,7 @@ function App() {
              address: d.address,
              guardian: d.guardian,
              planId: d.plan_id,
-             groupIds: d.group_ids || [],
+             groupId: d.group_id,
              active: d.active,
              documents: d.documents
           }));
@@ -585,7 +581,7 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_ids: updatedStudent.groupIds, // Send Array
+          group_id: updatedStudent.groupId,
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
@@ -598,24 +594,9 @@ function App() {
   
   const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
       setIsLoading(true);
-      // We need to fetch current students to append the group, not overwrite
-      // But filtering in memory is faster since we have 'students' state
-      const updates = ids.map(id => {
-          const student = students.find(s => s.id === id);
-          if (!student) return null;
-          const currentGroups = new Set(student.groupIds || []);
-          currentGroups.add(gid);
-          return { id, group_ids: Array.from(currentGroups) };
-      }).filter(u => u !== null);
-
-      if (updates.length > 0) {
-          const { error } = await supabase.from('students').upsert(updates); // Upsert works for batch update by ID
-          if (!error) {
-               setStudents(students.map(s => {
-                   const update = updates.find(u => u?.id === s.id);
-                   return update ? { ...s, groupIds: update.group_ids } : s;
-               }));
-          }
+      const { error } = await supabase.from('students').update({ group_id: gid }).in('id', ids);
+      if (!error) {
+           setStudents(students.map(s => ids.includes(s.id) ? { ...s, groupId: gid } : s));
       }
       setIsLoading(false);
   };
@@ -858,86 +839,8 @@ function App() {
   };
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
-  
-  const renderContent = () => {
-    switch (currentPage) {
-        case 'dashboard':
-            return <DashboardPage 
-                    students={students} 
-                    transactions={transactions} 
-                    activities={activities} 
-                    role={currentUser?.role || UserRole.PROFESSOR} 
-                    onNavigate={handleNavigate}
-                    />;
-        case 'students':
-            return <StudentsPage 
-                    students={students} 
-                    groups={groups} 
-                    plans={plans} 
-                    transactions={transactions} 
-                    activities={activities} 
-                    onAddStudent={handleAddStudent} 
-                    onBatchAddStudents={handleBatchAddStudents} 
-                    onUpdateStudent={handleUpdateStudent} 
-                    onUpdateTransaction={handleUpdateTransaction} 
-                    onAddTransaction={handleAddTransaction} 
-                    initialFilter={pageData?.filter}
-                    currentUser={currentUser}
-                    />;
-        case 'groups':
-            return <GroupsPage 
-                    groups={groups} 
-                    students={students} 
-                    onAddGroup={handleAddGroup} 
-                    onUpdateGroup={handleUpdateGroup} 
-                    onDeleteGroup={handleDeleteGroup} 
-                    onBatchAssignStudents={handleBatchAssignStudents}
-                    />;
-        case 'plans':
-            return <PlansPage 
-                    plans={plans} 
-                    onAddPlan={handleAddPlan} 
-                    onUpdatePlan={handleUpdatePlan} 
-                    onDeletePlan={handleDeletePlan} 
-                    />;
-        case 'schedule':
-            return <SchedulePage 
-                    activities={activities} 
-                    students={students} 
-                    groups={groups} 
-                    onAddActivity={handleAddActivity} 
-                    onUpdateActivity={handleUpdateActivity} 
-                    onUpdateAttendance={handleUpdateAttendance} 
-                    onUpdateFeePayment={handleUpdateFeePayment}
-                    onDeleteActivity={handleDeleteActivity}
-                    currentUser={currentUser}
-                    />;
-        case 'finance':
-            return <FinancePage 
-                    transactions={transactions} 
-                    plans={plans} 
-                    onAddTransaction={handleAddTransaction} 
-                    onUpdateTransaction={handleUpdateTransaction} 
-                    />;
-        case 'users':
-            return <UsersPage 
-                    users={systemUsers} 
-                    onAddUser={handleAddUser} 
-                    onUpdateUser={handleUpdateUser} 
-                    onDeleteUser={handleDeleteUser} 
-                    />;
-        default:
-            return <DashboardPage 
-                    students={students} 
-                    transactions={transactions} 
-                    activities={activities} 
-                    role={currentUser?.role || UserRole.PROFESSOR}
-                    onNavigate={handleNavigate}
-                    />;
-    }
-  };
 
-  // ... (Login screen render matches original, just closing the component)
+  // --- LOGIN SCREEN RENDER ---
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -950,6 +853,7 @@ function App() {
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
                   </div>
                   
+                  {/* TABS */}
                   <div className="flex border-b border-gray-100">
                       <button 
                         className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -1050,6 +954,86 @@ function App() {
           </div>
       );
   }
+
+  // --- APP CONTENT ---
+  const renderContent = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <DashboardPage 
+                  students={students} 
+                  transactions={transactions} 
+                  activities={activities} 
+                  role={currentUser!.role}
+                  onNavigate={handleNavigate}
+               />;
+      case 'students':
+        return <StudentsPage 
+                  students={students} 
+                  groups={groups} 
+                  plans={plans}
+                  transactions={transactions} 
+                  activities={activities} 
+                  onAddStudent={handleAddStudent} 
+                  onBatchAddStudents={handleBatchAddStudents}
+                  onUpdateStudent={handleUpdateStudent}
+                  onUpdateTransaction={handleUpdateTransaction}
+                  onAddTransaction={handleAddTransaction}
+                  initialFilter={pageData?.filter}
+                  currentUser={currentUser}
+               />;
+      case 'groups':
+        // Responsável can't edit groups
+        if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
+        return <GroupsPage 
+                  groups={groups} 
+                  students={students}
+                  onAddGroup={handleAddGroup}
+                  onUpdateGroup={handleUpdateGroup}
+                  onDeleteGroup={handleDeleteGroup}
+                  onBatchAssignStudents={handleBatchAssignStudents}
+               />;
+      case 'plans':
+        if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
+        return <PlansPage 
+                  plans={plans} 
+                  onAddPlan={handleAddPlan} 
+                  onUpdatePlan={handleUpdatePlan} 
+                  onDeletePlan={handleDeletePlan} 
+               />;
+      case 'schedule':
+        return <SchedulePage 
+                  activities={activities} 
+                  students={students} 
+                  groups={groups} 
+                  onAddActivity={handleAddActivity} 
+                  onUpdateActivity={handleUpdateActivity}
+                  onUpdateAttendance={handleUpdateAttendance}
+                  onUpdateFeePayment={handleUpdateFeePayment}
+                  onDeleteActivity={handleDeleteActivity}
+                  currentUser={currentUser}
+               />;
+      case 'finance':
+        return (currentUser!.role === UserRole.ADMIN) ? 
+            <FinancePage 
+                transactions={transactions} 
+                plans={plans} 
+                onAddTransaction={handleAddTransaction} 
+                onUpdateTransaction={handleUpdateTransaction}
+            /> : 
+            <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
+      case 'users':
+        return currentUser!.role === UserRole.ADMIN ? 
+            <UsersPage 
+                users={systemUsers} 
+                onAddUser={handleAddUser}
+                onUpdateUser={handleUpdateUser}
+                onDeleteUser={handleDeleteUser}
+            /> : 
+            <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
+      default:
+        return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
+    }
+  };
 
   return (
     <div className="flex bg-gray-50 min-h-screen font-sans">

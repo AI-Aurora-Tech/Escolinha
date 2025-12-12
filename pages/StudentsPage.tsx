@@ -1,6 +1,8 @@
+
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Tag } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -78,10 +80,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [bulkLogs, setBulkLogs] = useState<string[]>([]);
   const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Add Group State (for select dropdown in form)
-  const [selectedGroupIdToAdd, setSelectedGroupIdToAdd] = useState('');
-
-
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   // Inicializar filtro se passado via prop
@@ -93,7 +91,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   }, [initialFilter]);
 
-  // ... (Polling Effect unchanged) ...
+  // Polling unificado para pagamentos PIX (Background)
   useEffect(() => {
     if (monitoredPayments.length === 0) return;
 
@@ -106,10 +104,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 const status = await getPaymentStatus(payment.mpId);
                 
                 if (status === 'approved') {
+                    // Pagamento Confirmado!
                     somethingChanged = true;
                     payment.txIds.forEach(id => {
                         handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO);
                     });
+
+                    // Se este pagamento for o que está no modal agora, fecha o modal
                     if (pixData && pixData.id === payment.mpId) {
                          confirmPixPaymentSuccess();
                     }
@@ -132,8 +133,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return () => clearInterval(interval);
   }, [monitoredPayments, pixData, transactions]); 
 
-  // ... (Bulk Send Logic unchanged) ...
+  // --- BULK SEND LOGIC ---
   const handleStartBulkSend = () => {
+      // Lógica: Percorrer todos os alunos ATIVOS.
+      // Para cada aluno, encontrar a transação PENDENTE ou ATRASADA mais antiga (prioridade para dívidas antigas).
+      // Adicionar à fila.
+      
       const activeStudents = students.filter(s => s.active);
       const queue: Transaction[] = [];
 
@@ -144,9 +149,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 t.type === TransactionType.INCOME && 
                 (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
             )
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ordenar por data: mais antiga primeiro
 
           if (studentPendingTxs.length > 0) {
+              // Adiciona a transação mais antiga (próxima a vencer ou atrasada)
               queue.push(studentPendingTxs[0]);
           }
       });
@@ -162,7 +168,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           setBulkIsRunning(true);
           setIsBulkModalOpen(true);
           setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
-          setBulkCountdown(1); 
+          setBulkCountdown(1); // Começa quase imediatamente
       }
   };
 
@@ -183,6 +189,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               setBulkCountdown(prev => prev - 1);
           }, 1000);
       } else {
+          // Process current item
           processBulkItem(bulkQueue[bulkCurrentIndex]);
       }
 
@@ -201,11 +208,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       let finalLink = tx.paymentLink;
       
+      // Generate link if missing
       if (!finalLink) {
           setBulkLogs(prev => [`🔄 Gerando link para ${student.name}...`, ...prev]);
           try {
               const externalReference = tx.externalReference || crypto.randomUUID();
               
+              // Try MP Preference first (better for links)
               if (student.guardian.cpf) {
                   const mpResult = await createMPPreference({
                     title: tx.description,
@@ -221,6 +230,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 
                 if (mpResult) {
                     finalLink = mpResult.init_point;
+                    // Update TX in DB silently
                     onUpdateTransaction({ 
                         ...tx, 
                         paymentLink: finalLink, 
@@ -246,6 +256,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const encodedMessage = encodeURIComponent(message);
               const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
               
+              // Open window
               const win = window.open(url, '_blank');
               if (win) {
                   setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
@@ -264,7 +275,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const nextBulkItem = () => {
       setBulkCurrentIndex(prev => prev + 1);
-      setBulkCountdown(10); 
+      setBulkCountdown(10); // Reset countdown for next
   };
 
 
@@ -275,7 +286,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     cpf: '',
     phone: '',
     medicalCertificateExpiry: '',
-    groupIds: [], // Array init
+    groupId: '',
     planId: '',
     active: true,
     address: {
@@ -312,6 +323,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return age;
   };
 
+  // Helper para formatar data sem fuso horário
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
     const parts = dateString.split('-');
@@ -354,8 +366,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const numbers = phone.replace(/\D/g, '');
     return `https://wa.me/55${numbers}`;
   };
-
-  // ... (Other handlers like handleRequestDocuments, checkStatus, etc. remain unchanged) ...
 
   const handleRequestDocuments = (student: Student) => {
       const phone = student.guardian.phone.replace(/\D/g, '');
@@ -405,141 +415,141 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const sendChargeMessage = (tx: Transaction) => {
-    const phone = studentForm.guardian.phone.replace(/\D/g, '');
-    if (!phone) {
-        alert("Telefone do responsável não encontrado para envio da cobrança.");
-        return;
-    }
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não encontrado para envio da cobrança.");
+          return;
+      }
 
-    if (!tx.paymentLink) {
-        alert("Link de pagamento não disponível para esta transação.");
-        return;
-    }
+      if (!tx.paymentLink) {
+          alert("Link de pagamento não disponível para esta transação.");
+          return;
+      }
 
-    const dueDate = formatDate(tx.date);
-    const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
-        `Consta em nosso sistema a pendência referente à: *${tx.description}*.\n` +
-        `Vencimento: ${dueDate}\n` +
-        `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
-        `Para regularizar, utilize o link de pagamento abaixo (Mercado Pago/PIX):\n` +
-        `${tx.paymentLink}\n\n` +
-        `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
+      const dueDate = formatDate(tx.date);
+      const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
+          `Consta em nosso sistema a pendência referente à: *${tx.description}*.\n` +
+          `Vencimento: ${dueDate}\n` +
+          `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
+          `Para regularizar, utilize o link de pagamento abaixo (Mercado Pago/PIX):\n` +
+          `${tx.paymentLink}\n\n` +
+          `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
 
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-};
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+  };
 
-const checkStatus = async (tx: Transaction) => {
-    if (!tx.paymentLink && !tx.externalReference) {
-        alert("Esta transação não possui vínculo com Mercado Pago.");
-        return;
-    }
-    
-    const refToCheck = tx.externalReference;
-    
-    if (!refToCheck) {
-        alert("Referência de pagamento não encontrada. Gere uma nova cobrança.");
-        return;
-    }
+  const checkStatus = async (tx: Transaction) => {
+      if (!tx.paymentLink && !tx.externalReference) {
+          alert("Esta transação não possui vínculo com Mercado Pago.");
+          return;
+      }
+      
+      const refToCheck = tx.externalReference;
+      
+      if (!refToCheck) {
+          alert("Referência de pagamento não encontrada. Gere uma nova cobrança.");
+          return;
+      }
 
-    setCheckingStatusId(tx.id);
-    const status = await checkMPPaymentStatus(refToCheck);
-    
-    if (status === 'approved') {
-        handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
-        alert("Pagamento CONFIRMADO pelo Mercado Pago! Baixa efetuada.");
-    } else if (status === 'pending') {
-        alert("Pagamento ainda pendente.");
-    } else if (status === 'rejected' || status === 'cancelled') {
-        alert("Pagamento foi rejeitado/cancelado.");
-    } else {
-        alert("Não foi possível verificar o status.");
-    }
-    setCheckingStatusId(null);
-};
+      setCheckingStatusId(tx.id);
+      const status = await checkMPPaymentStatus(refToCheck);
+      
+      if (status === 'approved') {
+          handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
+          alert("Pagamento CONFIRMADO pelo Mercado Pago! Baixa efetuada.");
+      } else if (status === 'pending') {
+          alert("Pagamento ainda pendente.");
+      } else if (status === 'rejected' || status === 'cancelled') {
+          alert("Pagamento foi rejeitado/cancelado.");
+      } else {
+          alert("Não foi possível verificar o status.");
+      }
+      setCheckingStatusId(null);
+  };
 
-const sendBatchChargeMessage = (txs: Transaction[]) => {
-    const phone = studentForm.guardian.phone.replace(/\D/g, '');
-    if (!phone) {
-        alert("Telefone do responsável não encontrado.");
-        return;
-    }
+  const sendBatchChargeMessage = (txs: Transaction[]) => {
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não encontrado.");
+          return;
+      }
 
-    const totalAmount = txs.reduce((acc, t) => acc + t.amount, 0);
-    const comboRef = `combo_${txs[0].id}`;
-    const comboLink = `https://www.mercadopago.com.br/checkout/pay?pref_id=${comboRef}&amount=${totalAmount}`;
+      const totalAmount = txs.reduce((acc, t) => acc + t.amount, 0);
+      const comboRef = `combo_${txs[0].id}`;
+      const comboLink = `https://www.mercadopago.com.br/checkout/pay?pref_id=${comboRef}&amount=${totalAmount}`;
 
-    let details = "";
-    txs.forEach(t => {
-        details += `- ${t.description} (${formatDate(t.date)}): R$ ${t.amount.toFixed(2)}\n`;
-    });
+      let details = "";
+      txs.forEach(t => {
+          details += `- ${t.description} (${formatDate(t.date)}): R$ ${t.amount.toFixed(2)}\n`;
+      });
 
-    const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
-        `Identificamos as seguintes pendências em aberto:\n\n` +
-        `${details}\n` +
-        `*Total Acumulado: R$ ${totalAmount.toFixed(2)}*\n\n` +
-        `Para facilitar, geramos um link único para pagamento (Mercado Pago/PIX) do valor total:\n` +
-        `${comboLink}\n\n` +
-        `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
+      const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
+          `Identificamos as seguintes pendências em aberto:\n\n` +
+          `${details}\n` +
+          `*Total Acumulado: R$ ${totalAmount.toFixed(2)}*\n\n` +
+          `Para facilitar, geramos um link único para pagamento (Mercado Pago/PIX) do valor total:\n` +
+          `${comboLink}\n\n` +
+          `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
 
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-};
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+  };
 
-const handleSendPixToWhatsApp = async (tx: Transaction) => {
-    const phone = studentForm.guardian.phone.replace(/\D/g, '');
-    if (!phone) {
-        alert("Telefone do responsável não encontrado.");
-        return;
-    }
-    
-    if (!studentForm.guardian.cpf) {
-        alert("CPF do responsável é obrigatório para gerar PIX.");
-        return;
-    }
+  const handleSendPixToWhatsApp = async (tx: Transaction) => {
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não encontrado.");
+          return;
+      }
+      
+      if (!studentForm.guardian.cpf) {
+          alert("CPF do responsável é obrigatório para gerar PIX.");
+          return;
+      }
 
-    setSendingPixId(tx.id);
+      setSendingPixId(tx.id);
 
-    try {
-        const externalRef = tx.externalReference || crypto.randomUUID();
-        
-        const mpResult = await createPixPayment({
-            title: tx.description,
-            price: tx.amount,
-            externalReference: externalRef,
-            payer: {
-                name: studentForm.guardian.name,
-                email: studentForm.guardian.email,
-                phone: studentForm.guardian.phone,
-                identification: { type: 'CPF', number: studentForm.guardian.cpf }
-            }
-        });
+      try {
+          const externalRef = tx.externalReference || crypto.randomUUID();
+          
+          const mpResult = await createPixPayment({
+              title: tx.description,
+              price: tx.amount,
+              externalReference: externalRef,
+              payer: {
+                  name: studentForm.guardian.name,
+                  email: studentForm.guardian.email,
+                  phone: studentForm.guardian.phone,
+                  identification: { type: 'CPF', number: studentForm.guardian.cpf }
+              }
+          });
 
-        if (mpResult && mpResult.qrCode) {
-            const code = mpResult.qrCode;
-            // Fix: result.id -> mpResult.id
-            setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
+          if (mpResult && mpResult.qrCode) {
+              const code = mpResult.qrCode;
+              // Fix: result.id -> mpResult.id
+              setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
 
-            const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
-                `Referente a: *${tx.description}*\n` +
-                `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
-                `Segue o código PIX Copia e Cola para pagamento:\n\n` +
-                `${code}\n\n` +
-                `Ao efetuar o pagamento, o sistema identificará automaticamente.`;
+              const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
+                  `Referente a: *${tx.description}*\n` +
+                  `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
+                  `Segue o código PIX Copia e Cola para pagamento:\n\n` +
+                  `${code}\n\n` +
+                  `Ao efetuar o pagamento, o sistema identificará automaticamente.`;
 
-            const encodedMessage = encodeURIComponent(message);
-            window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-        } else {
-            alert("Erro ao gerar o código PIX. Verifique se o CPF do responsável é válido.");
-        }
-    } catch (e) {
-        console.error(e);
-        alert("Erro de comunicação com o sistema de pagamento.");
-    } finally {
-        setSendingPixId(null);
-    }
-};
-
+              const encodedMessage = encodeURIComponent(message);
+              window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+          } else {
+              alert("Erro ao gerar o código PIX. Verifique se o CPF do responsável é válido.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Erro de comunicação com o sistema de pagamento.");
+      } finally {
+          setSendingPixId(null);
+      }
+  };
+  
   const fetchAddressByCep = async (cep: string) => {
     const cleanCep = cep.replace(/\D/g, '');
     if (cleanCep.length !== 8) return;
@@ -550,7 +560,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
         const data = await response.json();
         
         if (!data.erro) {
-            setStudentForm((prev: any) => ({
+            setStudentForm(prev => ({
                 ...prev,
                 address: {
                     ...prev.address,
@@ -610,8 +620,6 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
     return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs;
   });
 
-  // ... (Camera functions unchanged) ...
-
   const startCamera = async () => {
     setIsCameraOpen(true);
     try {
@@ -659,7 +667,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
   const handleOpenEdit = (student: Student) => {
       setEditingId(student.id);
 
-      // Normalize documents
+      // Normalize documents if they are boolean
       const normalizeDocs = (docs: any) => {
           if (!docs) return initialFormState.documents;
           const newDocs: any = {};
@@ -681,8 +689,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
           cpf: student.cpf,
           phone: student.phone,
           medicalCertificateExpiry: student.medicalCertificateExpiry,
-          // Support multiple groups
-          groupIds: student.groupIds || ((student as any).groupId ? [(student as any).groupId] : []), 
+          groupId: student.groupId,
           planId: student.planId,
           active: student.active,
           address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
@@ -726,26 +733,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
     setSelectedFinanceIds(new Set());
   };
 
-  // Add Group to List logic
-  const handleAddGroupToStudent = () => {
-    if (selectedGroupIdToAdd && !studentForm.groupIds.includes(selectedGroupIdToAdd)) {
-        setStudentForm({
-            ...studentForm,
-            groupIds: [...studentForm.groupIds, selectedGroupIdToAdd]
-        });
-    }
-    setSelectedGroupIdToAdd('');
-  };
-
-  const handleRemoveGroupFromStudent = (gid: string) => {
-    setStudentForm({
-        ...studentForm,
-        groupIds: studentForm.groupIds.filter((id: string) => id !== gid)
-    });
-  };
-
-  // ... (Other handlers like handlePayTransaction, etc. unchanged) ...
-
+  // ... (keeping other handlers like handlePayTransaction, handleCancelTransaction etc unchanged)
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
       const tx = transactions.find(t => t.id === id);
       if(tx) {
@@ -852,24 +840,19 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
       }
   };
 
-  // ... (Export functions unchanged) ...
-
   const handleExportExcel = () => {
     const data = filteredStudents.map(s => {
         const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
         const d = s.documents as any;
         const missing = !getStatus(d.rg) || !getStatus(d.cpf) || !getStatus(d.medical) || !getStatus(d.address) || !getStatus(d.school);
         
-        // Groups join
-        const studentGroups = groups.filter(g => s.groupIds?.includes(g.id)).map(g => g.name).join(', ');
-
         return {
             'Nome do Aluno': s.name,
             'Data Nascimento': formatDate(s.birthDate),
             'Idade': calculateAge(s.birthDate),
             'RG': s.rg,
             'CPF Aluno': s.cpf,
-            'Grupos': studentGroups || 'N/A',
+            'Grupo': groups.find(g => g.id === s.groupId)?.name || 'N/A',
             'Nome Responsável': s.guardian.name,
             'CPF Responsável': s.guardian.cpf,
             'Telefone': s.guardian.phone,
@@ -966,7 +949,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                     phone: row['Telefone'] ? String(row['Telefone']) : '',
                     medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)'] || row['Validade Atestado (YYYY-MM-DD)']),
                     photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
-                    groupIds: matchedGroup ? [matchedGroup.id] : [],
+                    groupId: matchedGroup ? matchedGroup.id : '',
                     planId: matchedPlan ? matchedPlan.id : '',
                     active: true,
                     address: {
@@ -1015,14 +998,14 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
         s.cpf,
         formatDate(s.birthDate),
         calculateAge(s.birthDate).toString(),
-        groups.filter(g => s.groupIds?.includes(g.id)).map(g => g.name).join(', ') || 'N/A',
+        groups.find(g => g.id === s.groupId)?.name || 'N/A',
         s.guardian.name,
         s.active ? 'Ativo' : 'Inativo'
     ]);
 
     autoTable(doc, {
         startY: 35,
-        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupos', 'Responsável', 'Status']],
+        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupo', 'Responsável', 'Status']],
         body: tableData,
         styles: { fontSize: 8 },
         headStyles: { fillColor: [249, 115, 22] } 
@@ -1047,7 +1030,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
     doc.setFontSize(10);
     
     const today = new Date().toLocaleDateString('pt-BR');
-    const groupName = groups.filter(g => studentForm.groupIds.includes(g.id)).map(g => g.name).join(', ') || '________________';
+    const groupName = groups.find(g => g.id === studentForm.groupId)?.name || '________________';
     
     const headerText = `
     CONTRATANTE (RESPONSÁVEL):
@@ -1103,9 +1086,9 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
   const studentActivities = activities.filter(a => {
       if (!editingId) return false;
       
-      // Match any of the student's groups
-      const isGroupMatch = a.groupId && studentForm.groupIds.includes(a.groupId);
+      const isGroupMatch = a.groupId === studentForm.groupId; 
       const isParticipant = a.participants?.includes(editingId);
+      // Incluir se estiver na lista de presença, independente de grupo ou agendamento
       const isPresent = a.attendance?.includes(editingId);
       
       return isGroupMatch || isParticipant || isPresent;
@@ -1200,8 +1183,8 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
   };
 
   const updateDoc = (field: string, subField: 'delivered' | 'isDigital', value: boolean) => {
-      setStudentForm((prev: any) => {
-          const currentDoc = prev.documents[field] || { delivered: false, isDigital: false };
+      setStudentForm(prev => {
+          const currentDoc = (prev.documents as any)[field] || { delivered: false, isDigital: false };
           return {
               ...prev,
               documents: {
@@ -1217,9 +1200,11 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
     e.preventDefault();
     if (!editingId) return;
 
+    // 1. Prepare Base Transaction
     const externalReference = crypto.randomUUID();
     let paymentLink = '';
 
+    // 2. Try to generate Mercado Pago Preference immediately (optional but better UX)
     try {
         if (studentForm.guardian.cpf) {
             const mpResult = await createMPPreference({
@@ -1239,6 +1224,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
         }
     } catch (e) { console.warn("Could not generate MP Link for manual charge"); }
 
+    // 3. Save to DB via App
     onAddTransaction({
         description: manualCharge.description,
         amount: manualCharge.amount,
@@ -1246,7 +1232,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
         date: manualCharge.date,
         status: PaymentStatus.PENDING,
         studentId: editingId,
-        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
+        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO, // Default to PIX/MP
         paymentLink: paymentLink,
         externalReference: externalReference
     });
@@ -1391,7 +1377,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupo</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
@@ -1399,7 +1385,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredStudents.map((student) => {
-                const studentGroups = groups.filter(g => student.groupIds?.includes(g.id));
+                const groupName = groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo';
                 const expired = isMedicalExpired(student.medicalCertificateExpiry);
                 const missingDocs = hasMissingDocs(student);
                 const age = calculateAge(student.birthDate);
@@ -1440,19 +1426,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 font-medium">{age} anos</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                        <div className="flex flex-wrap gap-1">
-                            {studentGroups.length > 0 ? (
-                                studentGroups.map(g => (
-                                    <span key={g.id} className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium border border-gray-200">
-                                        {g.name}
-                                    </span>
-                                ))
-                            ) : (
-                                <span className="text-gray-400 italic text-xs">Sem grupo</span>
-                            )}
-                        </div>
-                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600"><span className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium">{groupName}</span></td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
@@ -1654,57 +1628,15 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                             {/* Right Column */}
                             <div className="space-y-4">
                                 <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><UserIcon className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required disabled={isGuardian} type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
-                                <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3">
-                                    
-                                    {/* Multi-Select Group Logic */}
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-600 mb-1">Grupos/Categorias</label>
-                                        <div className="flex flex-wrap gap-2 mb-2">
-                                            {studentForm.groupIds?.map((gid: string) => {
-                                                const g = groups.find(grp => grp.id === gid);
-                                                return (
-                                                    <span key={gid} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                                                        {g ? g.name : 'Desconhecido'}
-                                                        {!isGuardian && <button type="button" onClick={() => handleRemoveGroupFromStudent(gid)} className="ml-1 text-blue-600 hover:text-blue-900"><X className="w-3 h-3" /></button>}
-                                                    </span>
-                                                )
-                                            })}
-                                            {(!studentForm.groupIds || studentForm.groupIds.length === 0) && (
-                                                <span className="text-xs text-gray-400 italic">Nenhum grupo selecionado</span>
-                                            )}
-                                        </div>
-                                        {!isGuardian && (
-                                            <div className="flex gap-1">
-                                                <select 
-                                                    className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm" 
-                                                    value={selectedGroupIdToAdd}
-                                                    onChange={e => setSelectedGroupIdToAdd(e.target.value)}
-                                                >
-                                                    <option value="">+ Selecionar Grupo...</option>
-                                                    {groups.filter(g => !studentForm.groupIds.includes(g.id)).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                                </select>
-                                                <button 
-                                                    type="button" 
-                                                    onClick={handleAddGroupToStudent}
-                                                    disabled={!selectedGroupIdToAdd}
-                                                    className="bg-primary-600 text-white p-2 rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                                                >
-                                                    <Plus className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
+                                <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                             </div>
                         </div>
                     </form>
                 </div>
             ) : activeTab === 'FINANCE' ? (
-                // ... (Finance Tab content remains the same)
+                // FINANCE HISTORY
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                    {/* ... (Finance header and buttons same as before) ... */}
-                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                         <div className="flex items-center gap-2 bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold w-full md:w-auto">
                             <Wallet className="w-4 h-4" /> Histórico Financeiro
                         </div>
@@ -1867,9 +1799,8 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                     </div>
                 </div>
             ) : (
-                // ATTENDANCE TAB (Unchanged)
+                // ATTENDANCE TAB
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                   {/* ... same attendance view content ... */}
                     <div className="flex justify-between items-center mb-6">
                         <div className="bg-purple-50 text-purple-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
                             <CalendarCheck className="w-4 h-4" /> Frequência
@@ -1948,7 +1879,6 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
             )}
             
             <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-between items-center flex-shrink-0">
-                {/* ... footer buttons ... */}
                 {!isGuardian && (
                     <div className="flex gap-2">
                         {editingId && (
@@ -1977,8 +1907,9 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
           </div>
         </div>
       )}
-    {/* ... (Other modals - Charge, PIX, Bulk Send - same as previous) ... */}
-    {showChargeModal && (
+
+      {/* Manual Charge Modal */}
+      {showChargeModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
                   <h3 className="text-lg font-bold mb-4">Nova Cobrança Manual</h3>
