@@ -597,48 +597,56 @@ function App() {
       setIsLoading(false);
   };
   
-  const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
+  // FIX: Handle both Add and Remove (Sync) for GroupsPage
+  const handleBatchAssignStudents = async (selectedIds: string[], groupId: string) => { 
       setIsLoading(true);
+      const selectedSet = new Set(selectedIds);
       
-      // We need to fetch the current group_ids for these students to append, not overwrite
-      // But since we have local state, we can compute it here.
-      
-      // We will perform updates one by one or we could write a PG function, 
-      // but loop update is safer for logic if count is low.
-      // Optimistic update first
-      
-      const updates = ids.map(id => {
-          const student = students.find(s => s.id === id);
-          if (!student) return null;
-          
+      const updates = students.map(student => {
           const currentGroups = new Set(student.groupIds || []);
-          currentGroups.add(gid);
-          const newGroups = Array.from(currentGroups);
-          
-          return { id, group_ids: newGroups };
+          let changed = false;
+
+          if (selectedSet.has(student.id)) {
+              // Should be in group
+              if (!currentGroups.has(groupId)) {
+                  currentGroups.add(groupId);
+                  changed = true;
+              }
+          } else {
+              // Should NOT be in group
+              if (currentGroups.has(groupId)) {
+                  currentGroups.delete(groupId);
+                  changed = true;
+              }
+          }
+
+          if (changed) {
+              return { id: student.id, group_ids: Array.from(currentGroups) };
+          }
+          return null;
       }).filter(Boolean);
 
       // Perform updates
       for (const update of updates) {
-          if(update) {
+          if (update) {
              await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
           }
       }
       
       // Update local state
-      setStudents(prev => prev.map(s => {
-          if (ids.includes(s.id)) {
-              const currentGroups = new Set(s.groupIds || []);
-              currentGroups.add(gid);
-              return { ...s, groupIds: Array.from(currentGroups) };
-          }
-          return s;
-      }));
+      if (updates.length > 0) {
+          const updatesMap = new Map(updates.map(u => [u!.id, u!.group_ids]));
+          setStudents(prev => prev.map(s => {
+              if (updatesMap.has(s.id)) {
+                  return { ...s, groupIds: updatesMap.get(s.id)! };
+              }
+              return s;
+          }));
+      }
 
       setIsLoading(false);
   };
   
-  // ... (Rest of functions handleAddActivity, handleUpdateActivity etc. stay mostly the same but ensure correct types)
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
@@ -809,9 +817,14 @@ function App() {
       }
   };
 
-  const handleAddGroup = async (g: any) => { 
+  // Fix: Return the generated ID
+  const handleAddGroup = async (g: any): Promise<string | null> => { 
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
-      if(data && !error) setGroups(prev => [...prev, { ...g, id: data.id }]);
+      if(data && !error) {
+          setGroups(prev => [...prev, { ...g, id: data.id }]);
+          return data.id;
+      }
+      return null;
   };
   
   const handleUpdateGroup = async (g: any) => { 
@@ -865,8 +878,6 @@ function App() {
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
-  // ... (Render Logic same as before) ...
-  // [Render logic truncated for brevity, assume it is identical to previous App.tsx except where types might enforce changes handled above]
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">

@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 interface GroupsPageProps {
   groups: Group[];
   students: Student[];
-  onAddGroup: (group: Group) => void;
+  onAddGroup: (group: Group) => Promise<string | null>;
   onUpdateGroup: (group: Group) => void;
   onDeleteGroup: (id: string) => void;
   onBatchAssignStudents: (studentIds: string[], groupId: string) => void;
@@ -63,21 +63,23 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let groupId = editingId;
+    let targetGroupId = editingId;
+    
     if (editingId) {
         onUpdateGroup({ ...form, id: editingId });
     } else {
-        groupId = Math.random().toString(36).substr(2, 9);
-        onAddGroup({ ...form, id: groupId });
+        // Wait for ID from Supabase
+        const newId = await onAddGroup({ ...form, id: '' }); // ID is ignored in insert usually
+        targetGroupId = newId;
     }
-    // Only assign students. Note: Removing students from group via this UI needs specific logic in App.tsx handleBatchAssign, 
-    // or we assume this UI only ADDS students to the group.
-    // For robust implementation given constraints, let's assume it adds selected.
-    if (groupId && selectedStudentIds.size > 0) {
-        onBatchAssignStudents(Array.from(selectedStudentIds), groupId);
+    
+    // Assign/Sync students
+    if (targetGroupId) {
+        onBatchAssignStudents(Array.from(selectedStudentIds), targetGroupId);
     }
+    
     setIsModalOpen(false);
   };
 
