@@ -74,7 +74,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     .filter(a => a.date === selectedDate)
     .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
 
-  // Keep full sorted list for Report Export if needed, or filter report by day/month later
+  // Keep full sorted list for Report Export
   const allSortedActivities = [...activities].sort((a, b) => {
       return new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime();
   });
@@ -223,6 +223,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const getAttendeesList = (activity: Activity) => {
       if (activity.groupId) {
+          // Changed check for array inclusion
           return students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!) && s.active);
       }
       if (activity.participants && activity.participants.length > 0) {
@@ -593,6 +594,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   // Get eligible students for scoring (those in the group/participants)
   const getEligibleScorers = () => {
       if (targetType === 'GROUP' && newActivity.groupId) {
+          // Changed check for array inclusion
           return students.filter(s => s.groupIds && s.groupIds.includes(newActivity.groupId!) && s.active);
       } else if (targetType === 'INDIVIDUAL') {
           return students.filter(s => selectedStudentIds.has(s.id));
@@ -1319,4 +1321,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         <Pause className="w-4 h-4" /> Pausar
                     </button>
                 ) : (
-                    <button onClick={() => setNotifyIsRunning(true)}
+                    <button onClick={() => setNotifyIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={notifyCurrentIndex >= notifyQueue.length}>
+                        <Play className="w-4 h-4" /> Continuar
+                    </button>
+                )}
+                <button onClick={() => setNotifyModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Fechar
+                </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
