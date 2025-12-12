@@ -5,10 +5,6 @@
       "destination": "https://api.mercadopago.com/:path*"
     },
     {
-      "source": "/api/zapi/:path*",
-      "destination": "https://api.z-api.io/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

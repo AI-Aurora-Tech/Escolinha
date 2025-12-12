@@ -1,7 +1,6 @@
 
-
 import React from 'react';
-import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Shirt, Ticket, X, Settings, Key, Package } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Shirt, Ticket, X, Settings } from 'lucide-react';
 import { User, UserRole } from '../types';
 
 interface SidebarProps {
@@ -9,12 +8,11 @@ interface SidebarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
   onLogout: () => void;
-  onChangePassword: () => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNavigate, onLogout, onChangePassword, isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNavigate, onLogout, isOpen, onClose }) => {
   
   const menuItems = [
     // Dashboard hidden for Guardians as requested ("todos os demais itens devem ser removidos")
@@ -23,7 +21,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
     { id: 'groups', label: 'Grupos', icon: Shirt, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
     { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
-    { id: 'inventory', label: 'Estoque', icon: Package, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     // Finance hidden for Guardians here because they access payments inside "Meus Filhos" -> "Histórico Financeiro"
     { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
@@ -59,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
           </button>
         </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto h-[calc(100vh-220px)]">
+        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto h-[calc(100vh-180px)]">
           {menuItems.map((item) => {
             if (!item.roles.includes(currentUser.role)) return null;
             
@@ -83,8 +80,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
           })}
         </nav>
 
-        <div className="absolute bottom-0 w-full p-4 border-t border-gray-800 bg-gray-900 space-y-2">
-          <div className="flex items-center gap-3 mb-2">
+        <div className="absolute bottom-0 w-full p-4 border-t border-gray-800 bg-gray-900">
+          <div className="flex items-center gap-3 mb-4">
             <img src={currentUser.avatar} alt="User" className="w-10 h-10 rounded-full border-2 border-primary-500 bg-white" />
             <div className="overflow-hidden">
               <p className="text-sm font-semibold truncate">{currentUser.name}</p>
@@ -94,17 +91,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
               </p>
             </div>
           </div>
-          
-          <button 
-              onClick={onChangePassword}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 hover:text-white rounded-md text-xs transition-colors border border-gray-700 text-gray-300"
-          >
-              <Key className="w-4 h-4" /> Alterar Senha
-          </button>
-
           <button 
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-red-900/50 hover:border-red-800 hover:text-red-200 rounded-md text-xs transition-colors border border-gray-700 text-gray-400"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-md text-xs transition-colors border border-gray-700"
           >
               <LogOut className="w-4 h-4" /> Sair
           </button>

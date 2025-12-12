@@ -8,19 +8,10 @@ import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
-import { InventoryPage } from './pages/InventoryPage';
-import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod, InventoryItem } from './types';
-import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon, Key, X, Check } from 'lucide-react';
+import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
+import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
-
-// Helper for safe local date string YYYY-MM-DD without UTC conversion shifts
-const getLocalDateStr = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -46,11 +37,6 @@ function App() {
   const [pageData, setPageData] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Change Password State
-  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
-  const [changePasswordData, setChangePasswordData] = useState({ new: '', confirm: '' });
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
   
   // App State
   const [students, setStudents] = useState<Student[]>([]);
@@ -59,159 +45,6 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-
-  // --- TUITION GENERATION JOB (10 Days Before Rule) ---
-  const runTuitionJob = async (currentStudents: Student[], currentPlans: Plan[], currentTransactions: Transaction[]) => {
-      // Só roda se for Admin ou Professor
-      if (currentUser?.role === UserRole.RESPONSAVEL) return;
-
-      const today = new Date();
-      today.setHours(0,0,0,0); // Normalize today to start of day
-
-      const newTransactionsPayload: any[] = [];
-      
-      // Datas para verificar: Mês Atual e Próximo Mês (Relative to today)
-      const monthsToCheck = [0, 1]; 
-
-      for (const student of currentStudents) {
-          if (!student.active || !student.planId) continue;
-          
-          const plan = currentPlans.find(p => p.id === student.planId);
-          if (!plan) continue;
-
-          for (const offset of monthsToCheck) {
-              // 1. Construct the target Due Date safely in local time
-              const checkDate = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-              const processingYear = checkDate.getFullYear();
-              const processingMonth = checkDate.getMonth();
-              
-              let dueDay = plan.dueDay;
-              const maxDaysInMonth = new Date(processingYear, processingMonth + 1, 0).getDate();
-              if (dueDay > maxDaysInMonth) dueDay = maxDaysInMonth;
-
-              const targetDueDate = new Date(processingYear, processingMonth, dueDay);
-              targetDueDate.setHours(0,0,0,0);
-              
-              const targetDueDateStr = getLocalDateStr(targetDueDate);
-              const targetMonthPrefix = targetDueDateStr.substring(0, 7); // "YYYY-MM"
-
-              // 2. Calculate Trigger Date (10 days before)
-              const triggerDate = new Date(targetDueDate);
-              triggerDate.setDate(targetDueDate.getDate() - 10);
-              triggerDate.setHours(0,0,0,0);
-
-              // Regra: Se Hoje >= (Vencimento - 10 dias)
-              // This covers cases where we passed the trigger date but haven't generated yet
-              if (today.getTime() >= triggerDate.getTime()) {
-                  
-                  // 3. Verify existence (Check if ANY income transaction exists for this student in this Month)
-                  // This prevents duplicates if dueDay changed, but ensures monthly billing
-                  const alreadyExists = currentTransactions.some(t => 
-                      t.studentId === student.id && 
-                      t.type === TransactionType.INCOME &&
-                      t.date.startsWith(targetMonthPrefix)
-                  );
-
-                  const inQueue = newTransactionsPayload.some(t => 
-                      t.student_id === student.id && 
-                      t.date.startsWith(targetMonthPrefix)
-                  );
-
-                  if (!alreadyExists && !inQueue) {
-                      // 4. Generate
-                      const monthName = targetDueDate.toLocaleString('pt-BR', { month: 'long' });
-                      const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                      // Descrição com Nome do Aluno e Mês
-                      const description = `${student.name} - Mensalidade ${capitalizedMonth}/${processingYear}`;
-                      
-                      const externalReference = crypto.randomUUID();
-                      let paymentLink = '';
-
-                      // --- ALTERAÇÃO AQUI: Lógica para Plano Bolsista (Valor 0) ---
-                      const isFreePlan = plan.price <= 0;
-                      
-                      // Se for gratuito: PAID. Se não: Verifica se já está atrasado ou pendente.
-                      const initialStatus = isFreePlan 
-                        ? PaymentStatus.PAID 
-                        : (targetDueDate < today ? PaymentStatus.LATE : PaymentStatus.PENDING);
-                      
-                      // Método de pagamento inicial
-                      const initialMethod = isFreePlan ? PaymentMethod.OTHER : PaymentMethod.PIX_MERCADO_PAGO;
-
-                      // Try generate link MP (Apenas se tiver valor > 0)
-                      if (!isFreePlan) {
-                          try {
-                              if (student.guardian.cpf) {
-                                  const mpResult = await createMPPreference({
-                                      title: description,
-                                      price: plan.price,
-                                      externalReference: externalReference,
-                                      payer: {
-                                          name: student.guardian.name,
-                                          email: student.guardian.email,
-                                          phone: student.guardian.phone,
-                                          identification: { type: 'CPF', number: student.guardian.cpf }
-                                      }
-                                  });
-                                  if (mpResult) {
-                                      paymentLink = mpResult.init_point;
-                                  }
-                              }
-                          } catch (e) { console.warn("Erro silencioso MP Job", e); }
-                      }
-
-                      newTransactionsPayload.push({
-                          description: description,
-                          amount: plan.price,
-                          type: TransactionType.INCOME,
-                          date: targetDueDateStr,
-                          status: initialStatus,
-                          student_id: student.id,
-                          plan_id: plan.id,
-                          payment_method: initialMethod,
-                          payment_link: paymentLink,
-                          external_reference: externalReference
-                      });
-                  }
-              }
-          }
-      }
-
-      // Batch Insert
-      if (newTransactionsPayload.length > 0) {
-          const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
-          if (data && !error) {
-              const mappedTxs = data.map((t: any) => ({
-                  id: t.id,
-                  description: t.description,
-                  amount: t.amount,
-                  type: t.type,
-                  date: t.date,
-                  status: t.status,
-                  studentId: t.student_id,
-                  planId: t.plan_id,
-                  paymentMethod: t.payment_method,
-                  paymentLink: t.payment_link,
-                  externalReference: t.external_reference,
-                  preferenceId: t.preference_id
-              }));
-              setTransactions(prev => [...prev, ...mappedTxs]);
-              console.log(`Job: Geradas ${mappedTxs.length} novas mensalidades.`);
-          } else {
-              console.error("Erro no Job de Mensalidades:", error);
-          }
-      } else {
-          console.log("Job: Nenhuma nova mensalidade necessária.");
-      }
-  };
-
-  const handleManualTuitionJob = async () => {
-    setIsLoading(true);
-    await runTuitionJob(students, plans, transactions);
-    setIsLoading(false);
-    alert("Verificação de mensalidades concluída.");
-  };
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
@@ -221,7 +54,6 @@ function App() {
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
-        const { data: inventoryData } = await supabase.from('inventory').select('*');
         
         // --- ROLE BASED FETCHING ---
         let studentsData;
@@ -273,12 +105,8 @@ function App() {
         }
 
         // Mappers to match Typescript Interfaces
-        let mappedStudents: Student[] = [];
-        let mappedPlans: Plan[] = [];
-        let mappedTransactions: Transaction[] = [];
-
         if (studentsData) {
-             mappedStudents = studentsData.map((s: any) => ({
+             const mappedStudents: Student[] = studentsData.map((s: any) => ({
                  id: s.id,
                  name: s.name,
                  birthDate: s.birth_date,
@@ -299,32 +127,17 @@ function App() {
 
         if (groupsData) setGroups(groupsData);
         if (plansData) {
-            mappedPlans = plansData.map((p: any) => ({
+            setPlans(plansData.map((p: any) => ({
                 id: p.id,
                 name: p.name,
                 price: p.price,
                 dueDay: p.due_day,
                 description: p.description
-            }));
-            setPlans(mappedPlans);
-        }
-
-        if (inventoryData) {
-            setInventoryItems(inventoryData.map((i: any) => ({
-                id: i.id,
-                name: i.name,
-                category: i.category,
-                size: i.size,
-                quantity: i.quantity,
-                minQuantity: i.min_quantity,
-                salePrice: i.price, 
-                costPrice: i.cost_price, 
-                supplier: i.supplier 
             })));
         }
 
         if (transactionsData) {
-             mappedTransactions = transactionsData.map((t: any) => ({
+             setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
                  amount: t.amount,
@@ -335,10 +148,10 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
+                 // Mapeamento correto: Banco (snake_case) -> App (camelCase)
                  externalReference: t.external_reference, 
                  preferenceId: t.preference_id
-             }));
-             setTransactions(mappedTransactions);
+             })));
         }
 
         if (activitiesData) {
@@ -353,45 +166,21 @@ function App() {
                  );
              }
 
-             setActivities(relevantActivities.map((a: any) => {
-                 // UNPACK METADATA FROM DESCRIPTION (JSON fallback)
-                 let meta: any = {};
-                 try {
-                     if (a.description && (a.description.startsWith('{') || a.description.startsWith('['))) {
-                         meta = JSON.parse(a.description);
-                     }
-                 } catch (e) { /* ignore */ }
-
-                 return {
-                     id: a.id,
-                     title: a.title,
-                     // Prioritize metadata (JSON) then column if exists, default to training
-                     type: meta.type || a.activity_type || 'TRAINING',
-                     opponent: meta.opponent || '', // Extract opponent
-                     teamA: meta.teamA || '', // Extract teamA
-                     teamB: meta.teamB || '', // Extract teamB
-                     fee: meta.fee !== undefined ? meta.fee : (a.fee || 0),
-                     location: meta.location || a.location || '',
-                     score: meta.score || a.score || '', 
-                     goals: meta.goals || a.goals || [], 
-                     feePayments: meta.feePayments || a.fee_payments || [], // Unpack feePayments
-
-                     groupId: a.group_id,
-                     participants: a.participants || [],
-                     date: a.date,
-                     startTime: a.start_time,
-                     endTime: a.end_time,
-                     recurrence: a.recurrence,
-                     attendance: a.attendance || [],
-                     description: a.description // Keep original
-                 };
-             }));
-        }
-
-        // --- EXECUTE AUTOMATED JOBS ---
-        // Run tuition check only if data loaded and user is Staff
-        if (currentUser?.role !== UserRole.RESPONSAVEL && mappedStudents.length > 0 && mappedPlans.length > 0) {
-            runTuitionJob(mappedStudents, mappedPlans, mappedTransactions);
+             setActivities(relevantActivities.map((a: any) => ({
+                 id: a.id,
+                 title: a.title,
+                 type: a.activity_type || 'TRAINING', // Mapeia coluna activity_type
+                 fee: a.fee || 0,
+                 location: a.location || '', // Mapeia coluna location
+                 groupId: a.group_id,
+                 participants: a.participants || [],
+                 date: a.date,
+                 startTime: a.start_time,
+                 endTime: a.end_time,
+                 recurrence: a.recurrence,
+                 attendance: a.attendance || [],
+                 feePayments: a.fee_payments || [] // Mapeia fee_payments
+             })));
         }
 
     } catch (error) {
@@ -566,39 +355,6 @@ function App() {
           setIsLoggingIn(false);
       }
   };
-  
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (changePasswordData.new !== changePasswordData.confirm) {
-        alert("As senhas não coincidem.");
-        return;
-    }
-    if (changePasswordData.new.length < 6) {
-        alert("A senha deve ter pelo menos 6 caracteres.");
-        return;
-    }
-
-    setIsChangingPassword(true);
-    try {
-        const { error } = await supabase
-            .from('app_users')
-            .update({ password: changePasswordData.new })
-            .eq('id', currentUser?.id);
-
-        if (error) {
-            throw error;
-        }
-
-        alert("Senha alterada com sucesso!");
-        setIsChangePasswordModalOpen(false);
-        setChangePasswordData({ new: '', confirm: '' });
-    } catch (err) {
-        console.error("Error changing password:", err);
-        alert("Erro ao alterar senha. Tente novamente.");
-    } finally {
-        setIsChangingPassword(false);
-    }
-  };
 
   const handleLogout = () => {
       setCurrentUser(null);
@@ -610,6 +366,79 @@ function App() {
       setNewPassword('');
       setConfirmNewPassword('');
       setCurrentPage('dashboard');
+  };
+
+  // Re-declaring key handlers to prevent errors in render 
+  const generateAnnualTuition = async (student: Student, plan: Plan) => {
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const newTransactionsPayload = [];
+    
+    for (let month = currentMonth; month <= 11; month++) {
+        let dueYear = currentYear;
+        const targetDate = new Date(dueYear, month, plan.dueDay);
+        if (targetDate.getMonth() !== month) targetDate.setDate(0);
+
+        const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
+        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth}`;
+        
+        const externalReference = crypto.randomUUID();
+        let paymentLink = '';
+        try {
+            const mpResult = await createMPPreference({
+                title: description,
+                price: plan.price,
+                externalReference: externalReference,
+                payer: {
+                    name: student.guardian.name,
+                    email: student.guardian.email,
+                    phone: student.guardian.phone,
+                    identification: { type: 'CPF', number: student.guardian.cpf }
+                }
+            });
+            if (mpResult) {
+                paymentLink = mpResult.init_point;
+            }
+        } catch (e) { console.warn("Could not generate MP Link"); }
+
+        newTransactionsPayload.push({
+            description: description,
+            amount: plan.price,
+            type: TransactionType.INCOME,
+            date: targetDate.toISOString().split('T')[0],
+            status: PaymentStatus.PENDING,
+            student_id: student.id,
+            plan_id: plan.id,
+            payment_link: paymentLink,
+            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+            // Mapeamento correto: App (camelCase) -> Banco (snake_case)
+            external_reference: externalReference 
+        });
+    }
+
+    if (newTransactionsPayload.length > 0) {
+        const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
+        if (data && !error) {
+             const mappedTxs = data.map((t: any) => ({
+                 id: t.id,
+                 description: t.description,
+                 amount: t.amount,
+                 type: t.type,
+                 date: t.date,
+                 status: t.status,
+                 studentId: t.student_id,
+                 planId: t.plan_id,
+                 paymentMethod: t.payment_method,
+                 paymentLink: t.payment_link,
+                 externalReference: t.external_reference
+             }));
+             setTransactions(prev => [...prev, ...mappedTxs]);
+        } else {
+            console.error("Erro ao gerar mensalidades:", error);
+        }
+    }
   };
 
   const uploadPhoto = async (photoDataUrl: string, studentName: string): Promise<string | undefined> => {
@@ -628,8 +457,6 @@ function App() {
       }
   };
 
-  // --- CRUD HANDLERS ---
-  
   const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
     setIsLoading(true);
     let finalPhotoUrl = studentData.photoUrl;
@@ -642,7 +469,7 @@ function App() {
         rg: studentData.rg,
         cpf: studentData.cpf,
         phone: studentData.phone,
-        medical_expiry: studentData.medicalCertificateExpiry ? studentData.medicalCertificateExpiry : null, 
+        medical_expiry: studentData.medicalCertificateExpiry,
         photo_url: finalPhotoUrl,
         address: studentData.address,
         guardian: studentData.guardian,
@@ -670,10 +497,9 @@ function App() {
              documents: data.documents
         };
         setStudents(prev => [...prev, newStudent]);
-        
-        // Em vez de gerar o ano todo, rodamos o job para gerar apenas a próxima se estiver em dia
         if (newStudent.active && newStudent.planId) {
-             runTuitionJob([newStudent], plans, transactions);
+            const plan = plans.find(p => p.id === newStudent.planId);
+            if (plan) await generateAnnualTuition(newStudent, plan);
         }
     } else { alert("Erro ao salvar aluno."); }
     setIsLoading(false);
@@ -687,7 +513,7 @@ function App() {
         rg: s.rg,
         cpf: s.cpf,
         phone: s.phone,
-        medical_expiry: s.medicalCertificateExpiry ? s.medicalCertificateExpiry : null,
+        medical_expiry: s.medicalCertificateExpiry,
         photo_url: s.photoUrl,
         address: s.address,
         guardian: s.guardian,
@@ -719,9 +545,13 @@ function App() {
           
           setStudents(prev => [...prev, ...newStudents]);
           
-          // Trigger automated check
-          runTuitionJob(newStudents, plans, transactions);
-          
+          // Generate tuition for each
+          for (const ns of newStudents) {
+              if (ns.active && ns.planId) {
+                  const plan = plans.find(p => p.id === ns.planId);
+                  if (plan) await generateAnnualTuition(ns, plan);
+              }
+          }
           alert(`${newStudents.length} alunos importados com sucesso!`);
       } else {
           alert("Erro na importação em massa.");
@@ -742,7 +572,7 @@ function App() {
           rg: updatedStudent.rg,
           cpf: updatedStudent.cpf,
           phone: updatedStudent.phone,
-          medical_expiry: updatedStudent.medicalCertificateExpiry ? updatedStudent.medicalCertificateExpiry : null,
+          medical_expiry: updatedStudent.medicalCertificateExpiry,
           photo_url: finalPhotoUrl,
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
@@ -775,29 +605,18 @@ function App() {
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
       
-      // PACK EXTRA FIELDS INTO DESCRIPTION
-      const metadata = {
-          type: a.type,
-          opponent: a.opponent || '', // Pack opponent
-          teamA: a.teamA || '', // Pack teamA
-          teamB: a.teamB || '', // Pack teamB
-          fee: feeValue,
-          location: locationValue,
-          score: a.score || '',
-          goals: a.goals || [],
-          feePayments: []
-      };
-
       const basePayload = {
           title: a.title,
-          description: JSON.stringify(metadata), 
+          activity_type: a.type, 
+          fee: feeValue, 
+          location: locationValue, 
           group_id: a.groupId || null,
           participants: a.participants || [],
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: [],
-          fee_payments: [] 
+          attendance: a.attendance || [],
+          fee_payments: a.feePayments || [] 
       };
 
       const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
@@ -807,7 +626,7 @@ function App() {
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
-               const dateStr = getLocalDateStr(current);
+               const dateStr = current.toISOString().split('T')[0];
                payloadList.push({
                    ...basePayload,
                    date: dateStr
@@ -829,13 +648,7 @@ function App() {
            const newActivities = data.map((newItem: any) => ({
                ...a,
                id: newItem.id,
-               date: newItem.date,
-               // CRITICAL: Initialize arrays to prevent white screen crash on render
-               attendance: [],
-               feePayments: [],
-               participants: a.participants || [],
-               score: newItem.score || '',
-               goals: newItem.goals || []
+               date: newItem.date
            }));
            setActivities(prev => [...prev, ...newActivities]);
       } else {
@@ -846,59 +659,27 @@ function App() {
   };
   
   const handleUpdateActivity = async (a: any) => { 
-      // 1. Encontrar a atividade existente para preservar arrays que não vêm no form de edição
-      const existingActivity = activities.find(act => act.id === a.id);
-      if (!existingActivity) return;
-
-      // 2. Mesclar arrays existentes se 'a' não os tiver
-      const finalParticipants = a.participants || existingActivity.participants || [];
-      const finalAttendance = a.attendance || existingActivity.attendance || [];
-      const finalFeePayments = a.feePayments || existingActivity.feePayments || [];
-      const finalScore = a.score !== undefined ? a.score : (existingActivity.score || '');
-      const finalGoals = a.goals !== undefined ? a.goals : (existingActivity.goals || []);
-
       // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
-      
-      // Pack into description
-      const metadata = {
-          type: a.type,
-          opponent: a.opponent || '', 
-          teamA: a.teamA || '', 
-          teamB: a.teamB || '', 
-          fee: feeValue,
-          location: locationValue,
-          score: finalScore,
-          goals: finalGoals,
-          feePayments: finalFeePayments
-      };
 
       const payload = {
           title: a.title,
-          description: JSON.stringify(metadata),
+          activity_type: a.type, 
+          fee: feeValue,
+          location: locationValue,
           group_id: a.groupId || null,
-          participants: finalParticipants,
+          participants: a.participants || [],
           date: a.date,
           start_time: a.startTime,
           end_time: a.endTime,
           recurrence: a.recurrence,
-          attendance: finalAttendance,
+          attendance: a.attendance || [],
+          fee_payments: a.feePayments || []
       };
-      
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
-      
       if(!error) {
-          // Update local state by merging
-          setActivities(prev => prev.map(act => act.id === a.id ? { 
-              ...act, 
-              ...a,
-              participants: finalParticipants,
-              attendance: finalAttendance,
-              feePayments: finalFeePayments,
-              score: finalScore,
-              goals: finalGoals
-          } : act));
+          setActivities(prev => prev.map(act => act.id === a.id ? a : act));
       } else {
           console.error("Supabase Update Error:", error);
           alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
@@ -919,13 +700,9 @@ function App() {
   const handleUpdateAttendance = async (aid: string, sid: string) => { 
       const activity = activities.find(a => a.id === aid);
       if(!activity) return;
-      
-      // Safety check
-      const currentAttendance = activity.attendance || [];
-
-      const newAttendance = currentAttendance.includes(sid) 
-        ? currentAttendance.filter(id => id !== sid)
-        : [...currentAttendance, sid];
+      const newAttendance = activity.attendance.includes(sid) 
+        ? activity.attendance.filter(id => id !== sid)
+        : [...activity.attendance, sid];
       
       const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
       if(!error) {
@@ -943,21 +720,8 @@ function App() {
       const newFeePayments = currentFeePayments.includes(sid)
         ? currentFeePayments.filter(id => id !== sid)
         : [...currentFeePayments, sid];
-        
-      // Pack into metadata because column might not exist
-      const metadata = {
-          type: activity.type,
-          opponent: activity.opponent,
-          teamA: activity.teamA,
-          teamB: activity.teamB,
-          fee: activity.fee,
-          location: activity.location,
-          score: activity.score,
-          goals: activity.goals,
-          feePayments: newFeePayments
-      };
 
-      const { error } = await supabase.from('activities').update({ description: JSON.stringify(metadata) }).eq('id', aid);
+      const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
       }
@@ -971,9 +735,9 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.plan_id || null,
+          plan_id: t.planId || null,
           payment_method: t.paymentMethod,
-          payment_link: t.payment_link,
+          payment_link: t.paymentLink,
           // Mapeamento correto: App (camelCase) -> Banco (snake_case)
           external_reference: t.externalReference
       };
@@ -993,9 +757,9 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.plan_id || null,
+          plan_id: t.planId || null,
           payment_method: t.paymentMethod,
-          payment_link: t.payment_link
+          payment_link: t.paymentLink
       };
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
@@ -1056,66 +820,6 @@ function App() {
   const handleDeleteUser = async (id: string) => { 
       const { error } = await supabase.from('app_users').delete().eq('id', id);
       if(!error) setSystemUsers(prev => prev.filter(u => u.id !== id));
-  };
-
-  // --- INVENTORY HANDLERS ---
-  const handleAddInventoryItem = async (item: Omit<InventoryItem, 'id'>) => {
-      const payload = {
-          name: item.name,
-          category: item.category,
-          size: item.size,
-          quantity: item.quantity,
-          min_quantity: item.minQuantity,
-          price: item.salePrice, // Mapping salePrice to DB 'price' column for compatibility
-          cost_price: item.costPrice, // Using cost_price column
-          supplier: item.supplier // Using supplier column
-      };
-      
-      // Note: If columns don't exist in DB, Supabase might ignore them or error. 
-      // This implementation assumes the schema update was applied.
-      const { data, error } = await supabase.from('inventory').insert([payload]).select().single();
-      if(data && !error) {
-          setInventoryItems(prev => [...prev, { 
-              id: data.id,
-              name: data.name,
-              category: data.category,
-              size: data.size,
-              quantity: data.quantity,
-              minQuantity: data.min_quantity,
-              salePrice: data.price, 
-              costPrice: data.cost_price,
-              supplier: data.supplier
-          }]);
-      } else {
-          console.error("Erro ao adicionar item:", error);
-          alert("Erro ao salvar no banco de dados. Verifique a conexão ou os campos.");
-      }
-  };
-
-  const handleUpdateInventoryItem = async (item: InventoryItem) => {
-      const payload = {
-          name: item.name,
-          category: item.category,
-          size: item.size,
-          quantity: item.quantity,
-          min_quantity: item.minQuantity,
-          price: item.salePrice,
-          cost_price: item.costPrice,
-          supplier: item.supplier
-      };
-      const { error } = await supabase.from('inventory').update(payload).eq('id', item.id);
-      if(!error) {
-          setInventoryItems(prev => prev.map(i => i.id === item.id ? item : i));
-      } else {
-          console.error("Erro ao atualizar item:", error);
-      }
-  };
-
-  const handleDeleteInventoryItem = async (id: string) => {
-      const { error } = await supabase.from('inventory').delete().eq('id', id);
-      if(!error) {
-          setInventoryItems(prev => prev.filter(i => i.id !== id));
-      }
   };
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
@@ -1292,23 +996,13 @@ function App() {
                   onDeleteActivity={handleDeleteActivity}
                   currentUser={currentUser}
                />;
-      case 'inventory':
-         if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-         return <InventoryPage
-                  items={inventoryItems}
-                  onAddItem={handleAddInventoryItem}
-                  onUpdateItem={handleUpdateInventoryItem}
-                  onDeleteItem={handleDeleteInventoryItem}
-              />;
       case 'finance':
         return (currentUser!.role === UserRole.ADMIN) ? 
             <FinancePage 
                 transactions={transactions} 
                 plans={plans} 
-                students={students}
                 onAddTransaction={handleAddTransaction} 
                 onUpdateTransaction={handleUpdateTransaction}
-                onRunTuitionJob={handleManualTuitionJob}
             /> : 
             <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
       case 'users':
@@ -1332,7 +1026,6 @@ function App() {
         currentPage={currentPage} 
         onNavigate={handleNavigate} 
         onLogout={handleLogout} 
-        onChangePassword={() => setIsChangePasswordModalOpen(true)}
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
@@ -1353,7 +1046,6 @@ function App() {
                         {currentPage === 'groups' && 'Gestão de Grupos'}
                         {currentPage === 'plans' && 'Planos e Mensalidades'}
                         {currentPage === 'schedule' && 'Agenda'}
-                        {currentPage === 'inventory' && 'Controle de Estoque'}
                         {currentPage === 'finance' && 'Fluxo de Caixa'}
                         {currentPage === 'users' && 'Gestão de Usuários'}
                     </h1>
@@ -1373,58 +1065,6 @@ function App() {
             </div>
         ) : renderContent()}
       </main>
-
-      {/* Change Password Modal */}
-      {isChangePasswordModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                          <Key className="w-5 h-5 text-primary-600" /> Alterar Senha
-                      </h3>
-                      <button onClick={() => setIsChangePasswordModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                          <X className="w-5 h-5" />
-                      </button>
-                  </div>
-                  
-                  <form onSubmit={handleChangePassword} className="space-y-4">
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label>
-                          <input 
-                              type="password" 
-                              required
-                              className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500"
-                              placeholder="Mínimo 6 caracteres"
-                              value={changePasswordData.new}
-                              onChange={(e) => setChangePasswordData({...changePasswordData, new: e.target.value})}
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Nova Senha</label>
-                          <input 
-                              type="password" 
-                              required
-                              className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500"
-                              placeholder="Repita a senha"
-                              value={changePasswordData.confirm}
-                              onChange={(e) => setChangePasswordData({...changePasswordData, confirm: e.target.value})}
-                          />
-                      </div>
-                      
-                      <div className="pt-2">
-                          <button 
-                              type="submit" 
-                              disabled={isChangingPassword}
-                              className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
-                          >
-                              {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                              Atualizar Senha
-                          </button>
-                      </div>
-                  </form>
-              </div>
-          </div>
-      )}
     </div>
   );
 }

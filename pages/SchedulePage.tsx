@@ -1,8 +1,7 @@
 
-
-import React, { useState, useMemo } from 'react';
-import { Activity, Group, Student, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, MapPin, Users, Plus, Edit, Trash2, CheckCircle, XCircle, DollarSign, Download, ChevronLeft, ChevronRight, Filter, FileText, X, Trophy, Minus, PlusCircle, BarChart2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Activity, Student, Group, User, UserRole } from '../types';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -10,64 +9,73 @@ interface SchedulePageProps {
   activities: Activity[];
   students: Student[];
   groups: Group[];
-  onAddActivity: (activity: any) => void;
-  onUpdateActivity: (activity: any) => void;
+  onAddActivity: (activity: Omit<Activity, 'id'>) => void;
+  onUpdateActivity: (activity: Activity) => void;
   onUpdateAttendance: (activityId: string, studentId: string) => void;
-  onUpdateFeePayment: (activityId: string, studentId: string) => void;
-  onDeleteActivity: (id: string) => void;
-  currentUser: User | null;
+  onUpdateFeePayment?: (activityId: string, studentId: string) => void; 
+  onDeleteActivity?: (activityId: string) => void;
+  currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ 
-  activities, 
-  students, 
-  groups, 
-  onAddActivity, 
-  onUpdateActivity, 
-  onUpdateAttendance, 
-  onUpdateFeePayment, 
-  onDeleteActivity, 
-  currentUser 
-}) => {
-  // Navigation State
-  const [selectedDate, setSelectedDate] = useState(new Date());
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, currentUser }) => {
+  // --- DATE SELECTION STATE ---
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Report Modal State
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [reportEndDate, setReportEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+  const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [studentSearch, setStudentSearch] = useState('');
+  const [hasFee, setHasFee] = useState(false);
 
-  // Expanded Activity for Attendance (view details)
-  const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
+  // --- NOTIFICATION STATE ---
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [notifyQueue, setNotifyQueue] = useState<Student[]>([]);
+  const [notifyCurrentIndex, setNotifyCurrentIndex] = useState(0);
+  const [notifyIsRunning, setNotifyIsRunning] = useState(false);
+  const [notifyCountdown, setNotifyCountdown] = useState(10);
+  const [notifyLogs, setNotifyLogs] = useState<string[]>([]);
+  const [notifyActivity, setNotifyActivity] = useState<Activity | null>(null);
+  const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [newActivity, setNewActivity] = useState<Partial<Activity>>({
+      title: '',
+      type: 'TRAINING',
+      fee: 0,
+      location: '',
+      date: new Date().toISOString().split('T')[0],
+      startTime: '14:00',
+      endTime: '15:30',
+      groupId: '',
+      participants: [],
+      recurrence: 'none',
+      attendance: [],
+      feePayments: []
+  });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
-  const canEdit = !isGuardian;
 
-  // Modal Form State
-  const initialForm: any = {
-    title: '',
-    type: 'TRAINING',
-    groupId: '',
-    date: new Date().toISOString().split('T')[0],
-    startTime: '14:00',
-    endTime: '15:30',
-    location: '',
-    fee: 0,
-    recurrence: 'none',
-    score: '',
-    opponent: '',
-    teamA: 'Garotos do Martinica',
-    teamB: 'Visitante',
-    goals: []
-  };
-  const [form, setForm] = useState(initialForm);
-  // Temporary state for adding a goal scorer in the modal
-  const [selectedScorerId, setSelectedScorerId] = useState('');
+  const selectedActivity = selectedActivityId ? activities.find(a => a.id === selectedActivityId) || null : null;
 
-  // Helper Date Functions
+  // Filter activities by the SELECTED DATE
+  const dailyActivities = activities
+    .filter(a => a.date === selectedDate)
+    .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
+
+  // Keep full sorted list for Report Export if needed, or filter report by day/month later
+  const allSortedActivities = [...activities].sort((a, b) => {
+      return new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime();
+  });
+
+  const filteredStudents = students.filter(s => 
+    s.active && 
+    (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+     s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase()))
+  );
+
+  // Helper para formatar data sem fuso horário
   const formatDate = (dateString: string) => {
       if (!dateString) return '';
       const parts = dateString.split('-');
@@ -77,1160 +85,818 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
       return dateString;
   };
 
-  const getDayLabel = (date: Date) => {
-      return date.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const handleNavigateDate = (days: number) => {
+      const current = new Date(selectedDate + 'T00:00:00');
+      current.setDate(current.getDate() + days);
+      setSelectedDate(current.toISOString().split('T')[0]);
+      setSelectedActivityId(null); // Clear selection when changing days
   };
 
-  // Filter activities by SELECTED DAY
-  const filteredActivities = useMemo(() => {
-    const targetDateStr = selectedDate.toISOString().split('T')[0];
-    return activities.filter(a => a.date === targetDateStr)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime));
-  }, [activities, selectedDate]);
-
-  const changeDate = (days: number) => {
-      const newDate = new Date(selectedDate);
-      newDate.setDate(selectedDate.getDate() + days);
-      setSelectedDate(newDate);
+  const handleGoToday = () => {
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedActivityId(null);
   };
 
-  const handleOpenNew = () => {
+  const toggleStudentSelection = (id: string) => {
+      const newSet = new Set(selectedStudentIds);
+      if (newSet.has(id)) {
+          newSet.delete(id);
+      } else {
+          newSet.add(id);
+      }
+      setSelectedStudentIds(newSet);
+  };
+
+  const handleOpenAdd = () => {
       setEditingId(null);
-      setForm({
-          ...initialForm,
-          date: selectedDate.toISOString().split('T')[0] // Default to currently selected date
+      setNewActivity({
+          title: '',
+          type: 'TRAINING',
+          fee: 0,
+          location: '',
+          date: selectedDate, // Use currently selected date
+          startTime: '14:00',
+          endTime: '15:30',
+          groupId: '',
+          participants: [],
+          recurrence: 'none',
+          attendance: [],
+          feePayments: []
       });
-      setSelectedScorerId('');
-      setIsModalOpen(true);
-  };
+      setTargetType('GROUP');
+      setSelectedStudentIds(new Set());
+      setStudentSearch('');
+      setHasFee(false);
+      setShowAddModal(true);
+  }
 
-  const handleOpenEdit = (activity: Activity) => {
+  const handleOpenEdit = (e: React.MouseEvent, activity: Activity) => {
+      e.stopPropagation(); 
       setEditingId(activity.id);
-      setForm({
+      setNewActivity({
           title: activity.title,
           type: activity.type || 'TRAINING',
-          groupId: activity.groupId || '',
+          fee: activity.fee || 0,
+          location: activity.location || '',
           date: activity.date,
           startTime: activity.startTime,
           endTime: activity.endTime,
-          location: activity.location || '',
-          fee: activity.fee || 0,
+          groupId: activity.groupId || '',
+          participants: activity.participants || [],
           recurrence: activity.recurrence || 'none',
-          score: activity.score || '',
-          opponent: activity.opponent || '',
-          teamA: activity.teamA || 'Garotos do Martinica',
-          teamB: activity.teamB || (activity.opponent ? activity.opponent : 'Visitante'),
-          goals: activity.goals || []
+          attendance: activity.attendance,
+          feePayments: activity.feePayments || []
       });
-      setSelectedScorerId('');
-      setIsModalOpen(true);
+
+      if (activity.participants && activity.participants.length > 0) {
+          setTargetType('INDIVIDUAL');
+          setSelectedStudentIds(new Set(activity.participants));
+      } else {
+          setTargetType('GROUP');
+          setSelectedStudentIds(new Set());
+      }
+      
+      setHasFee(!!activity.fee && activity.fee > 0);
+      setStudentSearch('');
+      setShowAddModal(true);
+  };
+
+  const handleDelete = (e: React.MouseEvent, activityId: string) => {
+      e.stopPropagation();
+      if (confirm('Tem certeza que deseja excluir esta atividade?')) {
+          if (onDeleteActivity) {
+              onDeleteActivity(activityId);
+          }
+          if (selectedActivityId === activityId) {
+              setSelectedActivityId(null);
+          }
+      }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      const activityData = { ...form };
       
-      if (editingId) {
-          onUpdateActivity({ ...activityData, id: editingId });
-      } else {
-          onAddActivity(activityData);
-      }
-      setIsModalOpen(false);
-  };
+      const activityData = {
+          ...newActivity,
+          fee: hasFee ? newActivity.fee : 0,
+          groupId: targetType === 'GROUP' ? newActivity.groupId : undefined,
+          participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [],
+      };
 
-  const handleDelete = (id: string) => {
-      if (confirm('Tem certeza que deseja excluir esta atividade?')) {
-          onDeleteActivity(id);
-      }
-  };
-
-  // Goal Management Logic
-  const handleAddGoal = () => {
-      if (!selectedScorerId) return;
-      
-      const currentGoals = [...(form.goals || [])];
-      const existingEntry = currentGoals.find((g: any) => g.studentId === selectedScorerId);
-
-      if (existingEntry) {
-          existingEntry.count += 1;
-      } else {
-          currentGoals.push({ studentId: selectedScorerId, count: 1 });
-      }
-      setForm({ ...form, goals: currentGoals });
-      setSelectedScorerId('');
-  };
-
-  const handleRemoveGoal = (studentId: string) => {
-      const currentGoals = [...(form.goals || [])];
-      const existingEntry = currentGoals.find((g: any) => g.studentId === studentId);
-      
-      if (existingEntry) {
-          if (existingEntry.count > 1) {
-              existingEntry.count -= 1;
+      if(activityData.title && (activityData.groupId || activityData.participants?.length)) {
+          if (editingId) {
+              onUpdateActivity({ ...activityData, id: editingId } as Activity);
           } else {
-              const index = currentGoals.indexOf(existingEntry);
-              currentGoals.splice(index, 1);
+              onAddActivity(activityData as Omit<Activity, 'id'>);
           }
-          setForm({ ...form, goals: currentGoals });
+          setShowAddModal(false);
+      } else {
+          alert("Preencha o título e selecione um grupo ou alunos participantes.");
       }
   };
 
-
-  // --- REPORT GENERATION ---
-
-  const handleExportAttendanceReport = () => {
-    // ... (Existing code for Attendance Report) ...
-    const start = reportStartDate;
-    const end = reportEndDate;
-
-    const activitiesInRange = activities.filter(a => a.date >= start && a.date <= end)
-        .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
-
-    if (activitiesInRange.length === 0) {
-        alert("Nenhuma atividade encontrada no período selecionado.");
-        return;
-    }
-
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text(`Relatório de Atividades`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 14, 26);
-
-    let currentY = 35;
-
-    activitiesInRange.forEach((activity) => {
-        const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto/Individual';
-        const scoreText = activity.score ? ` - Placar: ${activity.score}` : '';
-
-        // Add Activity Header
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
-        
-        doc.setFillColor(240, 240, 240);
-        doc.rect(14, currentY, 182, 8, 'F');
-        doc.setFont("helvetica", "bold");
-        doc.text(`${formatDate(activity.date)} - ${activity.title} (${groupName})${scoreText}`, 16, currentY + 5);
-        doc.setFont("helvetica", "normal");
-        
-        currentY += 10;
-
-        const activityStudents = getActivityStudents(activity);
-        
-        const rows = activityStudents.map(s => {
-            const isPresent = activity.attendance?.includes(s.id);
-            const hasPaid = activity.feePayments?.includes(s.id);
-            const goals = activity.goals?.find(g => g.studentId === s.id)?.count || 0;
-            
-            let paymentStatus = '-';
-            if (activity.type === 'GAME' && activity.fee && activity.fee > 0) {
-                paymentStatus = hasPaid ? 'PAGO' : 'PENDENTE';
-            }
-
-            return [
-                s.name,
-                isPresent ? 'PRESENTE' : 'AUSENTE',
-                paymentStatus,
-                goals > 0 ? goals.toString() : '-'
-            ];
-        });
-
-        autoTable(doc, {
-            startY: currentY,
-            head: [['Atleta', 'Presença', 'Taxa', 'Gols']],
-            body: rows,
-            theme: 'grid',
-            headStyles: { fillColor: [100, 100, 100], fontSize: 8 },
-            bodyStyles: { fontSize: 8 },
-            columnStyles: { 
-                0: { cellWidth: 90 },
-                1: { cellWidth: 30 },
-                2: { cellWidth: 30 },
-                3: { cellWidth: 20 }
-            },
-            didParseCell: (data) => {
-                 if (data.section === 'body') {
-                     if (data.column.index === 1) {
-                         data.cell.styles.textColor = data.cell.raw === 'PRESENTE' ? [0, 128, 0] : [200, 0, 0];
-                     }
-                     if (data.column.index === 2) {
-                         if (data.cell.raw === 'PAGO') data.cell.styles.textColor = [0, 128, 0];
-                         if (data.cell.raw === 'PENDENTE') data.cell.styles.textColor = [200, 0, 0];
-                     }
-                 }
-            }
-        });
-
-        // @ts-ignore
-        currentY = doc.lastAutoTable.finalY + 10;
-    });
-
-    doc.save(`Relatorio_Atividades_${start}_${end}.pdf`);
-  };
-
-  const handleExportRanking = () => {
-    const start = reportStartDate;
-    const end = reportEndDate;
-
-    // Filter only GAMES in range
-    const gamesInRange = activities.filter(a => 
-        a.type === 'GAME' && 
-        a.date >= start && 
-        a.date <= end
-    );
-
-    if (gamesInRange.length === 0) {
-        alert("Nenhum JOGO encontrado no período selecionado para gerar o ranking.");
-        return;
-    }
-
-    // Process Ranking
-    const rankings = students.map(student => {
-        let matchesPlayed = 0;
-        let goalsScored = 0;
-
-        gamesInRange.forEach(game => {
-             // Check if student was present in this game
-             if (game.attendance?.includes(student.id)) {
-                 matchesPlayed++;
-             }
-             // Check goals
-             const studentGoalData = game.goals?.find(g => g.studentId === student.id);
-             if (studentGoalData) {
-                 goalsScored += studentGoalData.count;
-             }
-        });
-
-        return {
-            name: student.name,
-            group: groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo',
-            matchesPlayed,
-            goalsScored,
-            avgGoals: matchesPlayed > 0 ? (goalsScored / matchesPlayed).toFixed(2) : '0.00'
-        };
-    })
-    // Filter out students who haven't played AND haven't scored (cleanup)
-    .filter(r => r.matchesPlayed > 0 || r.goalsScored > 0)
-    // Sort by Goals (Desc), then Matches Played (Desc)
-    .sort((a, b) => b.goalsScored - a.goalsScored || b.matchesPlayed - a.matchesPlayed);
-
-    const doc = new jsPDF();
-    
-    // Header
-    doc.setFillColor(234, 88, 12); // Orange-600
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text("RANKING DE ATLETAS", 105, 20, { align: 'center' });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 105, 30, { align: 'center' });
-    doc.text(`Total de Jogos Computados: ${gamesInRange.length}`, 105, 35, { align: 'center' });
-
-    doc.setTextColor(0, 0, 0);
-
-    const tableData = rankings.map((r, index) => [
-        (index + 1).toString() + 'º',
-        r.name,
-        r.group,
-        r.matchesPlayed.toString(),
-        r.goalsScored.toString(),
-        r.avgGoals
-    ]);
-
-    autoTable(doc, {
-        startY: 50,
-        head: [['Rank', 'Atleta', 'Categoria', 'Jogos (Presença)', 'Gols', 'Média Gols']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [50, 50, 50] },
-        columnStyles: {
-            0: { halign: 'center', fontStyle: 'bold', cellWidth: 15 },
-            3: { halign: 'center' },
-            4: { halign: 'center', fontStyle: 'bold', textColor: [22, 163, 74] }, // Green text for goals
-            5: { halign: 'center' }
-        },
-        didParseCell: (data) => {
-            // Highlight Top 3
-            if (data.section === 'body' && data.row.index < 3) {
-                 data.cell.styles.fontStyle = 'bold';
-                 if (data.row.index === 0) data.cell.styles.fillColor = [255, 255, 224]; // Light Gold
-            }
-        }
-    });
-
-    doc.save(`Ranking_Atletas_${start}_${end}.pdf`);
-  };
-
-  const handleExportGameStats = () => {
-    // ... (Existing code for Game Stats - keeping it for backward compatibility or different view) ...
-    const start = reportStartDate;
-    const end = reportEndDate;
-
-    // Filter only GAMES in range
-    const gamesInRange = activities.filter(a => 
-        a.type === 'GAME' && 
-        a.date >= start && 
-        a.date <= end
-    );
-
-    if (gamesInRange.length === 0) {
-        alert("Nenhum JOGO encontrado no período selecionado.");
-        return;
-    }
-
-    // Calculate stats per student
-    const statsData = students.map(student => {
-        let convocations = 0;
-        let attended = 0;
-        let totalGoals = 0;
-
-        gamesInRange.forEach(game => {
-             const isGroupMatch = game.groupId === student.groupId;
-             const isParticipant = game.participants?.includes(student.id);
-             
-             if (isGroupMatch || isParticipant) {
-                 convocations++;
-                 if (game.attendance?.includes(student.id)) {
-                     attended++;
-                 }
-                 const goalsInGame = game.goals?.find(g => g.studentId === student.id)?.count || 0;
-                 totalGoals += goalsInGame;
-             }
-        });
-
-        return {
-            name: student.name,
-            group: groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo',
-            convocations,
-            attended,
-            totalGoals
-        };
-    })
-    .filter(s => s.convocations > 0) // Only those convocated
-    .sort((a, b) => b.totalGoals - a.totalGoals || b.convocations - a.convocations); 
-
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text(`Estatísticas Gerais (Convocação vs Presença)`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Período: ${formatDate(start)} a ${formatDate(end)}`, 14, 26);
-    doc.text(`Total de Jogos no Período: ${gamesInRange.length}`, 14, 32);
-
-    const tableData = statsData.map(s => [
-        s.name,
-        s.group,
-        s.convocations.toString(),
-        s.attended.toString(),
-        s.totalGoals.toString(),
-        s.convocations > 0 ? `${Math.round((s.attended/s.convocations)*100)}%` : '0%'
-    ]);
-
-    autoTable(doc, {
-        startY: 38,
-        head: [['Atleta', 'Grupo', 'Jogos (Convocado)', 'Presenças', 'Gols', '% Freq.']],
-        body: tableData,
-        headStyles: { fillColor: [100, 100, 100] }, 
-        alternateRowStyles: { fillColor: [245, 245, 245] }
-    });
-
-    doc.save(`Estatisticas_Gerais_${start}_${end}.pdf`);
-  };
-
-  // Generate a dedicated Game Report (Súmula)
-  const handleExportGameReport = (activity: Activity) => {
-        const doc = new jsPDF();
-        
-        // --- HEADER ---
-        doc.setFillColor(33, 33, 33); // Dark Gray
-        doc.rect(0, 0, 210, 40, 'F');
-        
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(22);
-        doc.setFont("helvetica", "bold");
-        doc.text("SÚMULA DO JOGO", 105, 20, { align: 'center' });
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
-        doc.text("Garotos do Martinica", 105, 30, { align: 'center' });
-
-        // --- MATCH INFO ---
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(10);
-        doc.text(`Data: ${formatDate(activity.date)}`, 14, 50);
-        doc.text(`Horário: ${activity.startTime} - ${activity.endTime}`, 14, 56);
-        doc.text(`Local: ${activity.location || 'Não informado'}`, 14, 62);
-        const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto';
-        doc.text(`Categoria: ${groupName}`, 14, 68);
-
-        // --- SCOREBOARD ---
-        const teamA = activity.teamA || 'Time A';
-        const teamB = activity.teamB || 'Time B';
-        const score = activity.score || '- x -';
-
-        doc.setFillColor(245, 245, 245);
-        doc.roundedRect(14, 75, 182, 35, 3, 3, 'F');
-        
-        doc.setFontSize(16);
-        doc.setFont("helvetica", "bold");
-        doc.text(teamA, 40, 95, { align: 'center', maxWidth: 60 });
-        doc.text("X", 105, 95, { align: 'center' });
-        doc.text(teamB, 170, 95, { align: 'center', maxWidth: 60 });
-
-        doc.setFontSize(28);
-        doc.setTextColor(234, 88, 12); // Orange
-        doc.text(score, 105, 85, { align: 'center' });
-
-        // Calculate Result Status
-        let status = "JOGO REALIZADO";
-        let statusColor = [100, 100, 100]; // Gray
-        
-        if (activity.score && activity.score.includes('x')) {
-            const [goalsA, goalsB] = activity.score.split('x').map(s => parseInt(s.trim()));
-            if (!isNaN(goalsA) && !isNaN(goalsB)) {
-                if (goalsA > goalsB) { status = "VITÓRIA"; statusColor = [0, 128, 0]; }
-                else if (goalsB > goalsA) { status = "DERROTA"; statusColor = [200, 0, 0]; }
-                else { status = "EMPATE"; statusColor = [204, 153, 0]; }
-            }
-        }
-        
-        doc.setFontSize(12);
-        doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
-        doc.text(status, 105, 105, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-
-        // --- GOAL SCORERS ---
-        let currentY = 120;
-        if (activity.goals && activity.goals.length > 0) {
-            doc.setFontSize(12);
-            doc.setFont("helvetica", "bold");
-            doc.text("Gols da Partida", 14, currentY);
-            currentY += 8;
-            
-            const goalData = activity.goals.map(g => {
-                const s = students.find(st => st.id === g.studentId);
-                return [s?.name || 'Desconhecido', g.count.toString()];
-            });
-
-            autoTable(doc, {
-                startY: currentY,
-                head: [['Atleta', 'Gols']],
-                body: goalData,
-                theme: 'striped',
-                headStyles: { fillColor: [50, 50, 50] },
-                columnStyles: { 0: { cellWidth: 150 }, 1: { cellWidth: 30, halign: 'center' } }
-            });
-            
-            // @ts-ignore
-            currentY = doc.lastAutoTable.finalY + 15;
-        }
-
-        // --- ATTENDANCE LIST ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("Escalação / Lista de Presença", 14, currentY);
-        currentY += 5;
-
-        const activityStudents = getActivityStudents(activity);
-        const rows = activityStudents.map(s => {
-            const isPresent = activity.attendance?.includes(s.id);
-            const hasPaid = activity.feePayments?.includes(s.id);
-            let payment = '-';
-            if (activity.fee && activity.fee > 0) payment = hasPaid ? 'Sim' : 'Não';
-            return [s.name, isPresent ? 'Presente' : 'Ausente', payment];
-        });
-
-        autoTable(doc, {
-            startY: currentY,
-            head: [['Atleta', 'Status', 'Taxa Paga']],
-            body: rows,
-            theme: 'grid',
-            headStyles: { fillColor: [234, 88, 12] },
-            didParseCell: (data) => {
-                if (data.section === 'body' && data.column.index === 1) {
-                    data.cell.styles.textColor = data.cell.raw === 'Presente' ? [0,128,0] : [200,0,0];
-                }
-            }
-        });
-
-        doc.save(`Sumula_${formatDate(activity.date)}_${teamA}_vs_${teamB}.pdf`);
-  };
-
-  // Helper to get students for an activity
-  const getActivityStudents = (activity: Activity | any) => {
-      // Logic duplicated for form preview where activity might be 'form' state which implies structure
-      const targetGroupId = activity.groupId || activity.group_id; 
-      const targetParticipants = activity.participants || [];
-
-      if (targetGroupId) {
-          return students.filter(s => s.groupId === targetGroupId && s.active);
+  const getAttendeesList = (activity: Activity) => {
+      if (activity.groupId) {
+          return students.filter(s => s.groupId === activity.groupId && s.active);
       }
-      if (targetParticipants && targetParticipants.length > 0) {
-          return students.filter(s => targetParticipants.includes(s.id));
+      if (activity.participants && activity.participants.length > 0) {
+          return students.filter(s => activity.participants?.includes(s.id));
       }
-      return students.filter(s => s.active); // Fallback: all active if no filter (rare)
+      return [];
   };
 
-  const handleExportSingleActivityPDF = (activity: Activity) => {
-    const activityStudents = getActivityStudents(activity);
-    
-    if (activityStudents.length === 0) {
-        alert("Nenhum aluno vinculado a esta atividade.");
-        return;
-    }
-
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text(`Lista de Presença`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Atividade: ${activity.title}`, 14, 28);
-    doc.text(`Data: ${formatDate(activity.date)}  |  Horário: ${activity.startTime} - ${activity.endTime}`, 14, 34);
-    
-    const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Misto/Individual';
-    doc.text(`Grupo: ${groupName}`, 14, 40);
-
-    const rows = activityStudents.map(s => {
-        const isPresent = activity.attendance?.includes(s.id);
-        const hasPaid = activity.feePayments?.includes(s.id);
-        
-        let paymentStatus = '-';
-        if (activity.fee && activity.fee > 0) {
-            paymentStatus = hasPaid ? 'PAGO' : 'PENDENTE';
-        }
-
-        return [
-            s.name,
-            s.phone || '-',
-            isPresent ? 'PRESENTE' : 'AUSENTE',
-            paymentStatus
-        ];
-    });
-
-    autoTable(doc, {
-        startY: 45,
-        head: [['Atleta', 'Telefone', 'Status', 'Taxa']],
-        body: rows,
-        headStyles: { fillColor: [66, 66, 66] },
-        didParseCell: (data) => {
-             if (data.section === 'body') {
-                 if (data.column.index === 2) { // Status
-                     data.cell.styles.textColor = data.cell.raw === 'PRESENTE' ? [22, 163, 74] : [220, 38, 38];
-                 }
-                 if (data.column.index === 3 && data.cell.raw !== '-') { // Taxa
-                     data.cell.styles.textColor = data.cell.raw === 'PAGO' ? [22, 163, 74] : [220, 38, 38];
-                 }
-             }
-        }
-    });
-
-    doc.save(`Lista_${activity.title.replace(/\s+/g, '_')}_${activity.date}.pdf`);
-  };
-
-  // --- BULK WHATSAPP MESSAGE (CONVOCAÇÃO) ---
-  // Simple "Click to Chat" implementation for now
-  const handleBulkNotify = (activity: Activity) => {
-      const activityStudents = getActivityStudents(activity);
-      if (activityStudents.length === 0) {
-          alert("Nenhum aluno nesta atividade.");
+  // --- NOTIFICATION LOGIC ---
+  const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
+      e.stopPropagation();
+      const targetStudents = getAttendeesList(activity);
+      
+      if (targetStudents.length === 0) {
+          alert("Não há alunos vinculados a esta atividade.");
           return;
       }
-      
-      if (!confirm(`Deseja enviar convocação para ${activityStudents.length} atletas via WhatsApp? (Isso abrirá várias janelas)`)) return;
 
-      const dateStr = formatDate(activity.date);
-      let baseMessage = `⚽ *GAROTOS DO MARTINICA* ⚽\n\n`;
+      const typeLabel = activity.type === 'GAME' ? 'Convocação para Jogo' : 'Lembrete de Treino';
       
-      if (activity.type === 'GAME') {
-          baseMessage += `🗓 *CONVOCAÇÃO DE JOGO*\n`;
-          // Use Team A vs Team B if available, otherwise just Title/Opponent
-          const matchup = activity.teamA && activity.teamB 
-            ? `${activity.teamA} x ${activity.teamB}`
-            : `${activity.title} ${activity.opponent ? 'vs ' + activity.opponent : ''}`;
-            
-          baseMessage += `🆚 ${matchup}\n`;
-          baseMessage += `📅 Data: ${dateStr}\n`;
-          baseMessage += `⏰ Horário: ${activity.startTime}\n`;
-          baseMessage += `📍 Local: ${activity.location || 'A definir'}\n`;
-          if (activity.fee && activity.fee > 0) baseMessage += `💰 Taxa: R$ ${activity.fee.toFixed(2)}\n`;
-      } else {
-          baseMessage += `💪 *LEMBRETE DE TREINO*\n`;
-          baseMessage += `📅 Data: ${dateStr}\n`;
-          baseMessage += `⏰ Horário: ${activity.startTime}\n`;
-          baseMessage += `📝 Obs: ${activity.title}\n`;
+      if (confirm(`Deseja enviar ${typeLabel} para ${targetStudents.length} atletas via WhatsApp?\n\nO sistema abrirá uma janela por vez com intervalo de 10 segundos.`)) {
+          setNotifyActivity(activity);
+          setNotifyQueue(targetStudents);
+          setNotifyCurrentIndex(0);
+          setNotifyIsRunning(true);
+          setNotifyModalOpen(true);
+          setNotifyLogs([`Iniciando envio para ${targetStudents.length} atletas...`]);
+          setNotifyCountdown(1);
       }
-      
-      baseMessage += `\nContamos com sua presença!`;
-
-      // Simulação de fila simples
-      activityStudents.forEach((s, index) => {
-          if (!s.guardian.phone) return;
-          const phone = s.guardian.phone.replace(/\D/g, '');
-          const msg = `Olá ${s.name} / ${s.guardian.name},\n\n` + baseMessage;
-          
-          setTimeout(() => {
-              window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
-          }, index * 8000); // 8 segundos entre cada aba
-      });
   };
 
+  useEffect(() => {
+      if (!notifyModalOpen || !notifyIsRunning || !notifyActivity) {
+          if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+          return;
+      }
+
+      if (notifyCurrentIndex >= notifyQueue.length) {
+          setNotifyIsRunning(false);
+          setNotifyLogs(prev => [...prev, "✅ Todos os comunicados foram enviados!"]);
+          return;
+      }
+
+      if (notifyCountdown > 0) {
+          notifyTimerRef.current = setTimeout(() => {
+              setNotifyCountdown(prev => prev - 1);
+          }, 1000);
+      } else {
+          processNotifyItem(notifyQueue[notifyCurrentIndex]);
+      }
+
+      return () => {
+          if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+      };
+  }, [notifyModalOpen, notifyIsRunning, notifyCountdown, notifyCurrentIndex, notifyQueue, notifyActivity]);
+
+  const processNotifyItem = (student: Student) => {
+      if (!notifyActivity) return;
+
+      const phone = student.guardian.phone.replace(/\D/g, '');
+      
+      if (phone) {
+          const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
+          const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+          const date = formatDate(notifyActivity.date);
+          
+          let message = `Olá ${student.guardian.name}, aqui é da Escolinha Garotos do Martinica! ${emoji}\n\n` +
+              `*COMUNICADO: ${type}*\n` +
+              `Atleta: *${student.name}*\n\n` +
+              `📌 *${notifyActivity.title}*\n` +
+              `📅 Data: ${date}\n` +
+              `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+
+          if (notifyActivity.location) {
+              message += `📍 Local: ${notifyActivity.location}\n`;
+          }
+
+          if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0) {
+              message += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
+          }
+
+          message += `\nContamos com a presença! Por favor, confirme.\nObrigado!`;
+          
+          const encodedMessage = encodeURIComponent(message);
+          const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
+          
+          const win = window.open(url, '_blank');
+          if (win) {
+              setNotifyLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
+          } else {
+              setNotifyLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}`, ...prev]);
+          }
+      } else {
+          setNotifyLogs(prev => [`❌ Sem telefone para ${student.name}`, ...prev]);
+      }
+
+      setNotifyCurrentIndex(prev => prev + 1);
+      setNotifyCountdown(10); // 10s delay for next
+  };
+
+
+  const handleExportAttendanceReport = () => {
+      const doc = new jsPDF();
+      doc.setFontSize(18);
+      doc.text('Relatório Geral de Frequência', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 28);
+
+      const reportRows: any[] = [];
+      const activitiesToExport = allSortedActivities; // Use All Sorted for Global Report
+
+      activitiesToExport.forEach(activity => {
+          const expectedStudents = getAttendeesList(activity);
+          const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+
+          expectedStudents.forEach(student => {
+              const isPresent = activity.attendance.includes(student.id);
+              const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
+              const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
+              
+              let status = isPresent ? 'PRESENTE' : 'AUSENTE';
+              if (!isPast && !isPresent) status = 'AGENDADO';
+
+              reportRows.push([
+                  formatDate(activity.date),
+                  `${type}: ${activity.title}`,
+                  groupName,
+                  student.name,
+                  status
+              ]);
+          });
+      });
+
+      if (reportRows.length === 0) {
+          alert("Não há dados de atividades para exportar.");
+          return;
+      }
+
+      autoTable(doc, {
+          startY: 35,
+          head: [['Data', 'Atividade', 'Grupo/Tipo', 'Aluno', 'Status']],
+          body: reportRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+          didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 4) {
+                  const status = data.cell.raw;
+                  if (status === 'AUSENTE') {
+                      data.cell.styles.textColor = [220, 38, 38];
+                      data.cell.styles.fontStyle = 'bold';
+                  } else if (status === 'PRESENTE') {
+                      data.cell.styles.textColor = [22, 163, 74];
+                  } else {
+                      data.cell.styles.textColor = [100, 116, 139];
+                  }
+              }
+          }
+      });
+
+      doc.save('Relatorio_Presenca_Geral.pdf');
+  };
+  
+  // Cálculo do total arrecadado na atividade selecionada
+  const calculateTotalCollected = (activity: Activity) => {
+      if (!activity.fee || activity.fee <= 0 || !activity.feePayments) return 0;
+      return activity.feePayments.length * activity.fee;
+  };
+
+  const dayOfWeekNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  const getDayName = (dateStr: string) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      return dayOfWeekNames[d.getDay()];
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-            <h2 className="text-2xl font-bold text-gray-800">Agenda</h2>
-            <p className="text-gray-500 text-sm">Gerencie treinos, jogos e escalas.</p>
-        </div>
-        <div className="flex items-center gap-2">
-            {!isGuardian && (
-                <>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
+        {!isGuardian && (
+            <div className="flex gap-2 w-full md:w-auto">
                 <button 
-                    onClick={() => setIsReportModalOpen(true)}
-                    className="flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium"
+                    onClick={handleExportAttendanceReport}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors text-sm"
                 >
-                    <FileText className="w-4 h-4 text-orange-600" /> 
-                    Relatórios
+                    <FileText className="w-4 h-4" />
+                    Relatório
                 </button>
                 <button 
-                    onClick={handleOpenNew}
-                    className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm font-medium"
+                    onClick={handleOpenAdd}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm"
                 >
-                    <Plus className="w-4 h-4" /> Novo Evento
+                    <CalendarIcon className="w-4 h-4" />
+                    Agendar
                 </button>
-                </>
-            )}
-        </div>
+            </div>
+        )}
       </div>
 
-      {/* Date Navigation */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-              <button onClick={() => changeDate(-1)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
-                  <ChevronLeft className="w-6 h-6" />
+      {/* --- DATE NAVIGATION BAR --- */}
+      <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button 
+                onClick={() => handleNavigateDate(-1)} 
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                title="Dia Anterior"
+              >
+                  <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="text-center">
-                  <h3 className="text-lg font-bold text-gray-800 capitalize">{getDayLabel(selectedDate)}</h3>
+              <div className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 min-w-[200px]">
+                  <CalendarIcon className="w-4 h-4 text-primary-600" />
                   <input 
-                    type="date" 
-                    className="text-xs text-gray-400 bg-transparent outline-none text-center cursor-pointer hover:text-primary-500"
-                    value={selectedDate.toISOString().split('T')[0]}
-                    onChange={(e) => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+                      type="date" 
+                      className="bg-transparent outline-none text-gray-800 font-medium text-sm"
+                      value={selectedDate}
+                      onChange={(e) => {
+                          if (e.target.value) {
+                              setSelectedDate(e.target.value);
+                              setSelectedActivityId(null);
+                          }
+                      }}
                   />
+                  <span className="text-xs text-gray-400 font-normal">| {getDayName(selectedDate)}</span>
               </div>
-              <button onClick={() => changeDate(1)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
-                  <ChevronRight className="w-6 h-6" />
+              <button 
+                onClick={() => handleNavigateDate(1)} 
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                title="Próximo Dia"
+              >
+                  <ChevronRight className="w-5 h-5" />
               </button>
           </div>
-          
-          <button onClick={() => setSelectedDate(new Date())} className="text-sm font-medium text-primary-600 hover:text-primary-700">
+          <button 
+            onClick={handleGoToday}
+            className="text-sm text-primary-600 font-medium hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-colors"
+          >
               Ir para Hoje
           </button>
       </div>
 
-      {/* Activity List */}
-      <div className="space-y-4">
-          {filteredActivities.length > 0 ? (
-              filteredActivities.map(activity => {
-                  const activityStudents = getActivityStudents(activity);
-                  const presentCount = activity.attendance ? activity.attendance.length : 0;
-                  const totalCount = activityStudents.length;
-                  const isExpanded = expandedActivityId === activity.id;
-                  const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual/Misto';
-                  
-                  // Determine display title for games
-                  const displayTitle = activity.type === 'GAME' && activity.teamA && activity.teamB 
-                    ? `${activity.teamA} x ${activity.teamB}`
-                    : activity.title;
-
-                  // Calculate Fee stats
-                  const paidCount = activity.feePayments?.length || 0;
-                  const potentialFee = totalCount * (activity.fee || 0);
-                  const collectedFee = paidCount * (activity.fee || 0);
-
-                  return (
-                      <div key={activity.id} className={`bg-white rounded-xl shadow-sm border transition-all ${isExpanded ? 'border-primary-200 ring-1 ring-primary-100' : 'border-gray-100'}`}>
-                          {/* Activity Card Header */}
-                          <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-4 justify-between">
-                              <div className="flex items-start gap-4">
-                                  <div className={`flex flex-col items-center justify-center min-w-[60px] p-2 rounded-lg ${activity.type === 'GAME' ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700'}`}>
-                                      {activity.type === 'GAME' ? <Trophy className="w-6 h-6 mb-1" /> : <CalendarIcon className="w-6 h-6 mb-1" />}
-                                      <span className="text-[10px] font-bold uppercase">{activity.type === 'GAME' ? 'JOGO' : 'TREINO'}</span>
-                                  </div>
-                                  <div>
-                                      <h3 className="font-bold text-gray-900 text-lg leading-tight flex items-center gap-2">
-                                        {displayTitle}
-                                        {activity.type === 'GAME' && !activity.teamA && activity.opponent && (
-                                            <span className="text-gray-500 font-normal">vs {activity.opponent}</span>
-                                        )}
-                                        {activity.score && (
-                                            <span className="bg-orange-100 text-orange-800 text-xs px-2 py-0.5 rounded border border-orange-200">
-                                                {activity.score}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Activity List */}
+        <div className="lg:col-span-2 space-y-4">
+            {dailyActivities.length > 0 ? (
+                dailyActivities.map(activity => {
+                    const group = groups.find(g => g.id === activity.groupId);
+                    const isPast = new Date(activity.date + 'T' + activity.endTime) < new Date();
+                    const participantCount = activity.groupId 
+                        ? students.filter(s => s.groupId === activity.groupId).length 
+                        : (activity.participants?.length || 0);
+                    const isGame = activity.type === 'GAME';
+                    
+                    return (
+                        <div 
+                            key={activity.id} 
+                            className={`bg-white p-5 rounded-xl border transition-all cursor-pointer hover:shadow-md relative group ${
+                                selectedActivityId === activity.id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'
+                            }`}
+                            onClick={() => setSelectedActivityId(activity.id)}
+                        >
+                            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                                <div>
+                                    <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                                        {isGame ? <Trophy className="w-4 h-4 text-yellow-500" /> : <CalendarIcon className="w-4 h-4 text-primary-500" />}
+                                        {activity.title}
+                                        {activity.recurrence === 'weekly' && (
+                                            <span title="Recorrente (Semanal)" className="bg-blue-100 text-blue-700 p-1 rounded-full">
+                                                <Repeat className="w-3 h-3" />
                                             </span>
                                         )}
-                                      </h3>
-                                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
-                                          <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {activity.startTime} - {activity.endTime}</div>
-                                          <div className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {groupName}</div>
-                                          {activity.location && <div className="flex items-center gap-1.5"><MapPin className="w-4 h-4" /> {activity.location}</div>}
-                                      </div>
-                                      {activity.type === 'GAME' && activity.fee && activity.fee > 0 && (
-                                          <div className="mt-2 inline-flex items-center gap-2 bg-green-50 text-green-700 px-2 py-1 rounded text-xs font-medium">
-                                              <DollarSign className="w-3 h-3" />
-                                              Arrecadado: R$ {collectedFee.toFixed(2)} / R$ {potentialFee.toFixed(2)}
-                                          </div>
-                                      )}
-                                  </div>
-                              </div>
-                              
-                              <div className="flex flex-col items-end gap-3 justify-center border-t md:border-0 border-gray-100 pt-4 md:pt-0">
-                                  {!isGuardian && (
-                                    <div className="text-right w-full md:w-auto">
-                                        <div className="flex items-center justify-end gap-2 mb-1">
-                                            <span className="text-xs text-gray-400">Presença: {presentCount}/{totalCount}</span>
+                                        {isGame && activity.fee && activity.fee > 0 && (
+                                            <span title={`Taxa: R$ ${activity.fee}`} className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
+                                                <Coins className="w-3 h-3" /> R$ {activity.fee}
+                                            </span>
+                                        )}
+                                    </h4>
+                                    {activity.location && (
+                                        <div className="flex items-center gap-1 mt-1 text-xs text-gray-600">
+                                            <MapPin className="w-3 h-3 text-red-500" />
+                                            {activity.location}
                                         </div>
-                                        <div className="w-full md:w-32 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                            <div 
-                                                className="h-full bg-green-500 rounded-full transition-all duration-500" 
-                                                style={{ width: `${totalCount > 0 ? (presentCount/totalCount)*100 : 0}%` }}
-                                            ></div>
-                                        </div>
+                                    )}
+                                    <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
+                                        <span className="flex items-center gap-1">
+                                            <Clock className="w-4 h-4" />
+                                            {activity.startTime} - {activity.endTime}
+                                        </span>
+                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-gray-700">
+                                            {group ? (
+                                                <>
+                                                    <Users className="w-3 h-3" />
+                                                    {group.name}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <UserIcon className="w-3 h-3" />
+                                                    {participantCount} Alunos
+                                                </>
+                                            )}
+                                        </span>
                                     </div>
-                                  )}
-                                  
-                                  <div className="flex gap-2 w-full md:w-auto justify-end">
-                                      {canEdit && (
-                                        <button 
-                                            onClick={() => handleBulkNotify(activity)}
-                                            className="p-2 text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm"
-                                            title="Enviar Convocação (WhatsApp)"
-                                        >
-                                            <Users className="w-4 h-4" />
-                                        </button>
-                                      )}
-                                      <button 
-                                          onClick={() => setExpandedActivityId(isExpanded ? null : activity.id)}
-                                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors flex-1 md:flex-none ${isExpanded ? 'bg-primary-50 text-primary-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
-                                      >
-                                          {isExpanded ? 'Ocultar' : 'Gerenciar'}
-                                      </button>
-                                      {canEdit && (
-                                          <>
-                                            <button onClick={() => handleOpenEdit(activity)} className="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg border border-gray-100">
+                                </div>
+                                <div className="flex items-center gap-2 self-end sm:self-auto">
+                                    <div className={`px-3 py-1 rounded-full text-xs font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
+                                        {isPast ? 'Concluído' : 'Agendado'}
+                                    </div>
+                                    {!isGuardian && (
+                                        <>
+                                            <button 
+                                                onClick={(e) => handleOpenNotify(e, activity)}
+                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title={isGame ? "Convocar para Jogo" : "Notificar Treino"}
+                                            >
+                                                <Megaphone className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleOpenEdit(e, activity)}
+                                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                                title="Editar Atividade"
+                                            >
                                                 <Edit className="w-4 h-4" />
                                             </button>
-                                            <button onClick={() => handleDelete(activity.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-gray-50 rounded-lg border border-gray-100">
+                                            <button 
+                                                onClick={(e) => handleDelete(e, activity.id)}
+                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                                title="Excluir Atividade"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
-                                          </>
-                                      )}
-                                  </div>
-                              </div>
-                          </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2">
+                                <div className="flex -space-x-2 overflow-hidden">
+                                    {activity.attendance.slice(0, 5).map(studentId => {
+                                        const st = students.find(s => s.id === studentId);
+                                        if(!st) return null;
+                                        return <img key={st.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src={st.photoUrl} alt={st.name} title={st.name} />
+                                    })}
+                                    {activity.attendance.length > 5 && (
+                                        <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center text-[10px] font-medium text-gray-600">
+                                            +{activity.attendance.length - 5}
+                                        </div>
+                                    )}
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                    {activity.attendance.length > 0 ? `${activity.attendance.length} presentes` : 'Nenhuma presença confirmada'}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })
+            ) : (
+                <div className="bg-white p-12 rounded-xl border border-gray-100 text-center flex flex-col items-center justify-center h-64">
+                    <CalendarIcon className="w-12 h-12 text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900">Dia Livre</h3>
+                    <p className="text-gray-500">Nenhuma atividade agendada para {formatDate(selectedDate)}.</p>
+                    {!isGuardian && (
+                         <button 
+                            onClick={handleOpenAdd}
+                            className="mt-4 text-primary-600 font-medium hover:text-primary-700 hover:underline"
+                        >
+                            Agendar uma atividade agora
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
 
-                          {/* Expanded Details Pane */}
-                          {isExpanded && (
-                              <div className="border-t border-gray-100 bg-gray-50 p-4 rounded-b-xl animate-in fade-in slide-in-from-top-2">
-                                  {/* Artilharia Summary if GAME */}
-                                  {activity.type === 'GAME' && activity.goals && activity.goals.length > 0 && (
-                                      <div className="mb-4 bg-white p-3 rounded-lg border border-gray-200">
-                                          <h5 className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-1"><Trophy className="w-3 h-3 text-orange-500" /> Gols da Partida</h5>
-                                          <div className="flex flex-wrap gap-2">
-                                              {activity.goals.map((g, idx) => {
-                                                  const student = students.find(s => s.id === g.studentId);
-                                                  if (!student) return null;
-                                                  return (
-                                                      <span key={idx} className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full border border-gray-200">
-                                                          ⚽ {student.name} ({g.count})
-                                                      </span>
-                                                  );
-                                              })}
-                                          </div>
-                                      </div>
-                                  )}
+        {/* Attendance & Fee Panel */}
+        <div className="lg:col-span-1">
+            {selectedActivity ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 sticky top-4 max-h-[calc(100vh-2rem)] flex flex-col">
+                    <div className="p-5 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <h3 className="font-bold text-gray-900">Lista de Presença</h3>
+                                <p className="text-sm text-gray-500">{selectedActivity.title}</p>
+                                {selectedActivity.location && <p className="text-xs text-gray-400 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3" /> {selectedActivity.location}</p>}
+                            </div>
+                            {selectedActivity.type === 'GAME' && selectedActivity.fee && (
+                                <div className="text-right">
+                                    <div className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md mb-1 inline-block">
+                                        Taxa: R$ {selectedActivity.fee}
+                                    </div>
+                                    {!isGuardian && (
+                                        <div className="text-xs text-gray-500 font-semibold">
+                                            Total: R$ {calculateTotalCollected(selectedActivity).toFixed(2)}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2">
+                        {getAttendeesList(selectedActivity).length > 0 ? (
+                            getAttendeesList(selectedActivity).map(student => {
+                                const isPresent = selectedActivity.attendance.includes(student.id);
+                                const isFeePaid = selectedActivity.feePayments?.includes(student.id);
+                                const showFeeButton = selectedActivity.type === 'GAME' && selectedActivity.fee && selectedActivity.fee > 0;
 
-                                  <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
-                                      <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                          Lista de Atletas ({totalCount})
-                                      </h4>
-                                      <div className="flex gap-2">
-                                          {activity.type === 'GAME' && (
-                                              <button 
-                                                onClick={() => handleExportGameReport(activity)}
-                                                className="text-xs flex items-center gap-1 text-white bg-primary-600 hover:bg-primary-700 border border-primary-600 px-3 py-1.5 rounded shadow-sm font-medium transition-colors"
-                                              >
-                                                  <FileText className="w-3.5 h-3.5" /> Súmula do Jogo
-                                              </button>
-                                          )}
-                                          <button 
-                                            onClick={() => handleExportSingleActivityPDF(activity)}
-                                            className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 px-3 py-1.5 rounded shadow-sm font-medium"
-                                          >
-                                              <Download className="w-3.5 h-3.5" /> Lista PDF
-                                          </button>
-                                      </div>
-                                  </div>
-                                  
-                                  {activityStudents.length > 0 ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                          {activityStudents.map(student => {
-                                              const isPresent = activity.attendance?.includes(student.id);
-                                              const hasPaid = activity.feePayments?.includes(student.id);
+                                return (
+                                    <div key={student.id} 
+                                        className={`flex items-center justify-between p-3 mb-1 rounded-lg transition-colors border border-gray-100 hover:bg-gray-50`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <img src={student.photoUrl} className="w-8 h-8 rounded-full object-cover" alt="" />
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-900 block">
+                                                    {student.name}
+                                                </span>
+                                                {/* Status Text for Mobile */}
+                                                <div className="flex gap-2 md:hidden mt-1">
+                                                    {isPresent ? <span className="text-[10px] text-green-600 font-bold">Presente</span> : <span className="text-[10px] text-red-400">Ausente</span>}
+                                                    {showFeeButton && isFeePaid && <span className="text-[10px] text-green-600 font-bold">Pago</span>}
+                                                    {showFeeButton && !isFeePaid && <span className="text-[10px] text-orange-400">Pendente</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-2">
+                                            {/* Attendance Toggle */}
+                                            {!isGuardian ? (
+                                                <button
+                                                    onClick={() => onUpdateAttendance(selectedActivity.id, student.id)}
+                                                    className={`p-2 rounded-full transition-colors ${isPresent ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                                    title={isPresent ? "Marcar Ausente" : "Marcar Presente"}
+                                                >
+                                                    {isPresent ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                                                </button>
+                                            ) : (
+                                                <div className={`p-2 rounded-full ${isPresent ? 'bg-green-100 text-green-600' : 'bg-red-50 text-red-300'}`}>
+                                                    {isPresent ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                                                </div>
+                                            )}
 
-                                              return (
-                                                  <div key={student.id} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-200 shadow-sm">
-                                                      <div className="flex items-center gap-2 overflow-hidden">
-                                                          <img src={student.photoUrl} alt="" className="w-8 h-8 rounded-full bg-gray-200 border border-gray-100" />
-                                                          <div className="overflow-hidden">
-                                                            <p className="text-sm font-medium text-gray-700 truncate">{student.name}</p>
-                                                            {activity.type === 'GAME' && activity.fee && activity.fee > 0 && (
-                                                                <p className={`text-[10px] font-bold ${hasPaid ? 'text-green-600' : 'text-red-500'}`}>
-                                                                    {hasPaid ? 'Taxa Paga' : 'Taxa Pendente'}
-                                                                </p>
-                                                            )}
-                                                          </div>
-                                                      </div>
-                                                      <div className="flex items-center gap-1">
-                                                          {/* Fee Toggle */}
-                                                          {activity.type === 'GAME' && activity.fee && activity.fee > 0 && canEdit && (
-                                                              <button 
-                                                                onClick={() => onUpdateFeePayment(activity.id, student.id)}
-                                                                title={hasPaid ? "Marcar como não pago" : "Marcar como pago"}
-                                                                className={`p-1.5 rounded transition-colors ${hasPaid ? 'text-white bg-green-500 hover:bg-green-600' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
-                                                              >
-                                                                  <DollarSign className="w-4 h-4" />
-                                                              </button>
-                                                          )}
-                                                          
-                                                          {/* Attendance Toggle */}
-                                                          {canEdit ? (
-                                                              <button 
-                                                                onClick={() => onUpdateAttendance(activity.id, student.id)}
-                                                                className={`p-1.5 rounded transition-colors ${isPresent ? 'text-white bg-blue-600 hover:bg-blue-700' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
-                                                                title={isPresent ? "Marcar falta" : "Marcar presença"}
-                                                              >
-                                                                  {isPresent ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                                                              </button>
-                                                          ) : (
-                                                              <div className={`p-1.5 rounded ${isPresent ? 'text-green-600 bg-green-50' : 'text-red-400 bg-red-50'}`}>
-                                                                  {isPresent ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                                                              </div>
-                                                          )}
-                                                      </div>
-                                                  </div>
-                                              );
-                                          })}
-                                      </div>
-                                  ) : (
-                                      <p className="text-sm text-gray-500 italic text-center py-4">Nenhum aluno vinculado a este grupo/atividade.</p>
-                                  )}
-                              </div>
-                          )}
-                      </div>
-                  );
-              })
-          ) : (
-              <div className="bg-white p-12 rounded-xl border border-gray-100 text-center text-gray-400 flex flex-col items-center">
-                  <CalendarIcon className="w-16 h-16 mb-4 text-gray-200" />
-                  <p className="text-lg font-medium text-gray-600">Dia livre!</p>
-                  <p className="text-sm">Nenhuma atividade agendada para {getDayLabel(selectedDate)}.</p>
-                  {!isGuardian && (
-                      <button onClick={handleOpenNew} className="mt-6 text-primary-600 hover:text-primary-700 font-bold text-sm bg-primary-50 px-4 py-2 rounded-lg">
-                          + Adicionar Atividade Agora
-                      </button>
-                  )}
-              </div>
-          )}
+                                            {/* Fee Payment Toggle (Only for Games with Fee) */}
+                                            {showFeeButton && (
+                                                !isGuardian ? (
+                                                    <button
+                                                        onClick={() => onUpdateFeePayment && onUpdateFeePayment(selectedActivity.id, student.id)}
+                                                        className={`p-2 rounded-full transition-colors ${isFeePaid ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-orange-50 text-orange-300 hover:bg-orange-100'}`}
+                                                        title={isFeePaid ? "Marcar como Não Pago" : "Marcar como Pago"}
+                                                    >
+                                                        <DollarSign className="w-5 h-5" />
+                                                    </button>
+                                                ) : (
+                                                     // Guardian View of Fee
+                                                    <div className={`p-2 rounded-full ${isFeePaid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}>
+                                                        <DollarSign className="w-5 h-5" />
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        ) : (
+                            <div className="p-4 text-center text-gray-400 text-sm">
+                                Nenhum aluno vinculado a esta atividade.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400">
+                    <CalendarIcon className="w-12 h-12 mb-2 opacity-20" />
+                    <p>Selecione uma atividade para<br/>{isGuardian ? 'ver' : 'gerenciar'} a presença</p>
+                </div>
+            )}
+        </div>
       </div>
 
-      {/* Reports Modal */}
-      {isReportModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                          <FileText className="w-5 h-5 text-orange-600" /> Central de Relatórios
-                      </h3>
-                      <button onClick={() => setIsReportModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-                  </div>
-                  
-                  <div className="space-y-6">
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Selecione o Período</label>
-                          <div className="flex gap-2">
-                              <div className="flex-1">
-                                  <label className="block text-xs text-gray-400 mb-1">De</label>
-                                  <input 
-                                    type="date" 
-                                    className="w-full border rounded p-2 text-sm"
-                                    value={reportStartDate}
-                                    onChange={(e) => setReportStartDate(e.target.value)}
-                                  />
-                              </div>
-                              <div className="flex-1">
-                                  <label className="block text-xs text-gray-400 mb-1">Até</label>
-                                  <input 
-                                    type="date" 
-                                    className="w-full border rounded p-2 text-sm"
-                                    value={reportEndDate}
-                                    onChange={(e) => setReportEndDate(e.target.value)}
-                                  />
-                              </div>
-                          </div>
-                      </div>
+      {showAddModal && !isGuardian && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-bold mb-4">{editingId ? 'Editar Atividade' : 'Agendar Atividade'}</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    
+                    {/* Tipo de Atividade */}
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Tipo de Atividade</label>
+                        <div className="flex gap-4">
+                            <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 ring-1 ring-primary-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                <input type="radio" name="type" value="TRAINING" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" />
+                                <CalendarIcon className="w-4 h-4" /> Treino
+                            </label>
+                            <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 ring-1 ring-yellow-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                <input type="radio" name="type" value="GAME" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" />
+                                <Trophy className="w-4 h-4" /> Jogo
+                            </label>
+                        </div>
+                    </div>
 
-                      <div className="space-y-3">
-                          <button 
-                            onClick={handleExportAttendanceReport}
-                            className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md transition-all group"
-                          >
-                              <div className="flex items-center gap-3">
-                                  <div className="bg-blue-100 text-blue-600 p-2 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                      <Users className="w-5 h-5" />
-                                  </div>
-                                  <div className="text-left">
-                                      <h4 className="font-bold text-gray-800 text-sm">Lista de Presença Geral</h4>
-                                      <p className="text-xs text-gray-500">Resumo de presença de todas as atividades.</p>
-                                  </div>
-                              </div>
-                              <Download className="w-4 h-4 text-gray-400" />
-                          </button>
-                          
-                          <button 
-                            onClick={handleExportRanking}
-                            className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md transition-all group"
-                          >
-                              <div className="flex items-center gap-3">
-                                  <div className="bg-yellow-100 text-yellow-600 p-2 rounded-lg group-hover:bg-yellow-500 group-hover:text-white transition-colors">
-                                      <BarChart2 className="w-5 h-5" />
-                                  </div>
-                                  <div className="text-left">
-                                      <h4 className="font-bold text-gray-800 text-sm">Ranking Geral de Atletas</h4>
-                                      <p className="text-xs text-gray-500">Ranking por Gols e Partidas Jogadas.</p>
-                                  </div>
-                              </div>
-                              <Download className="w-4 h-4 text-gray-400" />
-                          </button>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Título</label>
+                        <input className="w-full border rounded-lg p-2" type="text" placeholder="Ex: Treino Tático ou Jogo vs Time X" 
+                            required value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} />
+                    </div>
 
-                          <button 
-                            onClick={handleExportGameStats}
-                            className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md transition-all group"
-                          >
-                              <div className="flex items-center gap-3">
-                                  <div className="bg-orange-100 text-orange-600 p-2 rounded-lg group-hover:bg-orange-600 group-hover:text-white transition-colors">
-                                      <Trophy className="w-5 h-5" />
-                                  </div>
-                                  <div className="text-left">
-                                      <h4 className="font-bold text-gray-800 text-sm">Estatísticas (Convocação)</h4>
-                                      <p className="text-xs text-gray-500">Compare convocações vs presença real.</p>
-                                  </div>
-                              </div>
-                              <Download className="w-4 h-4 text-gray-400" />
-                          </button>
-                      </div>
-                  </div>
-                  
-                  <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-                      <button onClick={() => setIsReportModalOpen(false)} className="text-sm text-gray-500 hover:text-gray-800 font-medium">Fechar</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* Add/Edit Activity Modal */}
-      {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8 overflow-y-auto max-h-[90vh]">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Editar Evento' : 'Novo Evento'}</h3>
-                      <button onClick={() => setIsModalOpen(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
-                  </div>
-                  <form onSubmit={handleSubmit} className="space-y-5">
-                      <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Título / Descrição</label>
-                          <input required type="text" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
-                              placeholder="Ex: Treino Tático, Amistoso" 
-                              value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo</label>
-                              <select className="w-full border border-gray-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                                  value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
-                                  <option value="TRAINING">Treino</option>
-                                  <option value="GAME">Jogo / Amistoso</option>
-                              </select>
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Grupo</label>
-                              <select className="w-full border border-gray-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                                  value={form.groupId} onChange={e => setForm({...form, groupId: e.target.value})}>
-                                  <option value="">Todos / Individual</option>
-                                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                              </select>
-                          </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data</label>
-                              <input required type="date" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                                  value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Início</label>
-                                <input required type="time" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                                    value={form.startTime} onChange={e => setForm({...form, startTime: e.target.value})} />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fim</label>
-                                <input required type="time" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                                    value={form.endTime} onChange={e => setForm({...form, endTime: e.target.value})} />
-                              </div>
-                          </div>
-                      </div>
-                      <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Local / Endereço</label>
-                          <input type="text" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                              placeholder="Ex: Arena Martinica, Campo B..."
-                              value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
-                      </div>
-                      
-                      {/* Campos específicos para Jogo */}
-                      {form.type === 'GAME' && (
-                          <div className="space-y-4 border-t border-gray-100 pt-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Time A</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50 focus:bg-white"
-                                            placeholder="Ex: Garotos do Martinica"
-                                            value={form.teamA} 
-                                            onChange={e => setForm({...form, teamA: e.target.value})} 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Time B</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50 focus:bg-white"
-                                            placeholder="Ex: Visitante"
-                                            value={form.teamB} 
-                                            onChange={e => setForm({...form, teamB: e.target.value})} 
-                                        />
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome do Adversário (Ref.)</label>
-                                    <input 
-                                        type="text" 
-                                        className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                                        placeholder="Ex: Escolinha do Futuro"
-                                        value={form.opponent} 
-                                        onChange={e => setForm({...form, opponent: e.target.value})} 
-                                    />
-                                </div>
-
-                                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                                    <label className="block text-xs font-bold text-orange-800 uppercase mb-1 flex items-center gap-1">
-                                        <DollarSign className="w-3 h-3" /> Taxa Extra (Opcional)
-                                    </label>
-                                    <input 
+                    {newActivity.type === 'GAME' && (
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 space-y-3">
+                             <div className="flex items-center gap-2">
+                                 <input 
+                                    type="checkbox" 
+                                    id="hasFee"
+                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                    checked={hasFee}
+                                    onChange={(e) => setHasFee(e.target.checked)}
+                                 />
+                                 <label htmlFor="hasFee" className="text-sm font-medium text-gray-800">Cobrar Taxa do Jogo?</label>
+                             </div>
+                             {hasFee && (
+                                 <div>
+                                     <label className="block text-xs font-medium text-gray-600 mb-1">Valor da Taxa (R$)</label>
+                                     <input 
                                         type="number" 
                                         min="0" 
-                                        step="0.50" 
-                                        className="w-full border border-orange-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-orange-500"
-                                        placeholder="0.00"
-                                        value={isNaN(form.fee) ? '' : form.fee} 
-                                        onChange={e => setForm({...form, fee: parseFloat(e.target.value) || 0})} 
+                                        step="0.01"
+                                        className="w-full border rounded-lg p-2 bg-white"
+                                        placeholder="0,00"
+                                        value={newActivity.fee === 0 ? '' : newActivity.fee}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value);
+                                            setNewActivity({...newActivity, fee: isNaN(val) ? 0 : val})
+                                        }}
+                                     />
+                                 </div>
+                             )}
+                             <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Local / Endereço</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border rounded-lg p-2 bg-white"
+                                    placeholder="Ex: Rua das Flores, 123 - Campo do Real"
+                                    value={newActivity.location}
+                                    onChange={(e) => setNewActivity({...newActivity, location: e.target.value})}
+                                />
+                             </div>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                             <label className="block text-sm font-medium mb-1">Repetição</label>
+                             <select className="w-full border rounded-lg p-2 bg-white" 
+                                value={newActivity.recurrence} 
+                                onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as 'weekly' | 'none'})}>
+                                 <option value="none">Pontual</option>
+                                 <option value="weekly">Recorrente (Semanal - Ano todo)</option>
+                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Público Alvo</label>
+                            <div className="flex border rounded-lg overflow-hidden">
+                                <button type="button" 
+                                    onClick={() => setTargetType('GROUP')}
+                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'GROUP' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                    Grupo
+                                </button>
+                                <div className="w-px bg-gray-200"></div>
+                                <button type="button" 
+                                    onClick={() => setTargetType('INDIVIDUAL')}
+                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'INDIVIDUAL' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                    Individual
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {targetType === 'GROUP' ? (
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Selecionar Grupo</label>
+                            <select className="w-full border rounded-lg p-2 bg-white"
+                                value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}>
+                                <option value="">Selecione...</option>
+                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </select>
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Selecionar Alunos ({selectedStudentIds.size})</label>
+                            <div className="border rounded-lg p-2 bg-gray-50">
+                                <div className="relative mb-2">
+                                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                                    <input 
+                                        type="text" 
+                                        className="w-full pl-8 pr-2 py-1.5 text-sm border rounded bg-white"
+                                        placeholder="Buscar aluno..."
+                                        value={studentSearch}
+                                        onChange={e => setStudentSearch(e.target.value)}
                                     />
-                                    <p className="text-[10px] text-orange-600 mt-1">Valor cobrado por atleta (ex: arbitragem, colete).</p>
                                 </div>
-
-                                <div className="space-y-3">
-                                    <h4 className="text-sm font-bold text-gray-800">Resultado & Artilharia</h4>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Placar Final</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary-500"
-                                            placeholder="Ex: 3 x 2" 
-                                            value={form.score} 
-                                            onChange={e => setForm({...form, score: e.target.value})} 
-                                        />
-                                    </div>
-
-                                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Adicionar Gol</label>
-                                        <div className="flex gap-2 mb-3">
-                                            <select 
-                                                className="flex-1 border border-gray-300 rounded-lg p-2 text-sm"
-                                                value={selectedScorerId}
-                                                onChange={(e) => setSelectedScorerId(e.target.value)}
-                                            >
-                                                <option value="">Selecione o Atleta...</option>
-                                                {getActivityStudents(form).map(s => (
-                                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                                ))}
-                                            </select>
-                                            <button 
-                                                type="button" 
-                                                onClick={handleAddGoal}
-                                                disabled={!selectedScorerId}
-                                                className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
-                                            >
-                                                <PlusCircle className="w-5 h-5" />
-                                            </button>
+                                <div className="max-h-40 overflow-y-auto space-y-1">
+                                    {filteredStudents.map(s => (
+                                        <div key={s.id} onClick={() => toggleStudentSelection(s.id)} 
+                                            className="flex items-center gap-2 p-1.5 hover:bg-white rounded cursor-pointer transition-colors"
+                                        >
+                                            {selectedStudentIds.has(s.id) ? (
+                                                <CheckSquare className="w-4 h-4 text-primary-600" />
+                                            ) : (
+                                                <Square className="w-4 h-4 text-gray-300" />
+                                            )}
+                                            <span className="text-sm text-gray-700">{s.name}</span>
                                         </div>
-
-                                        {form.goals && form.goals.length > 0 && (
-                                            <div className="space-y-2">
-                                                {form.goals.map((goal: any) => {
-                                                    const student = students.find(s => s.id === goal.studentId);
-                                                    if (!student) return null;
-                                                    return (
-                                                        <div key={goal.studentId} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 text-sm">
-                                                            <span className="font-medium flex items-center gap-1">⚽ {student.name}</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-bold">x{goal.count}</span>
-                                                                <button type="button" onClick={() => handleRemoveGoal(goal.studentId)} className="text-red-500 hover:text-red-700">
-                                                                    <Minus className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
+                                    ))}
+                                    {filteredStudents.length === 0 && (
+                                        <p className="text-xs text-gray-400 text-center py-2">Nenhum aluno encontrado</p>
+                                    )}
                                 </div>
-                          </div>
-                      )}
-                      
-                      {!editingId && (
-                           <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Recorrência</label>
-                                <select className="w-full border border-gray-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                                    value={form.recurrence} onChange={e => setForm({...form, recurrence: e.target.value})}>
-                                    <option value="none">Evento Único</option>
-                                    <option value="weekly">Semanal (até o fim do ano)</option>
-                                </select>
-                                {form.recurrence === 'weekly' && <p className="text-xs text-orange-600 mt-1">⚠️ Atenção: Serão criados eventos repetidos até 31/Dez.</p>}
-                           </div>
-                      )}
+                            </div>
+                        </div>
+                    )}
 
-                      <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                          <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-3 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">
-                              Cancelar
-                          </button>
-                          <button type="submit" className="px-5 py-3 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20">
-                              {editingId ? 'Salvar Alterações' : 'Criar Evento'}
-                          </button>
-                      </div>
-                  </form>
-              </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Data</label>
+                            <input className="w-full border rounded-lg p-2" type="date" required
+                                value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Horário</label>
+                            <div className="flex gap-2">
+                                <input className="w-full border rounded-lg p-2 text-sm" type="time" required
+                                    value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} />
+                                <span className="self-center">-</span>
+                                <input className="w-full border rounded-lg p-2 text-sm" type="time" required
+                                    value={newActivity.endTime} onChange={e => setNewActivity({...newActivity, endTime: e.target.value})} />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-4">
+                        <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                        <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                            {editingId ? 'Salvar Alterações' : 'Agendar'}
+                        </button>
+                    </div>
+                </form>
+             </div>
+        </div>
+      )}
+
+      {/* Notification Modal */}
+      {notifyModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                   <Megaphone className="w-5 h-5 text-blue-600" /> Comunicado em Massa
+               </h3>
+               {!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>}
+            </div>
+
+            <div className="mb-6">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Progresso:</span>
+                    <span>{Math.min(notifyCurrentIndex + 1, notifyQueue.length)} de {notifyQueue.length}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${((notifyCurrentIndex) / notifyQueue.length) * 100}%` }}></div>
+                </div>
+                
+                {notifyIsRunning ? (
+                    <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                        Próximo envio em {notifyCountdown}s...
+                        <span className="text-xs font-normal text-gray-500">Mantenha esta janela aberta e permita pop-ups!</span>
+                    </div>
+                ) : (
+                    <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">
+                        Processo Finalizado
+                    </div>
+                )}
+            </div>
+            
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">
+                {notifyLogs.map((log, i) => (
+                    <div key={i} className="mb-1">{log}</div>
+                ))}
+                {notifyLogs.length === 0 && <div className="text-gray-500">Aguardando início...</div>}
+            </div>
+
+            <div className="flex justify-end gap-2">
+                {notifyIsRunning ? (
+                    <button onClick={() => setNotifyIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">
+                        <Pause className="w-4 h-4" /> Pausar
+                    </button>
+                ) : (
+                    <button onClick={() => setNotifyIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={notifyCurrentIndex >= notifyQueue.length}>
+                        <Play className="w-4 h-4" /> Continuar
+                    </button>
+                )}
+                <button onClick={() => setNotifyModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Fechar
+                </button>
+            </div>
           </div>
+        </div>
       )}
     </div>
   );

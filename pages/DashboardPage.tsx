@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Users, DollarSign, CalendarCheck, AlertCircle, Download, Cake, ChevronRight, FileWarning, FileCheck } from 'lucide-react';
+import { Users, DollarSign, CalendarCheck, AlertCircle, Download, Cake, ChevronRight, FileWarning } from 'lucide-react';
 import { Student, Transaction, Activity, UserRole, TransactionType, PaymentStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { jsPDF } from 'jspdf';
@@ -19,15 +19,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   
   const activeStudents = students.filter(s => s.active).length;
   
-  // Helper para data de hoje local YYYY-MM-DD
-  const getTodayStr = () => {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const monthlyRevenue = useMemo(() => {
     return transactions
       .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
@@ -42,15 +33,14 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
 
   // Calculate distinct students who are defaulting
   const defaultingStudentsCount = useMemo(() => {
-    const todayStr = getTodayStr();
+    const today = new Date();
     const defaulterIds = new Set(
         transactions
             .filter(t => 
                 t.type === TransactionType.INCOME && 
                 t.status !== PaymentStatus.PAID && 
-                t.status !== PaymentStatus.CANCELLED &&
                 t.studentId &&
-                t.date < todayStr // Comparação estrita de string: Só é atrasado se data < hoje
+                new Date(t.date) < today
             )
             .map(t => t.studentId)
     );
@@ -60,28 +50,8 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   const missingDocsCount = useMemo(() => {
       return students.filter(s => {
           if (!s.active || !s.documents) return false;
-          // Helper para verificar status
-          const getStatus = (doc: any) => {
-              if (typeof doc === 'boolean') return doc;
-              if (doc && typeof doc === 'object') return doc.delivered;
-              return false;
-          };
           // Retorna verdadeiro se algum documento estiver false (faltando)
-          return !getStatus(s.documents.rg) || !getStatus(s.documents.cpf) || !getStatus(s.documents.medical) || !getStatus(s.documents.address) || !getStatus(s.documents.school);
-      }).length;
-  }, [students]);
-
-  const deliveredDocsCount = useMemo(() => {
-      return students.filter(s => {
-          if (!s.active || !s.documents) return false;
-          const d = s.documents;
-          const getStatus = (doc: any) => {
-              if (typeof doc === 'boolean') return doc;
-              if (doc && typeof doc === 'object') return doc.delivered;
-              return false;
-          };
-          // Retorna verdadeiro se TODOS os documentos estiverem entregues
-          return getStatus(d.rg) && getStatus(d.cpf) && getStatus(d.medical) && getStatus(d.address) && getStatus(d.school);
+          return !s.documents.rg || !s.documents.cpf || !s.documents.medical || !s.documents.address || !s.documents.school;
       }).length;
   }, [students]);
 
@@ -272,25 +242,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
                 </div>
                 <div className="bg-orange-50 p-3 rounded-lg group-hover:bg-orange-100 transition-colors">
                     <FileWarning className="w-6 h-6 text-orange-600" />
-                </div>
-            </div>
-        )}
-
-        {/* Novo Card: Doc Entregue */}
-        {role === UserRole.ADMIN && (
-            <div 
-                className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:border-green-300 transition-colors group"
-                onClick={() => onNavigate && onNavigate('students', { filter: 'DOCS_OK' })}
-            >
-                <div>
-                <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Doc. Entregue</p>
-                <h3 className="text-2xl font-bold text-green-600 mt-1 flex items-center gap-2">
-                    {deliveredDocsCount}
-                    <span className="text-xs font-normal text-green-400 bg-green-50 px-2 py-0.5 rounded-full">Ver</span>
-                </h3>
-                </div>
-                <div className="bg-green-50 p-3 rounded-lg group-hover:bg-green-100 transition-colors">
-                    <FileCheck className="w-6 h-6 text-green-600" />
                 </div>
             </div>
         )}

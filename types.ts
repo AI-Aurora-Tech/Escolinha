@@ -1,5 +1,4 @@
 
-
 export enum UserRole {
   ADMIN = 'ADMIN',
   PROFESSOR = 'PROFESSOR',
@@ -59,17 +58,12 @@ export interface Address {
   state: string;
 }
 
-export interface DocumentStatus {
-  delivered: boolean;
-  isDigital: boolean;
-}
-
 export interface StudentDocuments {
-  rg: DocumentStatus | boolean;
-  cpf: DocumentStatus | boolean;
-  medical: DocumentStatus | boolean;
-  address: DocumentStatus | boolean;
-  school: DocumentStatus | boolean;
+  rg: boolean;
+  cpf: boolean;
+  medical: boolean;
+  address: boolean;
+  school: boolean;
 }
 
 export interface Student {
@@ -93,13 +87,8 @@ export interface Activity {
   id: string;
   title: string;
   type: 'TRAINING' | 'GAME'; // Novo campo
-  opponent?: string; // Novo campo: Adversário
-  teamA?: string; // Novo campo: Time da Casa / Time A
-  teamB?: string; // Novo campo: Time Visitante / Time B
   fee?: number; // Novo campo: Taxa do jogo
   location?: string; // Novo campo: Local do jogo
-  score?: string; // Novo campo: Placar (ex: 3x1)
-  goals?: { studentId: string; count: number }[]; // Novo campo: Artilharia
   groupId?: string; // Optional: Activity might be for specific students only
   participants?: string[]; // Optional: List of Student IDs if not a group activity
   date: string; // ISO String
@@ -134,16 +123,4 @@ export interface User {
   role: UserRole;
   avatar: string;
   cpf?: string; // Para login de responsável
-}
-
-export interface InventoryItem {
-  id: string;
-  name: string;
-  category: string;
-  size?: string;
-  quantity: number;
-  minQuantity: number;
-  salePrice?: number;
-  costPrice?: number;
-  supplier?: string;
 }
