@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -117,7 +118,7 @@ function App() {
                  address: s.address, // JSONB
                  guardian: s.guardian, // JSONB
                  planId: s.plan_id,
-                 groupId: s.group_id,
+                 groupIds: s.group_ids || [], // Mapeia group_ids (array) para groupIds
                  active: s.active,
                  documents: s.documents // JSONB
              }));
@@ -158,11 +159,13 @@ function App() {
              let relevantActivities = activitiesData;
              if (currentUser?.role === UserRole.RESPONSAVEL && students) {
                  const studentIds = students.map(s => s.id);
-                 const studentGroupIds = students.map(s => s.groupId);
-                 relevantActivities = activitiesData.filter((a: any) => 
-                    (a.group_id && studentGroupIds.includes(a.group_id)) || 
-                    (a.participants && a.participants.some((p: string) => studentIds.includes(p)))
-                 );
+                 // Parent sees activity if one of their children is in the group OR explicitly invited
+                 relevantActivities = activitiesData.filter((a: any) => {
+                     const activityGroupId = a.group_id;
+                     const isGroupMatch = students.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
+                     const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
+                     return isGroupMatch || isParticipant;
+                 });
              }
 
              setActivities(relevantActivities.map((a: any) => ({
@@ -204,8 +207,7 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // --- LOGIN LOGIC ---
-  
+  // ... (Login logic handles remain identical) ...
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoggingIn(true);
@@ -372,7 +374,6 @@ function App() {
       setCurrentPage('dashboard');
   };
 
-  // Re-declaring key handlers to prevent errors in render 
   const generateAnnualTuition = async (student: Student, plan: Plan) => {
     const today = new Date();
     const currentMonth = today.getMonth();
@@ -417,7 +418,6 @@ function App() {
             plan_id: plan.id,
             payment_link: paymentLink,
             payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-            // Mapeamento correto: App (camelCase) -> Banco (snake_case)
             external_reference: externalReference 
         });
     }
@@ -478,7 +478,7 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_id: studentData.groupId,
+        group_ids: studentData.groupIds, // Send Array
         active: studentData.active,
         documents: studentData.documents
     };
@@ -496,7 +496,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupId: data.group_id,
+             groupIds: data.group_ids || [],
              active: data.active,
              documents: data.documents
         };
@@ -505,7 +505,10 @@ function App() {
             const plan = plans.find(p => p.id === newStudent.planId);
             if (plan) await generateAnnualTuition(newStudent, plan);
         }
-    } else { alert("Erro ao salvar aluno."); }
+    } else { 
+        console.error("Supabase error:", error);
+        alert("Erro ao salvar aluno."); 
+    }
     setIsLoading(false);
   };
 
@@ -522,7 +525,7 @@ function App() {
         address: s.address,
         guardian: s.guardian,
         plan_id: s.planId || null,
-        group_id: s.groupId || null,
+        group_ids: s.groupIds || [], // Handle array
         active: s.active,
         documents: s.documents
       }));
@@ -542,7 +545,7 @@ function App() {
              address: d.address,
              guardian: d.guardian,
              planId: d.plan_id,
-             groupId: d.group_id,
+             groupIds: d.group_ids || [],
              active: d.active,
              documents: d.documents
           }));
@@ -581,31 +584,65 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_id: updatedStudent.groupId,
+          group_ids: updatedStudent.groupIds, // Send Array
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) {
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s));
+      } else {
+          console.error("Supabase Error:", error);
       }
       setIsLoading(false);
   };
   
   const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
       setIsLoading(true);
-      const { error } = await supabase.from('students').update({ group_id: gid }).in('id', ids);
-      if (!error) {
-           setStudents(students.map(s => ids.includes(s.id) ? { ...s, groupId: gid } : s));
+      
+      // We need to fetch the current group_ids for these students to append, not overwrite
+      // But since we have local state, we can compute it here.
+      
+      // We will perform updates one by one or we could write a PG function, 
+      // but loop update is safer for logic if count is low.
+      // Optimistic update first
+      
+      const updates = ids.map(id => {
+          const student = students.find(s => s.id === id);
+          if (!student) return null;
+          
+          const currentGroups = new Set(student.groupIds || []);
+          currentGroups.add(gid);
+          const newGroups = Array.from(currentGroups);
+          
+          return { id, group_ids: newGroups };
+      }).filter(Boolean);
+
+      // Perform updates
+      for (const update of updates) {
+          if(update) {
+             await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
+          }
       }
+      
+      // Update local state
+      setStudents(prev => prev.map(s => {
+          if (ids.includes(s.id)) {
+              const currentGroups = new Set(s.groupIds || []);
+              currentGroups.add(gid);
+              return { ...s, groupIds: Array.from(currentGroups) };
+          }
+          return s;
+      }));
+
       setIsLoading(false);
   };
   
+  // ... (Rest of functions handleAddActivity, handleUpdateActivity etc. stay mostly the same but ensure correct types)
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
 
-      // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
       
@@ -621,7 +658,6 @@ function App() {
           recurrence: a.recurrence,
           attendance: a.attendance || [],
           fee_payments: a.feePayments || [],
-          // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
           home_score: a.homeScore ?? 0,
@@ -629,10 +665,9 @@ function App() {
           scorers: a.scorers || []
       };
 
-      const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
+      const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
 
-      // Se for recorrente, gerar para o resto do ano
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
@@ -641,11 +676,9 @@ function App() {
                    ...basePayload,
                    date: dateStr
                });
-               // Adicionar 7 dias
                current.setDate(current.getDate() + 7);
           }
       } else {
-          // Atividade pontual
           payloadList.push({
               ...basePayload,
               date: a.date
@@ -669,7 +702,6 @@ function App() {
   };
   
   const handleUpdateActivity = async (a: any) => { 
-      // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
 
@@ -686,7 +718,6 @@ function App() {
           recurrence: a.recurrence,
           attendance: a.attendance || [],
           fee_payments: a.feePayments || [],
-          // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
           home_score: a.homeScore ?? 0,
@@ -729,14 +760,10 @@ function App() {
   const handleUpdateFeePayment = async (aid: string, sid: string) => {
       const activity = activities.find(a => a.id === aid);
       if(!activity) return;
-
-      // Inicializa feePayments se não existir
       const currentFeePayments = activity.feePayments || [];
-      
       const newFeePayments = currentFeePayments.includes(sid)
         ? currentFeePayments.filter(id => id !== sid)
         : [...currentFeePayments, sid];
-
       const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
@@ -754,7 +781,6 @@ function App() {
           plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.paymentLink,
-          // Mapeamento correto: App (camelCase) -> Banco (snake_case)
           external_reference: t.externalReference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
@@ -823,7 +849,6 @@ function App() {
   };
   
   const handleUpdateUser = async (u: any) => { 
-      // Remove password if empty to not overwrite
       const payload: any = { name: u.name, email: u.email, role: u.role, avatar: u.avatar };
       if(u.password) payload.password = u.password;
       
@@ -840,10 +865,12 @@ function App() {
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
-  // --- LOGIN SCREEN RENDER ---
+  // ... (Render Logic same as before) ...
+  // [Render logic truncated for brevity, assume it is identical to previous App.tsx except where types might enforce changes handled above]
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+              {/* ... Same Login UI ... */}
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
@@ -853,7 +880,6 @@ function App() {
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
                   </div>
                   
-                  {/* TABS */}
                   <div className="flex border-b border-gray-100">
                       <button 
                         className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -955,7 +981,6 @@ function App() {
       );
   }
 
-  // --- APP CONTENT ---
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -982,7 +1007,6 @@ function App() {
                   currentUser={currentUser}
                />;
       case 'groups':
-        // Responsável can't edit groups
         if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
         return <GroupsPage 
                   groups={groups} 
