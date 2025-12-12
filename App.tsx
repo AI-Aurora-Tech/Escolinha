@@ -128,35 +128,48 @@ function App() {
                       const externalReference = crypto.randomUUID();
                       let paymentLink = '';
 
-                      // Try generate link MP
-                      try {
-                          if (student.guardian.cpf) {
-                              const mpResult = await createMPPreference({
-                                  title: description,
-                                  price: plan.price,
-                                  externalReference: externalReference,
-                                  payer: {
-                                      name: student.guardian.name,
-                                      email: student.guardian.email,
-                                      phone: student.guardian.phone,
-                                      identification: { type: 'CPF', number: student.guardian.cpf }
+                      // --- ALTERAÇÃO AQUI: Lógica para Plano Bolsista (Valor 0) ---
+                      const isFreePlan = plan.price <= 0;
+                      
+                      // Se for gratuito: PAID. Se não: Verifica se já está atrasado ou pendente.
+                      const initialStatus = isFreePlan 
+                        ? PaymentStatus.PAID 
+                        : (targetDueDate < today ? PaymentStatus.LATE : PaymentStatus.PENDING);
+                      
+                      // Método de pagamento inicial
+                      const initialMethod = isFreePlan ? PaymentMethod.OTHER : PaymentMethod.PIX_MERCADO_PAGO;
+
+                      // Try generate link MP (Apenas se tiver valor > 0)
+                      if (!isFreePlan) {
+                          try {
+                              if (student.guardian.cpf) {
+                                  const mpResult = await createMPPreference({
+                                      title: description,
+                                      price: plan.price,
+                                      externalReference: externalReference,
+                                      payer: {
+                                          name: student.guardian.name,
+                                          email: student.guardian.email,
+                                          phone: student.guardian.phone,
+                                          identification: { type: 'CPF', number: student.guardian.cpf }
+                                      }
+                                  });
+                                  if (mpResult) {
+                                      paymentLink = mpResult.init_point;
                                   }
-                              });
-                              if (mpResult) {
-                                  paymentLink = mpResult.init_point;
                               }
-                          }
-                      } catch (e) { console.warn("Erro silencioso MP Job", e); }
+                          } catch (e) { console.warn("Erro silencioso MP Job", e); }
+                      }
 
                       newTransactionsPayload.push({
                           description: description,
                           amount: plan.price,
                           type: TransactionType.INCOME,
                           date: targetDueDateStr,
-                          status: targetDueDate < today ? PaymentStatus.LATE : PaymentStatus.PENDING,
+                          status: initialStatus,
                           student_id: student.id,
                           plan_id: plan.id,
-                          payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                          payment_method: initialMethod,
                           payment_link: paymentLink,
                           external_reference: externalReference
                       });
