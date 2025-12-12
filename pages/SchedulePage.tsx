@@ -222,7 +222,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const getAttendeesList = (activity: Activity) => {
       if (activity.groupId) {
-          return students.filter(s => s.groupId === activity.groupId && s.active);
+          // Check if the student belongs to this group (by checking array of groupIds)
+          return students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!) && s.active);
       }
       if (activity.participants && activity.participants.length > 0) {
           return students.filter(s => activity.participants?.includes(s.id));
@@ -257,18 +258,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       students.filter(s => s.active).sort((a,b) => a.name.localeCompare(b.name)).forEach(student => {
           // Count only trainings applicable to this student (by Group or Individual)
           const relevantTrainings = trainingActivities.filter(a => 
-              (a.groupId && a.groupId === student.groupId) || 
+              (a.groupId && student.groupIds?.includes(a.groupId)) || 
               (a.participants && a.participants.includes(student.id))
           );
 
           if (relevantTrainings.length > 0) {
               const presentCount = relevantTrainings.filter(a => a.attendance.includes(student.id)).length;
               const frequency = Math.round((presentCount / relevantTrainings.length) * 100);
-              const groupName = groups.find(g => g.id === student.groupId)?.name || '-';
+              const groupNames = groups.filter(g => student.groupIds?.includes(g.id)).map(g => g.name).join(', ') || '-';
 
               tableRows.push([
                   student.name,
-                  groupName,
+                  groupNames,
                   relevantTrainings.length,
                   presentCount,
                   `${frequency}%`
@@ -278,7 +279,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       autoTable(doc, {
           startY: 40,
-          head: [['Atleta', 'Grupo', 'Treinos Previstos', 'Presenças', 'Frequência']],
+          head: [['Atleta', 'Grupos', 'Treinos Previstos', 'Presenças', 'Frequência']],
           body: tableRows,
           headStyles: { fillColor: [234, 88, 12] }, // Primary Orange
           styles: { fontSize: 9 },
@@ -304,18 +305,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       students.filter(s => s.active).sort((a,b) => a.name.localeCompare(b.name)).forEach(student => {
           // Count only games applicable to this student
           const relevantGames = gameActivities.filter(a => 
-              (a.groupId && a.groupId === student.groupId) || 
+              (a.groupId && student.groupIds?.includes(a.groupId)) || 
               (a.participants && a.participants.includes(student.id))
           );
 
           if (relevantGames.length > 0) {
               const presentCount = relevantGames.filter(a => a.attendance.includes(student.id)).length;
               const frequency = Math.round((presentCount / relevantGames.length) * 100);
-              const groupName = groups.find(g => g.id === student.groupId)?.name || '-';
+              const groupNames = groups.filter(g => student.groupIds?.includes(g.id)).map(g => g.name).join(', ') || '-';
 
               tableRows.push([
                   student.name,
-                  groupName,
+                  groupNames,
                   relevantGames.length,
                   presentCount,
                   `${frequency}%`
@@ -325,7 +326,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       autoTable(doc, {
           startY: 40,
-          head: [['Atleta', 'Grupo', 'Convocções', 'Jogos (Presença)', 'Frequência']],
+          head: [['Atleta', 'Grupos', 'Convocções', 'Jogos (Presença)', 'Frequência']],
           body: tableRows,
           headStyles: { fillColor: [37, 99, 235] }, // Blue
           styles: { fontSize: 9 },
@@ -412,7 +413,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           if (s.active) {
               statsMap[s.id] = { 
                   name: s.name, 
-                  group: groups.find(g => g.id === s.groupId)?.name || '-', 
+                  group: groups.filter(g => s.groupIds?.includes(g.id)).map(g => g.name).join(', ') || '-', 
                   games: 0, 
                   goals: 0 
               };
@@ -462,7 +463,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       autoTable(doc, {
           startY: 35,
-          head: [['Rank', 'Atleta', 'Categoria', 'Jogos', 'Gols', 'Média Gols/Jogo']],
+          head: [['Rank', 'Atleta', 'Grupos', 'Jogos', 'Gols', 'Média Gols/Jogo']],
           body: tableRows,
           headStyles: { fillColor: [234, 179, 8] }, // Yellow/Gold
           styles: { fontSize: 9 },
@@ -599,7 +600,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   // Get eligible students for scoring (those in the group/participants)
   const getEligibleScorers = () => {
       if (targetType === 'GROUP' && newActivity.groupId) {
-          return students.filter(s => s.groupId === newActivity.groupId && s.active);
+           // Check for new array of IDs
+          return students.filter(s => s.groupIds && s.groupIds.includes(newActivity.groupId!) && s.active);
       } else if (targetType === 'INDIVIDUAL') {
           return students.filter(s => selectedStudentIds.has(s.id));
       }
@@ -678,9 +680,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 dailyActivities.map(activity => {
                     const group = groups.find(g => g.id === activity.groupId);
                     const isPast = new Date(activity.date + 'T' + activity.endTime) < new Date();
+                    
+                    // Count participants based on array
                     const participantCount = activity.groupId 
-                        ? students.filter(s => s.groupId === activity.groupId).length 
+                        ? students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!)).length 
                         : (activity.participants?.length || 0);
+                    
                     const isGame = activity.type === 'GAME';
                     
                     // Summarize scorers if any
@@ -1314,30 +1319,3 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 )}
             </div>
             
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">
-                {notifyLogs.map((log, i) => (
-                    <div key={i} className="mb-1">{log}</div>
-                ))}
-                {notifyLogs.length === 0 && <div className="text-gray-500">Aguardando início...</div>}
-            </div>
-
-            <div className="flex justify-end gap-2">
-                {notifyIsRunning ? (
-                    <button onClick={() => setNotifyIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">
-                        <Pause className="w-4 h-4" /> Pausar
-                    </button>
-                ) : (
-                    <button onClick={() => setNotifyIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={notifyCurrentIndex >= notifyQueue.length}>
-                        <Play className="w-4 h-4" /> Continuar
-                    </button>
-                )}
-                <button onClick={() => setNotifyModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
-                    Fechar
-                </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};

@@ -684,7 +684,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
           phone: student.phone,
           medicalCertificateExpiry: student.medicalCertificateExpiry,
           // Support multiple groups
-          groupIds: student.groupIds || ((student as any).groupId ? [(student as any).groupId] : []), 
+          groupIds: student.groupIds || [],
           planId: student.planId,
           active: student.active,
           address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
@@ -1232,7 +1232,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                     name: studentForm.guardian.name,
                     email: studentForm.guardian.email,
                     phone: studentForm.guardian.phone,
-                    identification: { type: 'CPF', number: student.guardian.cpf }
+                    identification: { type: 'CPF', number: studentForm.guardian.cpf }
                 }
             });
             if (mpResult) {
