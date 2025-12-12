@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
@@ -134,6 +135,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   // --- BULK SEND LOGIC ---
   const handleStartBulkSend = () => {
+      // Lógica: Percorrer todos os alunos ATIVOS.
+      // Para cada aluno, encontrar a transação PENDENTE ou ATRASADA mais antiga (prioridade para dívidas antigas).
+      // Adicionar à fila.
+      
       const activeStudents = students.filter(s => s.active);
       const queue: Transaction[] = [];
 
@@ -144,9 +149,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 t.type === TransactionType.INCOME && 
                 (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
             )
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ordenar por data: mais antiga primeiro
 
           if (studentPendingTxs.length > 0) {
+              // Adiciona a transação mais antiga (próxima a vencer ou atrasada)
               queue.push(studentPendingTxs[0]);
           }
       });
@@ -162,7 +168,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           setBulkIsRunning(true);
           setIsBulkModalOpen(true);
           setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
-          setBulkCountdown(1); 
+          setBulkCountdown(1); // Começa quase imediatamente
       }
   };
 
@@ -280,7 +286,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     cpf: '',
     phone: '',
     medicalCertificateExpiry: '',
-    groupIds: [],
+    groupId: '',
     planId: '',
     active: true,
     address: {
@@ -683,7 +689,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           cpf: student.cpf,
           phone: student.phone,
           medicalCertificateExpiry: student.medicalCertificateExpiry,
-          groupIds: student.groupIds || [],
+          groupId: student.groupId,
           planId: student.planId,
           active: student.active,
           address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
@@ -839,15 +845,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
         const d = s.documents as any;
         const missing = !getStatus(d.rg) || !getStatus(d.cpf) || !getStatus(d.medical) || !getStatus(d.address) || !getStatus(d.school);
-        const groupNames = s.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ');
-
+        
         return {
             'Nome do Aluno': s.name,
             'Data Nascimento': formatDate(s.birthDate),
             'Idade': calculateAge(s.birthDate),
             'RG': s.rg,
             'CPF Aluno': s.cpf,
-            'Grupos': groupNames || 'N/A',
+            'Grupo': groups.find(g => g.id === s.groupId)?.name || 'N/A',
             'Nome Responsável': s.guardian.name,
             'CPF Responsável': s.guardian.cpf,
             'Telefone': s.guardian.phone,
@@ -884,7 +889,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           'Bairro': 'Centro',
           'Cidade': 'Cidade',
           'Estado': 'SP',
-          'Grupos (Separados por vírgula)': 'Sub-11, Sub-13',
+          'Grupo (Nome Exato)': 'Sub-11',
           'Plano (Nome Exato)': 'Básico'
       }];
 
@@ -930,17 +935,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
 
               const newStudents: Omit<Student, 'id'>[] = jsonData.map((row: any) => {
-                  const groupNamesRaw = row['Grupos (Separados por vírgula)'] || row['Grupo (Nome Exato)'];
+                  const groupName = row['Grupo (Nome Exato)'];
                   const planName = row['Plano (Nome Exato)'];
                   
-                  let matchedGroupIds: string[] = [];
-                  if (groupNamesRaw) {
-                      const names = String(groupNamesRaw).split(',').map(n => n.trim().toLowerCase());
-                      matchedGroupIds = groups
-                        .filter(g => names.includes(g.name.toLowerCase()))
-                        .map(g => g.id);
-                  }
-
+                  const matchedGroup = groupName ? groups.find(g => g.name.toLowerCase() === String(groupName).toLowerCase().trim()) : undefined;
                   const matchedPlan = planName ? plans.find(p => p.name.toLowerCase() === String(planName).toLowerCase().trim()) : undefined;
 
                   return {
@@ -951,7 +949,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     phone: row['Telefone'] ? String(row['Telefone']) : '',
                     medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)'] || row['Validade Atestado (YYYY-MM-DD)']),
                     photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
-                    groupIds: matchedGroupIds,
+                    groupId: matchedGroup ? matchedGroup.id : '',
                     planId: matchedPlan ? matchedPlan.id : '',
                     active: true,
                     address: {
@@ -1000,14 +998,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         s.cpf,
         formatDate(s.birthDate),
         calculateAge(s.birthDate).toString(),
-        s.groupIds.map(gid => groups.find(g => g.id === gid)?.name).join(', ') || 'N/A',
+        groups.find(g => g.id === s.groupId)?.name || 'N/A',
         s.guardian.name,
         s.active ? 'Ativo' : 'Inativo'
     ]);
 
     autoTable(doc, {
         startY: 35,
-        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupos', 'Responsável', 'Status']],
+        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupo', 'Responsável', 'Status']],
         body: tableData,
         styles: { fontSize: 8 },
         headStyles: { fillColor: [249, 115, 22] } 
@@ -1032,7 +1030,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.setFontSize(10);
     
     const today = new Date().toLocaleDateString('pt-BR');
-    const groupNames = studentForm.groupIds.map((gid: string) => groups.find(g => g.id === gid)?.name).join(', ') || '________________';
+    const groupName = groups.find(g => g.id === studentForm.groupId)?.name || '________________';
     
     const headerText = `
     CONTRATANTE (RESPONSÁVEL):
@@ -1044,7 +1042,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     Nome: ${studentForm.name}
     RG: ${studentForm.rg} | CPF: ${studentForm.cpf}
     Data de Nascimento: ${formatDate(studentForm.birthDate)}
-    Grupos/Categorias: ${groupNames}
+    Grupo/Categoria: ${groupName}
     `;
     
     doc.text(headerText, margin, 40);
@@ -1088,8 +1086,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const studentActivities = activities.filter(a => {
       if (!editingId) return false;
       
-      const isGroupMatch = a.groupId && studentForm.groupIds && studentForm.groupIds.includes(a.groupId); 
+      const isGroupMatch = a.groupId === studentForm.groupId; 
       const isParticipant = a.participants?.includes(editingId);
+      // Incluir se estiver na lista de presença, independente de grupo ou agendamento
       const isPresent = a.attendance?.includes(editingId);
       
       return isGroupMatch || isParticipant || isPresent;
@@ -1196,13 +1195,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       });
   };
 
+  // Handler for Manual Charge
   const handleSaveManualCharge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
 
+    // 1. Prepare Base Transaction
     const externalReference = crypto.randomUUID();
     let paymentLink = '';
 
+    // 2. Try to generate Mercado Pago Preference immediately (optional but better UX)
     try {
         if (studentForm.guardian.cpf) {
             const mpResult = await createMPPreference({
@@ -1222,6 +1224,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         }
     } catch (e) { console.warn("Could not generate MP Link for manual charge"); }
 
+    // 3. Save to DB via App
     onAddTransaction({
         description: manualCharge.description,
         amount: manualCharge.amount,
@@ -1229,7 +1232,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         date: manualCharge.date,
         status: PaymentStatus.PENDING,
         studentId: editingId,
-        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO, 
+        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO, // Default to PIX/MP
         paymentLink: paymentLink,
         externalReference: externalReference
     });
@@ -1239,22 +1242,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     alert("Cobrança criada com sucesso!");
   };
 
-  const toggleGroupSelection = (groupId: string) => {
-      setStudentForm(prev => {
-          const currentGroups = prev.groupIds || [];
-          if (currentGroups.includes(groupId)) {
-              return { ...prev, groupIds: currentGroups.filter(id => id !== groupId) };
-          } else {
-              return { ...prev, groupIds: [...currentGroups, groupId] };
-          }
-      });
-  };
-
   return (
     <div className="space-y-6">
+      {/* ... (Search and Headers) ... */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         
+        {/* HIDE ACTION BUTTONS FOR GUARDIANS */}
         {!isGuardian && (
             <div className="flex flex-wrap gap-2 w-full md:w-auto">
                 <button 
@@ -1315,6 +1309,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         )}
       </div>
 
+      {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -1326,6 +1321,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {/* Other filters can remain visible for Guardians to filter their own children if they have many */}
           <div className="md:col-span-2 relative">
              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
              <input 
@@ -1381,7 +1377,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupo</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
@@ -1389,7 +1385,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredStudents.map((student) => {
-                const groupNames = student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+                const groupName = groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo';
                 const expired = isMedicalExpired(student.medicalCertificateExpiry);
                 const missingDocs = hasMissingDocs(student);
                 const age = calculateAge(student.birthDate);
@@ -1430,11 +1426,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 font-medium">{age} anos</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                        <span className="inline-block max-w-[200px] truncate" title={groupNames}>
-                            {groupNames}
-                        </span>
-                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600"><span className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium">{groupName}</span></td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
@@ -1636,26 +1628,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             {/* Right Column */}
                             <div className="space-y-4">
                                 <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><UserIcon className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required disabled={isGuardian} type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
-                                <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Grupos/Categorias (Selecione um ou mais)</label>
-                                    <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white disabled:bg-gray-100">
-                                        {groups.map(g => (
-                                            <div key={g.id} className="flex items-center gap-2 mb-1 last:mb-0">
-                                                <input 
-                                                    type="checkbox" 
-                                                    disabled={isGuardian}
-                                                    checked={studentForm.groupIds?.includes(g.id)}
-                                                    onChange={() => toggleGroupSelection(g.id)}
-                                                    className="rounded text-primary-600 focus:ring-primary-500"
-                                                />
-                                                <label className="text-sm text-gray-700">{g.name}</label>
-                                            </div>
-                                        ))}
-                                        {groups.length === 0 && <p className="text-xs text-gray-400">Nenhum grupo cadastrado.</p>}
-                                    </div>
-                                </div>
-                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
+                                <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                             </div>
                         </div>
                     </form>
@@ -1934,9 +1907,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           </div>
         </div>
       )}
-      
-      {/* ... (Charge and PIX Modals remain same) ... */}
-      
+
       {/* Manual Charge Modal */}
       {showChargeModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
