@@ -94,6 +94,11 @@ export interface Activity {
   type: 'TRAINING' | 'GAME'; // Novo campo
   fee?: number; // Novo campo: Taxa do jogo
   location?: string; // Novo campo: Local do jogo
+  presentationTime?: string; // Novo: Horário de apresentação
+  opponent?: string; // Novo: Nome do adversário
+  homeScore?: number; // Novo: Placar (Nós)
+  awayScore?: number; // Novo: Placar (Eles)
+  scorers?: string[]; // Novo: Lista de IDs de quem fez gol
   groupId?: string; // Optional: Activity might be for specific students only
   participants?: string[]; // Optional: List of Student IDs if not a group activity
   date: string; // ISO String

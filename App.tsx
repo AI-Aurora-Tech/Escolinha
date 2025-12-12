@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -169,9 +168,14 @@ function App() {
              setActivities(relevantActivities.map((a: any) => ({
                  id: a.id,
                  title: a.title,
-                 type: a.activity_type || 'TRAINING', // Mapeia coluna activity_type
+                 type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
-                 location: a.location || '', // Mapeia coluna location
+                 location: a.location || '',
+                 presentationTime: a.presentation_time || '', // Novo
+                 opponent: a.opponent || '', // Novo
+                 homeScore: a.home_score, // Novo
+                 awayScore: a.away_score, // Novo
+                 scorers: a.scorers || [], // Novo
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -179,7 +183,7 @@ function App() {
                  endTime: a.end_time,
                  recurrence: a.recurrence,
                  attendance: a.attendance || [],
-                 feePayments: a.fee_payments || [] // Mapeia fee_payments
+                 feePayments: a.fee_payments || [] 
              })));
         }
 
@@ -616,7 +620,13 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: a.attendance || [],
-          fee_payments: a.feePayments || [] 
+          fee_payments: a.feePayments || [],
+          // New Fields
+          presentation_time: a.presentationTime,
+          opponent: a.opponent,
+          home_score: a.homeScore,
+          away_score: a.awayScore,
+          scorers: a.scorers || []
       };
 
       const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
@@ -675,7 +685,13 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: a.attendance || [],
-          fee_payments: a.feePayments || []
+          fee_payments: a.feePayments || [],
+          // New Fields
+          presentation_time: a.presentationTime,
+          opponent: a.opponent,
+          home_score: a.homeScore,
+          away_score: a.awayScore,
+          scorers: a.scorers || []
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
       if(!error) {
@@ -757,7 +773,7 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.planId || null,
+          plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.paymentLink
       };
