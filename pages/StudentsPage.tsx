@@ -1,5 +1,3 @@
-
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Tag } from 'lucide-react';
@@ -1232,7 +1230,7 @@ const handleSendPixToWhatsApp = async (tx: Transaction) => {
                     name: studentForm.guardian.name,
                     email: studentForm.guardian.email,
                     phone: studentForm.guardian.phone,
-                    identification: { type: 'CPF', number: student.guardian.cpf }
+                    identification: { type: 'CPF', number: studentForm.guardian.cpf }
                 }
             });
             if (mpResult) {

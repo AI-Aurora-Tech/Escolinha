@@ -1319,3 +1319,29 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 )}
             </div>
             
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">
+                {notifyLogs.map((log, i) => (
+                    <div key={i} className="mb-1">{log}</div>
+                ))}
+            </div>
+
+            <div className="flex justify-end gap-2">
+                {notifyIsRunning ? (
+                    <button onClick={() => setNotifyIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">
+                        <Pause className="w-4 h-4" /> Pausar
+                    </button>
+                ) : (
+                    <button onClick={() => setNotifyIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={notifyCurrentIndex >= notifyQueue.length}>
+                        <Play className="w-4 h-4" /> Continuar
+                    </button>
+                )}
+                <button onClick={() => setNotifyModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Fechar
+                </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
