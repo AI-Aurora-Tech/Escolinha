@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, TrendingUp, LayoutList } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -28,6 +28,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
+
+  // --- REPORT MODAL STATE ---
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [reportEndDate, setReportEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
 
   // --- NOTIFICATION STATE ---
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -225,6 +230,252 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       return [];
   };
 
+  // --- REPORT GENERATORS ---
+
+  const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => {
+      return allSortedActivities.filter(a => {
+          const inDateRange = a.date >= reportStartDate && a.date <= reportEndDate;
+          const matchType = type ? a.type === type : true;
+          return inDateRange && matchType;
+      });
+  };
+
+  // 1. Relatório de Presença em Treinos
+  const generateTrainingReport = () => {
+      const trainingActivities = getFilteredActivitiesForReport('TRAINING');
+      if (trainingActivities.length === 0) { alert("Nenhum treino encontrado no período."); return; }
+
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Relatório de Frequência - TREINOS', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+      doc.text(`Total de Treinos Realizados: ${trainingActivities.length}`, 14, 34);
+
+      const tableRows: any[] = [];
+
+      students.filter(s => s.active).sort((a,b) => a.name.localeCompare(b.name)).forEach(student => {
+          // Count only trainings applicable to this student (by Group or Individual)
+          const relevantTrainings = trainingActivities.filter(a => 
+              (a.groupId && a.groupId === student.groupId) || 
+              (a.participants && a.participants.includes(student.id))
+          );
+
+          if (relevantTrainings.length > 0) {
+              const presentCount = relevantTrainings.filter(a => a.attendance.includes(student.id)).length;
+              const frequency = Math.round((presentCount / relevantTrainings.length) * 100);
+              const groupName = groups.find(g => g.id === student.groupId)?.name || '-';
+
+              tableRows.push([
+                  student.name,
+                  groupName,
+                  relevantTrainings.length,
+                  presentCount,
+                  `${frequency}%`
+              ]);
+          }
+      });
+
+      autoTable(doc, {
+          startY: 40,
+          head: [['Atleta', 'Grupo', 'Treinos Previstos', 'Presenças', 'Frequência']],
+          body: tableRows,
+          headStyles: { fillColor: [234, 88, 12] }, // Primary Orange
+          styles: { fontSize: 9 },
+      });
+
+      doc.save(`Frequencia_Treinos_${reportStartDate}_${reportEndDate}.pdf`);
+  };
+
+  // 2. Relatório de Presença em Jogos
+  const generateGameAttendanceReport = () => {
+      const gameActivities = getFilteredActivitiesForReport('GAME');
+      if (gameActivities.length === 0) { alert("Nenhum jogo encontrado no período."); return; }
+
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Relatório de Frequência - JOGOS', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+      doc.text(`Total de Jogos Realizados: ${gameActivities.length}`, 14, 34);
+
+      const tableRows: any[] = [];
+
+      students.filter(s => s.active).sort((a,b) => a.name.localeCompare(b.name)).forEach(student => {
+          // Count only games applicable to this student
+          const relevantGames = gameActivities.filter(a => 
+              (a.groupId && a.groupId === student.groupId) || 
+              (a.participants && a.participants.includes(student.id))
+          );
+
+          if (relevantGames.length > 0) {
+              const presentCount = relevantGames.filter(a => a.attendance.includes(student.id)).length;
+              const frequency = Math.round((presentCount / relevantGames.length) * 100);
+              const groupName = groups.find(g => g.id === student.groupId)?.name || '-';
+
+              tableRows.push([
+                  student.name,
+                  groupName,
+                  relevantGames.length,
+                  presentCount,
+                  `${frequency}%`
+              ]);
+          }
+      });
+
+      autoTable(doc, {
+          startY: 40,
+          head: [['Atleta', 'Grupo', 'Convocções', 'Jogos (Presença)', 'Frequência']],
+          body: tableRows,
+          headStyles: { fillColor: [37, 99, 235] }, // Blue
+          styles: { fontSize: 9 },
+      });
+
+      doc.save(`Frequencia_Jogos_${reportStartDate}_${reportEndDate}.pdf`);
+  };
+
+  // 3. Estatísticas do Time (Vitória/Empate/Derrota)
+  const generateTeamStatsReport = () => {
+      const gameActivities = getFilteredActivitiesForReport('GAME');
+      if (gameActivities.length === 0) { alert("Nenhum jogo encontrado no período."); return; }
+
+      let wins = 0, draws = 0, losses = 0;
+      let goalsFor = 0, goalsAgainst = 0;
+
+      const gameResultsRows = gameActivities.map(game => {
+          const home = game.homeScore || 0;
+          const away = game.awayScore || 0;
+          
+          goalsFor += home;
+          goalsAgainst += away;
+
+          let result = 'E';
+          if (home > away) { wins++; result = 'V'; }
+          else if (away > home) { losses++; result = 'D'; }
+          else { draws++; }
+
+          return [
+              formatDate(game.date),
+              game.title,
+              game.opponent || '(Sem adv.)',
+              `${home} x ${away}`,
+              result
+          ];
+      });
+
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Estatísticas do Time - Resultados', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
+      // Summary Box
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(14, 35, 180, 25, 3, 3, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.text(`Jogos: ${gameActivities.length}`, 20, 45);
+      doc.setTextColor(22, 163, 74); doc.text(`Vitórias: ${wins}`, 60, 45);
+      doc.setTextColor(234, 179, 8); doc.text(`Empates: ${draws}`, 100, 45);
+      doc.setTextColor(220, 38, 38); doc.text(`Derrotas: ${losses}`, 140, 45);
+      
+      doc.setTextColor(0,0,0);
+      doc.text(`Gols Pró: ${goalsFor} | Gols Contra: ${goalsAgainst} | Saldo: ${goalsFor - goalsAgainst}`, 20, 53);
+      doc.setFont("helvetica", "normal");
+
+      autoTable(doc, {
+          startY: 65,
+          head: [['Data', 'Competição/Evento', 'Adversário', 'Placar', 'Res.']],
+          body: gameResultsRows,
+          headStyles: { fillColor: [22, 163, 74] }, // Green
+          didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 4) {
+                  if (data.cell.raw === 'V') data.cell.styles.textColor = [22, 163, 74];
+                  if (data.cell.raw === 'D') data.cell.styles.textColor = [220, 38, 38];
+                  if (data.cell.raw === 'E') data.cell.styles.textColor = [234, 179, 8];
+                  data.cell.styles.fontStyle = 'bold';
+              }
+          }
+      });
+
+      doc.save(`Estatisticas_Time_${reportStartDate}_${reportEndDate}.pdf`);
+  };
+
+  // 4. Estatísticas dos Atletas (Artilharia e Jogos)
+  const generateAthleteStatsReport = () => {
+      const gameActivities = getFilteredActivitiesForReport('GAME');
+      if (gameActivities.length === 0) { alert("Nenhum jogo encontrado no período."); return; }
+
+      const statsMap: Record<string, { name: string, group: string, games: number, goals: number }> = {};
+
+      // Initialize
+      students.forEach(s => {
+          if (s.active) {
+              statsMap[s.id] = { 
+                  name: s.name, 
+                  group: groups.find(g => g.id === s.groupId)?.name || '-', 
+                  games: 0, 
+                  goals: 0 
+              };
+          }
+      });
+
+      // Calculate
+      gameActivities.forEach(game => {
+          // Count Games (Attendance)
+          game.attendance.forEach(studentId => {
+              if (statsMap[studentId]) {
+                  statsMap[studentId].games++;
+              }
+          });
+          // Count Goals
+          if (game.scorers) {
+              game.scorers.forEach(studentId => {
+                  if (statsMap[studentId]) {
+                      statsMap[studentId].goals++;
+                  }
+              });
+          }
+      });
+
+      // Convert to array and sort by Goals desc, then Games desc
+      const sortedStats = Object.values(statsMap)
+          .filter(s => s.games > 0 || s.goals > 0) // Only show active participants
+          .sort((a, b) => {
+              if (b.goals !== a.goals) return b.goals - a.goals;
+              return b.games - a.games;
+          });
+
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Estatísticas Individuais - Atletas (Artilharia)', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
+      const tableRows = sortedStats.map((s, index) => [
+          index + 1,
+          s.name,
+          s.group,
+          s.games,
+          s.goals,
+          s.games > 0 ? (s.goals / s.games).toFixed(2) : '0.00'
+      ]);
+
+      autoTable(doc, {
+          startY: 35,
+          head: [['Rank', 'Atleta', 'Categoria', 'Jogos', 'Gols', 'Média Gols/Jogo']],
+          body: tableRows,
+          headStyles: { fillColor: [234, 179, 8] }, // Yellow/Gold
+          styles: { fontSize: 9 },
+          columnStyles: {
+              0: { fontStyle: 'bold', halign: 'center' },
+              4: { fontStyle: 'bold', textColor: [22, 163, 74] }
+          }
+      });
+
+      doc.save(`Estatisticas_Atletas_${reportStartDate}_${reportEndDate}.pdf`);
+  };
+
+
   // --- NOTIFICATION LOGIC ---
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation();
@@ -321,68 +572,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setNotifyCurrentIndex(prev => prev + 1);
       setNotifyCountdown(10); // 10s delay for next
   };
-
-
-  const handleExportAttendanceReport = () => {
-      const doc = new jsPDF();
-      doc.setFontSize(18);
-      doc.text('Relatório Geral de Frequência', 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 28);
-
-      const reportRows: any[] = [];
-      const activitiesToExport = allSortedActivities; // Use All Sorted for Global Report
-
-      activitiesToExport.forEach(activity => {
-          const expectedStudents = getAttendeesList(activity);
-          const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
-
-          expectedStudents.forEach(student => {
-              const isPresent = activity.attendance.includes(student.id);
-              const groupName = groups.find(g => g.id === activity.groupId)?.name || 'Individual';
-              const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
-              
-              let status = isPresent ? 'PRESENTE' : 'AUSENTE';
-              if (!isPast && !isPresent) status = 'AGENDADO';
-
-              reportRows.push([
-                  formatDate(activity.date),
-                  `${type}: ${activity.title}`,
-                  groupName,
-                  student.name,
-                  status
-              ]);
-          });
-      });
-
-      if (reportRows.length === 0) {
-          alert("Não há dados de atividades para exportar.");
-          return;
-      }
-
-      autoTable(doc, {
-          startY: 35,
-          head: [['Data', 'Atividade', 'Grupo/Tipo', 'Aluno', 'Status']],
-          body: reportRows,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [249, 115, 22] }, // Orange-500
-          didParseCell: (data) => {
-              if (data.section === 'body' && data.column.index === 4) {
-                  const status = data.cell.raw;
-                  if (status === 'AUSENTE') {
-                      data.cell.styles.textColor = [220, 38, 38];
-                      data.cell.styles.fontStyle = 'bold';
-                  } else if (status === 'PRESENTE') {
-                      data.cell.styles.textColor = [22, 163, 74];
-                  } else {
-                      data.cell.styles.textColor = [100, 116, 139];
-                  }
-              }
-          }
-      });
-
-      doc.save('Relatorio_Presenca_Geral.pdf');
-  };
   
   // Cálculo do total arrecadado na atividade selecionada
   const calculateTotalCollected = (activity: Activity) => {
@@ -424,11 +613,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
                 <button 
-                    onClick={handleExportAttendanceReport}
+                    onClick={() => setShowReportModal(true)}
                     className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition-colors text-sm"
                 >
                     <FileText className="w-4 h-4" />
-                    Relatório
+                    Relatórios
                 </button>
                 <button 
                     onClick={handleOpenAdd}
@@ -1000,6 +1189,96 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 </form>
              </div>
         </div>
+      )}
+
+      {/* REPORT MODAL */}
+      {showReportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 relative">
+                  <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+                  
+                  <div className="mb-6">
+                      <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                          <FileText className="w-6 h-6 text-primary-600" /> Central de Relatórios
+                      </h3>
+                      <p className="text-sm text-gray-500">Selecione o período e o tipo de relatório que deseja gerar.</p>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Período de Análise</label>
+                      <div className="flex flex-col sm:flex-row gap-4">
+                          <div className="flex-1">
+                              <label className="text-xs text-gray-500 mb-1 block">Data Inicial</label>
+                              <input 
+                                  type="date" 
+                                  className="w-full border rounded-lg p-2" 
+                                  value={reportStartDate}
+                                  onChange={(e) => setReportStartDate(e.target.value)}
+                              />
+                          </div>
+                          <div className="flex-1">
+                              <label className="text-xs text-gray-500 mb-1 block">Data Final</label>
+                              <input 
+                                  type="date" 
+                                  className="w-full border rounded-lg p-2" 
+                                  value={reportEndDate}
+                                  onChange={(e) => setReportEndDate(e.target.value)}
+                              />
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Report 1: Training Attendance */}
+                      <button 
+                          onClick={generateTrainingReport}
+                          className="flex flex-col items-start p-4 border rounded-xl hover:bg-orange-50 hover:border-orange-200 transition-all group text-left"
+                      >
+                          <div className="bg-orange-100 text-orange-600 p-2 rounded-lg mb-2 group-hover:bg-orange-200 transition-colors">
+                              <CalendarIcon className="w-5 h-5" />
+                          </div>
+                          <h4 className="font-bold text-gray-800 text-sm">Frequência de Treinos</h4>
+                          <p className="text-xs text-gray-500 mt-1">Lista de presença e % de participação em treinos.</p>
+                      </button>
+
+                      {/* Report 2: Game Attendance */}
+                      <button 
+                          onClick={generateGameAttendanceReport}
+                          className="flex flex-col items-start p-4 border rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all group text-left"
+                      >
+                          <div className="bg-blue-100 text-blue-600 p-2 rounded-lg mb-2 group-hover:bg-blue-200 transition-colors">
+                              <Trophy className="w-5 h-5" />
+                          </div>
+                          <h4 className="font-bold text-gray-800 text-sm">Frequência de Jogos</h4>
+                          <p className="text-xs text-gray-500 mt-1">Participação em partidas e convocações.</p>
+                      </button>
+
+                      {/* Report 3: Team Stats */}
+                      <button 
+                          onClick={generateTeamStatsReport}
+                          className="flex flex-col items-start p-4 border rounded-xl hover:bg-green-50 hover:border-green-200 transition-all group text-left"
+                      >
+                          <div className="bg-green-100 text-green-600 p-2 rounded-lg mb-2 group-hover:bg-green-200 transition-colors">
+                              <BarChart3 className="w-5 h-5" />
+                          </div>
+                          <h4 className="font-bold text-gray-800 text-sm">Estatísticas do Time</h4>
+                          <p className="text-xs text-gray-500 mt-1">Vitórias, derrotas, gols pró/contra e resultados.</p>
+                      </button>
+
+                      {/* Report 4: Athlete Stats */}
+                      <button 
+                          onClick={generateAthleteStatsReport}
+                          className="flex flex-col items-start p-4 border rounded-xl hover:bg-purple-50 hover:border-purple-200 transition-all group text-left"
+                      >
+                          <div className="bg-purple-100 text-purple-600 p-2 rounded-lg mb-2 group-hover:bg-purple-200 transition-colors">
+                              <Medal className="w-5 h-5" />
+                          </div>
+                          <h4 className="font-bold text-gray-800 text-sm">Estatísticas dos Atletas</h4>
+                          <p className="text-xs text-gray-500 mt-1">Ranking de artilharia e jogos disputados por aluno.</p>
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Notification Modal */}
