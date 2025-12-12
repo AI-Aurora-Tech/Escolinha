@@ -624,8 +624,8 @@ function App() {
           // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
-          home_score: a.homeScore,
-          away_score: a.awayScore,
+          home_score: a.homeScore ?? 0,
+          away_score: a.awayScore ?? 0,
           scorers: a.scorers || []
       };
 
@@ -689,8 +689,8 @@ function App() {
           // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
-          home_score: a.homeScore,
-          away_score: a.awayScore,
+          home_score: a.homeScore ?? 0,
+          away_score: a.awayScore ?? 0,
           scorers: a.scorers || []
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
@@ -751,7 +751,7 @@ function App() {
           date: t.date,
           status: t.status,
           student_id: t.studentId || null,
-          plan_id: t.planId || null,
+          plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.paymentLink,
           // Mapeamento correto: App (camelCase) -> Banco (snake_case)

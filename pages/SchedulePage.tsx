@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -509,77 +509,83 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             onClick={() => setSelectedActivityId(activity.id)}
                         >
                             <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                                <div>
-                                    <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-                                        {isGame ? <Trophy className="w-4 h-4 text-yellow-500" /> : <CalendarIcon className="w-4 h-4 text-primary-500" />}
-                                        {isGame && activity.opponent ? (
-                                            <span className="flex items-center gap-2">
-                                                {activity.title} <span className="text-gray-400 font-normal text-xs">VS</span> {activity.opponent}
-                                            </span>
-                                        ) : (
-                                            activity.title
-                                        )}
-
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap text-lg">
+                                        {isGame ? <Trophy className="w-5 h-5 text-yellow-500" /> : <CalendarIcon className="w-5 h-5 text-primary-500" />}
+                                        {activity.title}
                                         {activity.recurrence === 'weekly' && (
                                             <span title="Recorrente (Semanal)" className="bg-blue-100 text-blue-700 p-1 rounded-full">
                                                 <Repeat className="w-3 h-3" />
-                                            </span>
-                                        )}
-                                        {isGame && activity.fee && activity.fee > 0 && (
-                                            <span title={`Taxa: R$ ${activity.fee}`} className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
-                                                <Coins className="w-3 h-3" /> R$ {activity.fee}
                                             </span>
                                         )}
                                     </h4>
                                     
                                     {/* Game Specific Info */}
                                     {isGame && (
-                                        <div className="mt-2 space-y-1">
+                                        <div className="mt-3 p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-100">
+                                            {activity.opponent && (
+                                                <div className="font-bold text-gray-800 text-sm mb-2 flex items-center gap-2">
+                                                    <span className="text-gray-500 font-normal">VS</span> {activity.opponent}
+                                                </div>
+                                            )}
+                                            
                                             {/* Scoreboard */}
                                             {(activity.homeScore !== undefined || activity.awayScore !== undefined) && (
-                                                <div className="flex items-center gap-3 bg-gray-50 w-fit px-3 py-1 rounded-lg border border-gray-200">
-                                                    <span className="font-bold text-gray-800 text-lg">{activity.homeScore ?? 0}</span>
-                                                    <span className="text-gray-400 text-xs">X</span>
-                                                    <span className="font-bold text-gray-800 text-lg">{activity.awayScore ?? 0}</span>
+                                                <div className="flex items-center gap-4 mb-2">
+                                                    <div className="flex flex-col items-center">
+                                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider">Garotos</span>
+                                                        <span className="text-2xl font-black text-primary-600">{activity.homeScore ?? 0}</span>
+                                                    </div>
+                                                    <span className="text-gray-400 font-light text-xl">X</span>
+                                                    <div className="flex flex-col items-center">
+                                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider">Adversário</span>
+                                                        <span className="text-2xl font-black text-gray-700">{activity.awayScore ?? 0}</span>
+                                                    </div>
                                                 </div>
                                             )}
                                             
                                             {/* Scorers List */}
                                             {Object.keys(scorerCounts).length > 0 && (
-                                                <div className="text-xs text-gray-600 flex flex-wrap gap-1 mt-1">
-                                                    <span className="font-semibold">Gols:</span>
-                                                    {Object.keys(scorerCounts).map((sid, idx) => {
+                                                <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-yellow-200/50">
+                                                    {Object.keys(scorerCounts).map((sid) => {
                                                         const s = students.find(stu => stu.id === sid);
                                                         if (!s) return null;
                                                         return (
-                                                            <span key={sid}>
-                                                                {s.name.split(' ')[0]} ({scorerCounts[sid]}){idx < Object.keys(scorerCounts).length - 1 ? ',' : ''}
+                                                            <span key={sid} className="bg-white border border-yellow-200 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                                                ⚽ {s.name.split(' ')[0]} {scorerCounts[sid] > 1 ? `(${scorerCounts[sid]})` : ''}
                                                             </span>
                                                         );
                                                     })}
                                                 </div>
                                             )}
 
-                                            {activity.presentationTime && (
-                                                <div className="flex items-center gap-1 text-xs text-orange-600 font-medium">
-                                                    <Clock className="w-3 h-3" /> Chegar às: {activity.presentationTime}
-                                                </div>
-                                            )}
+                                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                                                {activity.presentationTime && (
+                                                    <div className="flex items-center gap-1 text-orange-700 font-bold bg-orange-100 px-2 py-0.5 rounded">
+                                                        <Clock className="w-3 h-3" /> Chegar: {activity.presentationTime}
+                                                    </div>
+                                                )}
+                                                {activity.fee && activity.fee > 0 && (
+                                                    <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold flex items-center gap-1">
+                                                        <Coins className="w-3 h-3" /> R$ {activity.fee}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
 
                                     {activity.location && (
-                                        <div className="flex items-center gap-1 mt-1 text-xs text-gray-600">
+                                        <div className="flex items-center gap-1 mt-2 text-xs text-gray-600">
                                             <MapPin className="w-3 h-3 text-red-500" />
                                             {activity.location}
                                         </div>
                                     )}
                                     <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
-                                        <span className="flex items-center gap-1">
+                                        <span className="flex items-center gap-1 font-medium text-gray-700">
                                             <Clock className="w-4 h-4" />
                                             {activity.startTime} - {activity.endTime}
                                         </span>
-                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-gray-700">
+                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-gray-600 text-xs">
                                             {group ? (
                                                 <>
                                                     <Users className="w-3 h-3" />
@@ -588,7 +594,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                             ) : (
                                                 <>
                                                     <UserIcon className="w-3 h-3" />
-                                                    {participantCount} Alunos
+                                                    {participantCount} Convocados
                                                 </>
                                             )}
                                         </span>
@@ -625,12 +631,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     )}
                                 </div>
                             </div>
-                            <div className="mt-4 flex items-center gap-2">
+                            <div className="mt-4 flex items-center gap-2 border-t border-gray-50 pt-2">
                                 <div className="flex -space-x-2 overflow-hidden">
                                     {activity.attendance.slice(0, 5).map(studentId => {
                                         const st = students.find(s => s.id === studentId);
                                         if(!st) return null;
-                                        return <img key={st.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src={st.photoUrl} alt={st.name} title={st.name} />
+                                        return <img key={st.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white object-cover" src={st.photoUrl} alt={st.name} title={st.name} />
                                     })}
                                     {activity.attendance.length > 5 && (
                                         <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center text-[10px] font-medium text-gray-600">
@@ -638,8 +644,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         </div>
                                     )}
                                 </div>
-                                <span className="text-xs text-gray-500">
-                                    {activity.attendance.length > 0 ? `${activity.attendance.length} presentes` : 'Nenhuma presença confirmada'}
+                                <span className="text-xs text-gray-500 font-medium">
+                                    {activity.attendance.length > 0 ? `${activity.attendance.length} confirmados` : 'Nenhuma presença confirmada'}
                                 </span>
                             </div>
                         </div>
@@ -671,18 +677,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             <div>
                                 <h3 className="font-bold text-gray-900">Lista de Presença</h3>
                                 <p className="text-sm text-gray-500">{selectedActivity.title}</p>
-                                {selectedActivity.type === 'GAME' && selectedActivity.opponent && (
-                                    <p className="text-xs font-bold text-gray-700 mt-1">vs {selectedActivity.opponent}</p>
-                                )}
-                                {selectedActivity.location && <p className="text-xs text-gray-400 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3" /> {selectedActivity.location}</p>}
                             </div>
                             {selectedActivity.type === 'GAME' && selectedActivity.fee && (
                                 <div className="text-right">
-                                    <div className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md mb-1 inline-block">
-                                        Taxa: R$ {selectedActivity.fee}
-                                    </div>
                                     {!isGuardian && (
-                                        <div className="text-xs text-gray-500 font-semibold">
+                                        <div className="text-xs text-gray-500 font-semibold bg-white border px-2 py-1 rounded">
                                             Total: R$ {calculateTotalCollected(selectedActivity).toFixed(2)}
                                         </div>
                                     )}
@@ -708,7 +707,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                                 <span className="text-sm font-medium text-gray-900 block flex items-center gap-1">
                                                     {student.name}
                                                     {goalCount > 0 && (
-                                                        <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5">
+                                                        <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5 border border-yellow-200">
                                                             ⚽ {goalCount}
                                                         </span>
                                                     )}
@@ -803,37 +802,41 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     </div>
 
                     {newActivity.type === 'GAME' && (
-                        <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100 space-y-4">
-                             <h4 className="font-bold text-yellow-800 text-sm flex items-center gap-2"><Trophy className="w-4 h-4" /> Detalhes do Jogo</h4>
+                        <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                             <div className="flex items-center gap-2 pb-2 border-b border-yellow-200">
+                                <Trophy className="w-4 h-4 text-yellow-600" />
+                                <h4 className="font-bold text-yellow-800 text-sm">Detalhes da Partida</h4>
+                             </div>
                              
                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Nome do Adversário</label>
+                                <label className="block text-xs font-bold text-yellow-800 mb-1">Nome do Adversário</label>
                                 <input 
                                     type="text" 
-                                    className="w-full border rounded-lg p-2 bg-white"
+                                    className="w-full border border-yellow-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-yellow-500 outline-none"
                                     placeholder="Ex: Escolinha do Futuro"
                                     value={newActivity.opponent}
                                     onChange={(e) => setNewActivity({...newActivity, opponent: e.target.value})}
                                 />
                              </div>
 
-                             <div className="grid grid-cols-2 gap-4">
-                                 <div>
-                                     <label className="block text-xs font-medium text-gray-600 mb-1">Gols (Nós)</label>
-                                     <input type="number" min="0" className="w-full border rounded-lg p-2 bg-white text-center font-bold text-lg" 
+                             <div className="flex items-center gap-4 bg-white p-3 rounded-lg border border-yellow-200">
+                                 <div className="flex-1 text-center">
+                                     <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Garotos</label>
+                                     <input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center font-black text-2xl outline-none focus:ring-2 focus:ring-yellow-500" 
                                         value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} />
                                  </div>
-                                 <div>
-                                     <label className="block text-xs font-medium text-gray-600 mb-1">Gols (Eles)</label>
-                                     <input type="number" min="0" className="w-full border rounded-lg p-2 bg-white text-center font-bold text-lg" 
+                                 <div className="text-gray-400 font-light text-2xl">X</div>
+                                 <div className="flex-1 text-center">
+                                     <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Visitante</label>
+                                     <input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center font-black text-2xl outline-none focus:ring-2 focus:ring-yellow-500" 
                                         value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} />
                                  </div>
                              </div>
 
                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Quem fez gol?</label>
+                                <label className="block text-xs font-bold text-yellow-800 mb-1 flex items-center gap-1"><Medal className="w-3 h-3"/> Artilheiros (Gols)</label>
                                 <select 
-                                    className="w-full border rounded-lg p-2 bg-white mb-2"
+                                    className="w-full border border-yellow-300 rounded-lg p-2 bg-white mb-2 text-sm focus:ring-2 focus:ring-yellow-500 outline-none"
                                     onChange={(e) => {
                                         if (e.target.value) {
                                             addScorer(e.target.value);
@@ -841,7 +844,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         }
                                     }}
                                 >
-                                    <option value="">Selecione um aluno...</option>
+                                    <option value="">+ Adicionar quem fez gol...</option>
                                     {getEligibleScorers().map(s => (
                                         <option key={s.id} value={s.id}>{s.name}</option>
                                     ))}
@@ -850,20 +853,26 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     {newActivity.scorers?.map((sid, idx) => {
                                         const s = students.find(stu => stu.id === sid);
                                         return (
-                                            <span key={idx} className="bg-white border border-yellow-200 text-yellow-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                                            <span key={idx} className="bg-white border border-yellow-300 text-yellow-900 text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
                                                 ⚽ {s ? s.name.split(' ')[0] : 'Desconhecido'}
-                                                <button type="button" onClick={() => removeScorer(idx)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                                                <button type="button" onClick={() => removeScorer(idx)} className="hover:text-red-500 ml-1"><X className="w-3 h-3" /></button>
                                             </span>
                                         );
                                     })}
+                                    {newActivity.scorers?.length === 0 && <span className="text-xs text-yellow-600/50 italic">Nenhum gol registrado.</span>}
                                 </div>
                              </div>
 
                              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-yellow-200">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">Taxa (R$)</label>
+                                    <label className="block text-xs font-bold text-yellow-800 mb-1">Horário Apresentação</label>
+                                    <input type="time" className="w-full border border-yellow-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-yellow-500 outline-none"
+                                        value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-yellow-800 mb-1">Taxa do Jogo (R$)</label>
                                     <input 
-                                        type="number" min="0" step="0.01" className="w-full border rounded-lg p-2 bg-white" placeholder="0,00"
+                                        type="number" min="0" step="0.01" className="w-full border border-yellow-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-yellow-500 outline-none" placeholder="0,00"
                                         value={newActivity.fee === 0 ? '' : newActivity.fee}
                                         onChange={(e) => {
                                             const val = parseFloat(e.target.value);
@@ -872,25 +881,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         }}
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">Horário Apresentação</label>
-                                    <input type="time" className="w-full border rounded-lg p-2 bg-white"
-                                        value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} />
-                                </div>
-                             </div>
-
-                             <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Local / Endereço</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full border rounded-lg p-2 bg-white"
-                                    placeholder="Ex: Rua das Flores, 123 - Campo do Real"
-                                    value={newActivity.location}
-                                    onChange={(e) => setNewActivity({...newActivity, location: e.target.value})}
-                                />
                              </div>
                         </div>
                     )}
+                    
+                    {/* Common Fields */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Local / Endereço</label>
+                        <div className="relative">
+                            <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <input 
+                                type="text" 
+                                className="w-full pl-9 border rounded-lg p-2"
+                                placeholder="Ex: Rua das Flores, 123 - Campo do Real"
+                                value={newActivity.location}
+                                onChange={(e) => setNewActivity({...newActivity, location: e.target.value})}
+                            />
+                        </div>
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -907,14 +915,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             <div className="flex border rounded-lg overflow-hidden">
                                 <button type="button" 
                                     onClick={() => setTargetType('GROUP')}
-                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'GROUP' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    className={`flex-1 py-2 text-sm font-medium transition-colors ${targetType === 'GROUP' ? 'bg-gray-100 text-gray-900 shadow-inner' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     Grupo
                                 </button>
                                 <div className="w-px bg-gray-200"></div>
                                 <button type="button" 
                                     onClick={() => setTargetType('INDIVIDUAL')}
-                                    className={`flex-1 py-2 text-sm font-medium ${targetType === 'INDIVIDUAL' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    className={`flex-1 py-2 text-sm font-medium transition-colors ${targetType === 'INDIVIDUAL' ? 'bg-gray-100 text-gray-900 shadow-inner' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     Individual
                                 </button>
@@ -977,16 +985,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             <div className="flex gap-2">
                                 <input className="w-full border rounded-lg p-2 text-sm" type="time" required
                                     value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} />
-                                <span className="self-center">-</span>
+                                <span className="self-center text-gray-400">-</span>
                                 <input className="w-full border rounded-lg p-2 text-sm" type="time" required
                                     value={newActivity.endTime} onChange={e => setNewActivity({...newActivity, endTime: e.target.value})} />
                             </div>
                         </div>
                     </div>
-                    <div className="flex justify-end gap-2 pt-4">
-                        <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                            {editingId ? 'Salvar Alterações' : 'Agendar'}
+                    <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                        <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                        <button type="submit" className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20 font-medium">
+                            {editingId ? 'Salvar Alterações' : 'Agendar Atividade'}
                         </button>
                     </div>
                 </form>
