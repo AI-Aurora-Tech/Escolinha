@@ -83,7 +83,7 @@ export interface Student {
   address: Address; 
   guardian: Guardian;
   planId: string;
-  groupIds: string[]; // Alterado de groupId para groupIds (array)
+  groupId: string;
   active: boolean;
   documents: StudentDocuments;
 }
