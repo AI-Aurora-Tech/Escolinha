@@ -463,15 +463,55 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 </p>
                             </div>
 
-                            <div className="space-y-2 mb-6">
-                                <div className="flex items-center text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
-                                    <UserIcon className="w-4 h-4 mr-2 text-gray-400" />
-                                    <span className="truncate flex-1">{student.guardian.name}</span>
+                            <div className="space-y-3 mb-6">
+                                {/* Guardian Info */}
+                                <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100">
+                                    <div className="flex items-center gap-2 mb-1">
+                                         <UserIcon className="w-3.5 h-3.5 text-gray-400" />
+                                         <span className="text-xs font-bold text-gray-700 uppercase">Responsável</span>
+                                    </div>
+                                    <div className="flex justify-between items-center pl-1">
+                                        <div className="overflow-hidden mr-2">
+                                            <p className="text-sm text-gray-900 truncate font-medium">{student.guardian.name}</p>
+                                            <p className="text-xs text-gray-500 truncate">{student.guardian.phone}</p>
+                                        </div>
+                                         {student.guardian.phone && (
+                                            <a 
+                                                href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
+                                                target="_blank" 
+                                                rel="noreferrer"
+                                                className="p-1.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-colors flex-shrink-0"
+                                                title="WhatsApp Responsável"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MessageCircle className="w-4 h-4" />
+                                            </a>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex items-center text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
-                                    <Phone className="w-4 h-4 mr-2 text-gray-400" />
-                                    <span className="truncate flex-1">{student.guardian.phone}</span>
-                                </div>
+
+                                {/* Student Phone (if exists) */}
+                                {student.phone && (
+                                    <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100">
+                                         <div className="flex items-center gap-2 mb-1">
+                                             <Phone className="w-3.5 h-3.5 text-blue-400" />
+                                             <span className="text-xs font-bold text-blue-700 uppercase">Contato Aluno</span>
+                                        </div>
+                                        <div className="flex justify-between items-center pl-1">
+                                            <p className="text-xs text-blue-800 font-medium truncate mr-2">{student.phone}</p>
+                                            <a 
+                                                href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
+                                                target="_blank" 
+                                                rel="noreferrer"
+                                                className="p-1.5 bg-white text-green-600 rounded-lg hover:bg-green-50 border border-green-200 transition-colors shadow-sm flex-shrink-0"
+                                                title="WhatsApp Aluno"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MessageCircle className="w-4 h-4" />
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             
                             <div className="mt-auto pb-6">
@@ -514,7 +554,23 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          <img src={student.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}`} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt=""/>
                                          <div>
                                              <p className="font-medium text-gray-900">{student.name}</p>
-                                             {isDefaulting && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Pendente</span>}
+                                             {/* Student Phone in List */}
+                                             {student.phone && (
+                                                 <div className="flex items-center gap-1 mt-0.5">
+                                                    <p className="text-xs text-gray-500">{student.phone}</p>
+                                                    <a 
+                                                        href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
+                                                        target="_blank" 
+                                                        rel="noreferrer"
+                                                        className="text-green-600 hover:text-green-700 p-0.5"
+                                                        title="WhatsApp Aluno"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <MessageCircle className="w-3 h-3" />
+                                                    </a>
+                                                 </div>
+                                             )}
+                                             {isDefaulting && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-0.5"><AlertCircle className="w-3 h-3"/> Pendente</span>}
                                          </div>
                                      </div>
                                  </td>
@@ -524,7 +580,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                  </td>
                                  <td className="px-6 py-3 hidden md:table-cell">
                                      <p className="text-sm text-gray-900">{student.guardian.name}</p>
-                                     <p className="text-xs text-gray-500">{student.guardian.phone}</p>
+                                     <div className="flex items-center gap-1">
+                                        <p className="text-xs text-gray-500">{student.guardian.phone}</p>
+                                        {student.guardian.phone && (
+                                            <a 
+                                                href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
+                                                target="_blank" 
+                                                rel="noreferrer"
+                                                className="text-green-600 hover:text-green-700 p-1"
+                                                title="Conversar no WhatsApp"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MessageCircle className="w-3 h-3" />
+                                            </a>
+                                        )}
+                                     </div>
                                  </td>
                                  <td className="px-6 py-3 text-center">
                                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${student.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -622,6 +692,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} disabled={isGuardian} />
                                      </div>
                                      <div>
+                                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Telefone (Aluno)</label>
+                                         <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="(00) 00000-0000"
+                                            value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} disabled={isGuardian} />
+                                     </div>
+                                     <div className="md:col-span-2">
                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">RG / CPF (Aluno)</label>
                                          <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Opcional"
                                             value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} disabled={isGuardian} />
