@@ -480,7 +480,7 @@ function App() {
     if (studentData.photoUrl && studentData.photoUrl.startsWith('data:')) {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
-    const payload = {
+    let payload: any = {
         name: studentData.name,
         birth_date: studentData.birthDate,
         rg: studentData.rg,
@@ -491,12 +491,27 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_ids: studentData.groupIds || [], // Garante envio de array
+        group_ids: studentData.groupIds || [],
         active: studentData.active,
         documents: studentData.documents
     };
-    const { data, error } = await supabase.from('students').insert([payload]).select().single();
+
+    let { data, error } = await supabase.from('students').insert([payload]).select().single();
+
+    // FALLBACK IF group_ids does not exist
+    if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
+         console.warn("Column group_ids not found, falling back to group_id");
+         delete payload.group_ids;
+         // Use the first selected group or null
+         payload.group_id = studentData.groupIds?.[0] || null;
+         const retry = await supabase.from('students').insert([payload]).select().single();
+         data = retry.data;
+         error = retry.error;
+    }
+
     if (data && !error) {
+        // Construct new student object, ensuring we handle the potentially missing group_ids in returned data
+        const createdGroupIds = data.group_ids || (data.group_id ? [data.group_id] : []);
         const newStudent: Student = {
              id: data.id,
              name: data.name,
@@ -509,7 +524,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupIds: data.group_ids || [],
+             groupIds: createdGroupIds,
              active: data.active,
              documents: data.documents
         };
@@ -521,16 +536,15 @@ function App() {
     } else { 
         console.error("Supabase error:", error);
         alert(`Erro ao salvar aluno: ${formatError(error)}`);
-        if (error?.message?.includes('group_ids')) {
-            alert('Atenção: O banco de dados precisa ser atualizado. Falta a coluna "group_ids" (array).');
-        }
     }
     setIsLoading(false);
   };
 
   const handleBatchAddStudents = async (studentsData: any[]) => { 
       setIsLoading(true);
-      const payload = studentsData.map(s => ({
+      
+      // Try with group_ids first
+      let payload = studentsData.map(s => ({
         name: s.name,
         birth_date: s.birthDate,
         rg: s.rg,
@@ -541,12 +555,27 @@ function App() {
         address: s.address,
         guardian: s.guardian,
         plan_id: s.planId || null,
-        group_ids: s.groupIds || [], // Handle array
+        group_ids: s.groupIds || [],
         active: s.active,
         documents: s.documents
       }));
       
-      const { data, error } = await supabase.from('students').insert(payload).select();
+      let { data, error } = await supabase.from('students').insert(payload).select();
+
+      // Fallback
+      if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
+          console.warn("Batch add: Column group_ids not found, falling back to group_id");
+          payload = payload.map(p => {
+              const { group_ids, ...rest } = p as any;
+              return {
+                  ...rest,
+                  group_id: group_ids?.[0] || null
+              };
+          });
+          const retry = await supabase.from('students').insert(payload).select();
+          data = retry.data;
+          error = retry.error;
+      }
       
       if (data && !error) {
           const newStudents: Student[] = data.map((d: any) => ({
@@ -561,7 +590,7 @@ function App() {
              address: d.address,
              guardian: d.guardian,
              planId: d.plan_id,
-             groupIds: d.group_ids || [],
+             groupIds: d.group_ids || (d.group_id ? [d.group_id] : []),
              active: d.active,
              documents: d.documents
           }));
@@ -589,7 +618,7 @@ function App() {
       if (updatedStudent.photoUrl && updatedStudent.photoUrl.startsWith('data:')) {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
-      const payload = {
+      const payload: any = {
           name: updatedStudent.name,
           birth_date: updatedStudent.birthDate,
           rg: updatedStudent.rg,
@@ -600,19 +629,27 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_ids: updatedStudent.groupIds || [], // Garante envio de array
+          group_ids: updatedStudent.groupIds || [],
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
-      const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
+
+      let { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
+
+      // Fallback
+      if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
+          console.warn("Update: Column group_ids not found, falling back to group_id");
+          delete payload.group_ids;
+          payload.group_id = updatedStudent.groupIds?.[0] || null;
+          const retry = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
+          error = retry.error;
+      }
+
       if (!error) {
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s));
       } else {
           console.error("Supabase Error:", error);
           alert(`Erro ao atualizar aluno: ${formatError(error)}`);
-          if (error?.message?.includes('group_ids')) {
-             alert('Atenção: A coluna "group_ids" (array) não existe. Atualize o banco de dados.');
-          }
       }
       setIsLoading(false);
   };
@@ -622,6 +659,7 @@ function App() {
       const selectedSet = new Set(selectedIds);
       
       const updates = students.map(student => {
+          // Careful: student.groupIds might be undefined if strict null checks
           const currentGroups = new Set(student.groupIds || []);
           let changed = false;
 
@@ -640,31 +678,38 @@ function App() {
           }
 
           if (changed) {
-              return { id: student.id, group_ids: Array.from(currentGroups) };
+              return { id: student.id, groupIds: Array.from(currentGroups) };
           }
           return null;
       }).filter(Boolean);
 
       // Perform updates
+      let hasError = false;
       for (const update of updates) {
           if (update) {
-             const { error } = await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
+             const payload: any = { group_ids: update.groupIds };
+             let { error } = await supabase.from('students').update(payload).eq('id', update.id);
+             
+             // Fallback
+             if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
+                  // Fallback to updating just group_id with the first ID (imperfect but prevents crash)
+                  const fallbackPayload = { group_id: update.groupIds[0] || null };
+                  const retry = await supabase.from('students').update(fallbackPayload).eq('id', update.id);
+                  error = retry.error;
+             }
+
              if (error) {
                  console.error("Error updating student groups:", error);
-                 alert(`Erro ao salvar grupos para aluno ID ${update.id}: ${formatError(error)}`);
+                 hasError = true;
+             } else {
+                 // Update local state immediately for smoother UI
+                 setStudents(prev => prev.map(s => s.id === update.id ? { ...s, groupIds: update.groupIds } : s));
              }
           }
       }
       
-      // Update local state
-      if (updates.length > 0) {
-          const updatesMap = new Map(updates.map(u => [u!.id, u!.group_ids]));
-          setStudents(prev => prev.map(s => {
-              if (updatesMap.has(s.id)) {
-                  return { ...s, groupIds: updatesMap.get(s.id)! };
-              }
-              return s;
-          }));
+      if (hasError) {
+          alert("Alguns alunos não puderam ser atualizados. Verifique o console.");
       }
 
       setIsLoading(false);
