@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileText, Filter, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, MoreVertical, TrendingUp, AlertCircle, Users, FileWarning, Shirt, FileSpreadsheet, Upload, RefreshCw, Copy, Send, Ban, HeartPulse, ShieldCheck, FolderCheck, Wallet, History, Printer, QrCode, PlusCircle, ArrowUpCircle, ArrowDownCircle, Settings, Save, Lock, Calendar } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileText, Filter, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, MoreVertical, TrendingUp, AlertCircle, Users, FileWarning, Shirt, FileSpreadsheet, Upload, RefreshCw, Copy, Send, Ban, HeartPulse, ShieldCheck, FolderCheck, Wallet, History, Printer, QrCode, PlusCircle, ArrowUpCircle, ArrowDownCircle, Settings, Save, Lock, Calendar, ChevronDown, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -23,9 +23,10 @@ interface StudentsPageProps {
 }
 
 export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, initialFilter, currentUser }) => {
-  // UI State
-  const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('GRID');
+  // UI State - Default to LIST view as requested
+  const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('LIST');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
   
   // Filters
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -187,6 +188,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setEditingId(null);
     setStudentForm(initialFormState);
     setCapturedImage(null);
+    setIsGroupDropdownOpen(false);
     setActiveTab('DETAILS');
     setIsModalOpen(true);
   };
@@ -194,6 +196,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleOpenEdit = (student: Student) => {
     setEditingId(student.id);
     setCapturedImage(student.photoUrl || null);
+    setIsGroupDropdownOpen(false);
     
     // Ensure groupIds is always an array to prevent crashes
     const safeGroupIds = Array.isArray(student.groupIds) ? student.groupIds : [];
@@ -650,39 +653,50 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          </div>
                                      </div>
 
-                                     {/* Group Checkboxes */}
-                                     <div>
-                                         <label className="block text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
-                                             <Shirt className="w-4 h-4"/> Grupos e Categorias
+                                     {/* Multi-Group Selection Dropdown (Compact Layout) */}
+                                     <div className="relative">
+                                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1 flex items-center gap-2">
+                                             <Shirt className="w-4 h-4"/> Grupo / Categoria
                                          </label>
-                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                             {groups.map(group => {
-                                                const currentIds = Array.isArray(studentForm.groupIds) ? studentForm.groupIds : [];
-                                                const isChecked = currentIds.includes(group.id);
-                                                
-                                                return (
-                                                 <div
-                                                     key={group.id} 
-                                                     className={`
-                                                         flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-all select-none
-                                                         ${isChecked 
-                                                             ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' 
-                                                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'}
-                                                     `}
-                                                     onClick={() => toggleGroupSelection(group.id)}
-                                                 >
-                                                     <div className={`
-                                                         w-5 h-5 rounded border flex items-center justify-center transition-colors
-                                                         ${isChecked ? 'bg-primary-600 border-primary-600' : 'bg-white border-gray-300'}
-                                                     `}>
-                                                         {isChecked && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                                                     </div>
-                                                     <span className="text-sm font-medium truncate">{group.name}</span>
+                                         <button
+                                            type="button"
+                                            onClick={() => setIsGroupDropdownOpen(!isGroupDropdownOpen)}
+                                            className="w-full text-left border border-gray-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none flex justify-between items-center"
+                                         >
+                                            <span className={`block truncate ${studentForm.groupIds.length === 0 ? 'text-gray-500' : 'text-gray-900'}`}>
+                                                {studentForm.groupIds.length > 0 
+                                                    ? groups.filter(g => studentForm.groupIds.includes(g.id)).map(g => g.name).join(', ')
+                                                    : 'Selecione os grupos...'}
+                                            </span>
+                                            <ChevronDown className="w-4 h-4 text-gray-400" />
+                                         </button>
+                                         
+                                         {isGroupDropdownOpen && (
+                                             <>
+                                                 <div className="fixed inset-0 z-10" onClick={() => setIsGroupDropdownOpen(false)}></div>
+                                                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                                                     {groups.length > 0 ? (
+                                                         groups.map(group => {
+                                                            const isChecked = studentForm.groupIds.includes(group.id);
+                                                            return (
+                                                             <div 
+                                                                 key={group.id}
+                                                                 onClick={() => toggleGroupSelection(group.id)}
+                                                                 className={`flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? 'bg-primary-50' : ''}`}
+                                                             >
+                                                                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-primary-600 border-primary-600' : 'border-gray-300 bg-white'}`}>
+                                                                     {isChecked && <Check className="w-3.5 h-3.5 text-white" />}
+                                                                 </div>
+                                                                 <span className={`text-sm ${isChecked ? 'font-medium text-primary-900' : 'text-gray-700'}`}>{group.name}</span>
+                                                             </div>
+                                                            );
+                                                         })
+                                                     ) : (
+                                                         <div className="p-4 text-sm text-gray-500 text-center">Nenhum grupo cadastrado.</div>
+                                                     )}
                                                  </div>
-                                                );
-                                             })}
-                                             {groups.length === 0 && <p className="text-sm text-gray-400 italic col-span-full">Nenhum grupo cadastrado.</p>}
-                                         </div>
+                                             </>
+                                         )}
                                      </div>
                                 </div>
                              )}
