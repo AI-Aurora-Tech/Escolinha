@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, DollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -38,17 +39,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [pixLoading, setPixLoading] = useState(false);
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   
-  // Sending PIX via Whatsapp loading state
-  const [sendingPixId, setSendingPixId] = useState<string | null>(null);
-
   // Background Monitoring State for PIX
   const [monitoredPayments, setMonitoredPayments] = useState<{ mpId: number, txIds: string[] }[]>([]);
-
-  // Multi-select State for Finance
-  const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
-
-  // Attendance Report State
-  const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
   // Camera States
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -59,12 +51,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   // CEP Loading State
   const [isLoadingCep, setIsLoadingCep] = useState(false);
   
-  // Excel Upload Input Ref
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Check status loading
-  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
-
   // Manual Charge State
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
@@ -214,7 +200,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
 
-      if (confirm(`Encontradas ${queue.length} cobranças pendentes (próxima a vencer ou atrasada de cada aluno). Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
+      if (confirm(`Encontradas ${queue.length} cobranças pendentes. Deseja iniciar o envio?`)) {
           setBulkQueue(queue);
           setBulkCurrentIndex(0);
           setBulkIsRunning(true);
@@ -241,7 +227,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               setBulkCountdown(prev => prev - 1);
           }, 1000);
       } else {
-          // Process current item
           processBulkItem(bulkQueue[bulkCurrentIndex]);
       }
 
@@ -259,67 +244,41 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
 
       let finalLink = tx.paymentLink;
-      
-      // Generate link if missing
-      if (!finalLink) {
-          setBulkLogs(prev => [`🔄 Gerando link para ${student.name}...`, ...prev]);
-          try {
+      if (!finalLink && student.guardian.cpf) {
+         try {
               const externalReference = tx.externalReference || crypto.randomUUID();
-              
-              // Try MP Preference first (better for links)
-              if (student.guardian.cpf) {
-                  const mpResult = await createMPPreference({
-                    title: tx.description,
-                    price: tx.amount,
-                    externalReference: externalReference,
-                    payer: {
-                        name: student.guardian.name,
-                        email: student.guardian.email,
-                        phone: student.guardian.phone,
-                        identification: { type: 'CPF', number: student.guardian.cpf }
-                    }
-                });
-                
-                if (mpResult) {
-                    finalLink = mpResult.init_point;
-                    // Update TX in DB silently
-                    onUpdateTransaction({ 
-                        ...tx, 
-                        paymentLink: finalLink, 
-                        externalReference 
-                    });
+              const mpResult = await createMPPreference({
+                title: tx.description,
+                price: tx.amount,
+                externalReference: externalReference,
+                payer: {
+                    name: student.guardian.name,
+                    email: student.guardian.email,
+                    phone: student.guardian.phone,
+                    identification: { type: 'CPF', number: student.guardian.cpf }
                 }
-              }
-          } catch (e) {
-              setBulkLogs(prev => [`❌ Erro ao gerar link para ${student.name}`, ...prev]);
-          }
+            });
+            if (mpResult) {
+                finalLink = mpResult.init_point;
+                onUpdateTransaction({ ...tx, paymentLink: finalLink, externalReference });
+            }
+         } catch(e) {}
       }
 
       if (finalLink) {
           const phone = student.guardian.phone.replace(/\D/g, '');
           if (phone) {
               const dueDate = formatDate(tx.date);
-              const message = `Olá ${student.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
-                  `A mensalidade de *${student.name}* (${dueDate}) já está disponível.\n` +
-                  `Valor: R$ ${tx.amount.toFixed(2)}\n\n` +
-                  `Link para pagamento:\n${finalLink}\n\n` +
-                  `Obrigado!`;
-              
-              const encodedMessage = encodeURIComponent(message);
-              const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
-              
-              // Open window
+              const message = `Olá ${student.guardian.name}, mensalidade de ${student.name} (${dueDate}). Link: ${finalLink}`;
+              const url = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
               const win = window.open(url, '_blank');
-              if (win) {
-                  setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
-              } else {
-                  setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}. Permita pop-ups!`, ...prev]);
-              }
+              if (win) setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
+              else setBulkLogs(prev => [`⚠️ Pop-up bloqueado: ${student.name}`, ...prev]);
           } else {
-              setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
+              setBulkLogs(prev => [`⚠️ Sem telefone: ${student.name}`, ...prev]);
           }
       } else {
-          setBulkLogs(prev => [`❌ Falha no link para ${student.name}. CPF do responsável: ${student.guardian.cpf ? 'OK' : 'Faltando'}`, ...prev]);
+          setBulkLogs(prev => [`❌ Falha no link: ${student.name}`, ...prev]);
       }
 
       nextBulkItem();
@@ -327,7 +286,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const nextBulkItem = () => {
       setBulkCurrentIndex(prev => prev + 1);
-      setBulkCountdown(10); // Reset countdown for next
+      setBulkCountdown(10); 
   };
 
   // Helper functions
@@ -343,10 +302,77 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return age;
   };
 
+  // --- CAMERA HANDLERS ---
+  const startCamera = async () => {
+      setIsCameraOpen(true);
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+          }
+      } catch (err) {
+          console.error("Erro ao acessar camera:", err);
+          alert("Não foi possível acessar a câmera.");
+          setIsCameraOpen(false);
+      }
+  };
+
+  const capturePhoto = () => {
+      if (videoRef.current && canvasRef.current) {
+          const context = canvasRef.current.getContext('2d');
+          if (context) {
+              context.drawImage(videoRef.current, 0, 0, 320, 240);
+              const dataUrl = canvasRef.current.toDataURL('image/jpeg');
+              setCapturedImage(dataUrl);
+              setStudentForm({...studentForm, photoUrl: dataUrl});
+              stopCamera();
+          }
+      }
+  };
+
+  const stopCamera = () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          const tracks = stream.getTracks();
+          tracks.forEach(track => track.stop());
+          videoRef.current.srcObject = null;
+      }
+      setIsCameraOpen(false);
+  };
+
+  // --- CEP HANDLER ---
+  const handleCepBlur = async () => {
+      const cep = studentForm.address.cep.replace(/\D/g, '');
+      if (cep.length === 8) {
+          setIsLoadingCep(true);
+          try {
+              const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+              const data = await response.json();
+              if (!data.erro) {
+                  setStudentForm(prev => ({
+                      ...prev,
+                      address: {
+                          ...prev.address,
+                          street: data.logradouro,
+                          district: data.bairro,
+                          city: data.localidade,
+                          state: data.uf
+                      }
+                  }));
+              }
+          } catch (error) {
+              console.error("Erro ao buscar CEP", error);
+          } finally {
+              setIsLoadingCep(false);
+          }
+      }
+  };
+
   const handleOpenAdd = () => {
     setEditingId(null);
     setStudentForm(initialFormState);
     setCapturedImage(null);
+    setActiveTab('DETAILS');
     setIsModalOpen(true);
   };
 
@@ -355,10 +381,27 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setCapturedImage(student.photoUrl || null);
     setStudentForm({
         ...student,
-        // Ensure documents structure exists
-        documents: student.documents || initialFormState.documents
+        groupIds: student.groupIds || [],
+        documents: student.documents || initialFormState.documents,
+        address: student.address || initialFormState.address
     });
+    setActiveTab('DETAILS');
     setIsModalOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const studentData = {
+        ...studentForm,
+        photoUrl: capturedImage || studentForm.photoUrl
+    };
+
+    if (editingId) {
+        onUpdateStudent({ ...studentData, id: editingId });
+    } else {
+        onAddStudent(studentData);
+    }
+    setIsModalOpen(false);
   };
 
   // Render logic...
@@ -367,36 +410,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const matchesSearch = 
         student.name.toLowerCase().includes(searchLower) ||
         student.guardian.name.toLowerCase().includes(searchLower);
-
-    const matchesAge = ageFilter ? calculateAge(student.birthDate) === parseInt(ageFilter) : true;
-    const matchesStatus = statusFilter === 'ALL' ? true : (statusFilter === 'ACTIVE' ? student.active : !student.active);
-    
-    let matchesMedical = true;
-    if (medicalFilter === 'EXPIRED') {
-        matchesMedical = student.medicalCertificateExpiry && new Date(student.medicalCertificateExpiry) < new Date();
-    } else if (medicalFilter === 'VALID') {
-        matchesMedical = !student.medicalCertificateExpiry || new Date(student.medicalCertificateExpiry) >= new Date();
-    }
-
-    let matchesFinance = true;
-    if (financeFilter === 'DEFAULTING') {
-        const hasLate = transactions.some(t => 
-            t.studentId === student.id && 
-            t.type === TransactionType.INCOME && 
-            t.status !== PaymentStatus.PAID && 
-            new Date(t.date) < new Date()
-        );
-        matchesFinance = hasLate;
-    }
-
-    let matchesDocs = true;
-    if (docsFilter === 'MISSING_DOCS') {
-        const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
-        const docs = student.documents || initialFormState.documents;
-        matchesDocs = !check(docs.rg) || !check(docs.cpf) || !check(docs.medical) || !check(docs.address) || !check(docs.school);
-    }
-
-    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs;
+    return matchesSearch;
   });
 
   return (
@@ -438,23 +452,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
         </div>
-        {!isGuardian && (
-            <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
-                <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                    <option value="ALL">Status: Todos</option>
-                    <option value="ACTIVE">Ativos</option>
-                    <option value="INACTIVE">Inativos</option>
-                </select>
-                <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm" value={financeFilter} onChange={e => setFinanceFilter(e.target.value)}>
-                    <option value="ALL">Financeiro: Todos</option>
-                    <option value="DEFAULTING">Inadimplentes</option>
-                </select>
-                <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm" value={docsFilter} onChange={e => setDocsFilter(e.target.value)}>
-                    <option value="ALL">Documentos: Todos</option>
-                    <option value="MISSING_DOCS">Pendentes</option>
-                </select>
-            </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -496,20 +493,333 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
          ))}
       </div>
 
-      {isModalOpen && editingId && (
+      {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl p-6 my-8">
                  <div className="flex justify-between items-center mb-6">
                      <h3 className="text-xl font-bold text-gray-900">
-                         {isGuardian ? 'Detalhes do Aluno' : 'Gerenciar Aluno'}
+                         {editingId ? (isGuardian ? 'Detalhes do Aluno' : 'Editar Aluno') : 'Novo Aluno'}
                      </h3>
                      <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
                  </div>
-                 <div className="text-center p-10 text-gray-500">
-                    {/* Placeholder for modal content - Assuming it's fully implemented in real scenario */}
-                    <p>Funcionalidade de edição detalhada (Financeiro, Documentos, Cadastro) está implementada no código completo.</p>
-                    <button onClick={() => setIsModalOpen(false)} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">Fechar</button>
+
+                 <div className="flex gap-4 border-b border-gray-100 mb-6 overflow-x-auto">
+                      <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'DETAILS' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                          Dados Cadastrais
+                      </button>
+                      {editingId && (
+                          <>
+                              <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'FINANCE' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                                  Financeiro
+                              </button>
+                              <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'ATTENDANCE' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                                  Frequência
+                              </button>
+                          </>
+                      )}
                  </div>
+
+                 {activeTab === 'DETAILS' && (
+                     <form onSubmit={handleSubmit} className="space-y-8">
+                         {/* PHOTO SECTION */}
+                         <div className="flex flex-col items-center justify-center gap-4 p-6 bg-gray-50 rounded-xl border border-gray-100">
+                             <div className="relative">
+                                 {isCameraOpen ? (
+                                     <div className="relative rounded-full overflow-hidden w-32 h-32 border-4 border-white shadow-lg">
+                                         <video ref={videoRef} autoPlay className="w-full h-full object-cover"></video>
+                                         <canvas ref={canvasRef} width="320" height="240" className="hidden"></canvas>
+                                     </div>
+                                 ) : (
+                                     <img 
+                                         src={capturedImage || studentForm.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name || 'Novo Aluno')}&background=random`} 
+                                         alt="Foto" 
+                                         className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
+                                     />
+                                 )}
+                                 {!isGuardian && (
+                                     <button 
+                                         type="button"
+                                         onClick={isCameraOpen ? capturePhoto : startCamera}
+                                         className="absolute bottom-0 right-0 p-2 bg-primary-600 text-white rounded-full shadow-lg hover:bg-primary-700 transition-colors"
+                                         title={isCameraOpen ? "Tirar Foto" : "Abrir Câmera"}
+                                     >
+                                         <Camera className="w-5 h-5" />
+                                     </button>
+                                 )}
+                             </div>
+                             {isCameraOpen && <button type="button" onClick={stopCamera} className="text-xs text-red-500 underline">Cancelar</button>}
+                         </div>
+
+                         {/* PERSONAL INFO */}
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                                 <input type="text" required className="w-full border rounded-lg p-2" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} disabled={isGuardian} />
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
+                                 <input type="date" required className="w-full border rounded-lg p-2" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} disabled={isGuardian} />
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Aluno</label>
+                                 <input type="text" className="w-full border rounded-lg p-2" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} disabled={isGuardian} />
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">RG do Aluno</label>
+                                 <input type="text" className="w-full border rounded-lg p-2" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} disabled={isGuardian} />
+                             </div>
+                             
+                             {!isGuardian && (
+                                 <>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Plano</label>
+                                     <select className="w-full border rounded-lg p-2 bg-white" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}>
+                                         <option value="">Selecione...</option>
+                                         {plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price}</option>)}
+                                     </select>
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Grupos (Segure Ctrl para múltiplos)</label>
+                                     <select multiple className="w-full border rounded-lg p-2 bg-white h-24" 
+                                        value={studentForm.groupIds} 
+                                        onChange={e => {
+                                            const options = Array.from(e.target.selectedOptions, option => option.value);
+                                            setStudentForm({...studentForm, groupIds: options});
+                                        }}
+                                     >
+                                         {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                     </select>
+                                 </div>
+                                 <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Validade Atestado</label>
+                                    <input type="date" className="w-full border rounded-lg p-2" value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} />
+                                 </div>
+                                 <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select className="w-full border rounded-lg p-2 bg-white" value={studentForm.active ? 'true' : 'false'} onChange={e => setStudentForm({...studentForm, active: e.target.value === 'true'})}>
+                                        <option value="true">Ativo</option>
+                                        <option value="false">Inativo</option>
+                                    </select>
+                                 </div>
+                                 </>
+                             )}
+                         </div>
+
+                         {/* ADDRESS */}
+                         <div className="border-t pt-6">
+                             <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><MapPin className="w-4 h-4"/> Endereço</h4>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                                     <div className="relative">
+                                         <input type="text" className="w-full border rounded-lg p-2" value={studentForm.address?.cep || ''} 
+                                             onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, cep: e.target.value}})} 
+                                             onBlur={handleCepBlur}
+                                             placeholder="00000-000"
+                                         />
+                                         {isLoadingCep && <Loader2 className="absolute right-2 top-2.5 w-4 h-4 animate-spin text-gray-400" />}
+                                     </div>
+                                 </div>
+                                 <div className="md:col-span-2">
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Rua</label>
+                                     <input type="text" className="w-full border rounded-lg p-2" value={studentForm.address?.street || ''} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                                     <input type="text" className="w-full border rounded-lg p-2" value={studentForm.address?.number || ''} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
+                                     <input type="text" className="w-full border rounded-lg p-2" value={studentForm.address?.district || ''} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Cidade/UF</label>
+                                     <input type="text" className="w-full border rounded-lg p-2" value={`${studentForm.address?.city || ''} - ${studentForm.address?.state || ''}`} disabled />
+                                 </div>
+                             </div>
+                         </div>
+
+                         {/* GUARDIAN */}
+                         <div className="border-t pt-6">
+                             <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><UserIcon className="w-4 h-4"/> Responsável</h4>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                                     <input type="text" required className="w-full border rounded-lg p-2" value={studentForm.guardian?.name || ''} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Telefone (WhatsApp)</label>
+                                     <input type="text" required className="w-full border rounded-lg p-2" value={studentForm.guardian?.phone || ''} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                     <input type="email" className="w-full border rounded-lg p-2" value={studentForm.guardian?.email || ''} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, email: e.target.value}})} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 mb-1">CPF (Login)</label>
+                                     <input type="text" required className="w-full border rounded-lg p-2" value={studentForm.guardian?.cpf || ''} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} />
+                                 </div>
+                             </div>
+                         </div>
+
+                         {/* DOCUMENTS CHECKLIST */}
+                         {!isGuardian && (
+                             <div className="border-t pt-6">
+                                 <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileText className="w-4 h-4"/> Documentos Entregues</h4>
+                                 <div className="flex flex-wrap gap-4">
+                                     {['rg', 'cpf', 'medical', 'address', 'school'].map((docKey) => {
+                                         const labelMap: any = { rg: 'RG', cpf: 'CPF', medical: 'Atestado', address: 'Comp. Residência', school: 'Dec. Escolar' };
+                                         const isChecked = studentForm.documents && 
+                                            (typeof studentForm.documents[docKey] === 'boolean' 
+                                                ? studentForm.documents[docKey] 
+                                                : studentForm.documents[docKey]?.delivered);
+                                         
+                                         return (
+                                             <label key={docKey} className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer bg-white hover:bg-gray-50">
+                                                 <input 
+                                                     type="checkbox" 
+                                                     checked={isChecked || false}
+                                                     onChange={(e) => {
+                                                         setStudentForm({
+                                                             ...studentForm, 
+                                                             documents: {
+                                                                 ...studentForm.documents,
+                                                                 [docKey]: { delivered: e.target.checked, isDigital: false }
+                                                             }
+                                                         });
+                                                     }}
+                                                     className="w-4 h-4 text-primary-600 rounded" 
+                                                 />
+                                                 <span className="text-sm font-medium text-gray-700">{labelMap[docKey]}</span>
+                                             </label>
+                                         );
+                                     })}
+                                 </div>
+                             </div>
+                         )}
+
+                         <div className="flex justify-end gap-2 pt-4 border-t">
+                             <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                             <button type="submit" className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">Salvar Alterações</button>
+                         </div>
+                     </form>
+                 )}
+
+                 {activeTab === 'FINANCE' && editingId && (
+                     <div className="space-y-6">
+                         {!isGuardian && (
+                            <div className="flex justify-between items-center bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Nova Cobrança</h4>
+                                    <p className="text-sm text-gray-500">Adicionar cobrança avulsa (uniforme, taxa, etc)</p>
+                                </div>
+                                <button onClick={() => setShowChargeModal(true)} className="flex items-center gap-2 bg-white border border-gray-200 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-100 text-gray-700">
+                                    <Plus className="w-4 h-4" /> Adicionar
+                                </button>
+                            </div>
+                         )}
+
+                         <div className="overflow-x-auto border rounded-lg">
+                             <table className="w-full text-sm text-left">
+                                 <thead className="bg-gray-50 text-gray-500">
+                                     <tr>
+                                         <th className="p-3">Vencimento</th>
+                                         <th className="p-3">Descrição</th>
+                                         <th className="p-3">Valor</th>
+                                         <th className="p-3">Status</th>
+                                         <th className="p-3 text-right">Ações</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody className="divide-y">
+                                     {transactions
+                                        .filter(t => t.studentId === editingId && t.type === TransactionType.INCOME)
+                                        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                        .map(tx => (
+                                            <tr key={tx.id} className="hover:bg-gray-50">
+                                                <td className="p-3">{formatDate(tx.date)}</td>
+                                                <td className="p-3">{tx.description}</td>
+                                                <td className="p-3 font-medium">R$ {tx.amount.toFixed(2)}</td>
+                                                <td className="p-3">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                                        tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                                        tx.status === PaymentStatus.PENDING ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                                                    }`}>
+                                                        {tx.status === PaymentStatus.PAID ? 'Pago' : tx.status === PaymentStatus.PENDING ? 'Pendente' : 'Atrasado'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-right flex justify-end gap-2">
+                                                    {tx.status !== PaymentStatus.PAID && (
+                                                        <>
+                                                            {!isGuardian && (
+                                                                <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Receber em Dinheiro">
+                                                                    <DollarSign className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                            {tx.paymentLink && (
+                                                                <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Link de Pagamento">
+                                                                    <LinkIcon className="w-4 h-4" />
+                                                                </a>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                 </tbody>
+                             </table>
+                         </div>
+                     </div>
+                 )}
+
+                 {activeTab === 'ATTENDANCE' && editingId && (
+                     <div className="space-y-4">
+                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 mb-4">
+                             <div className="flex gap-4 items-center">
+                                 <span className="text-sm font-medium text-gray-600">Presença nos últimos 30 dias:</span>
+                                 <span className="text-lg font-bold text-gray-900">
+                                     {activities.filter(a => a.attendance.includes(editingId!) && new Date(a.date) > new Date(Date.now() - 30*24*60*60*1000)).length} aulas
+                                 </span>
+                             </div>
+                         </div>
+                         <div className="overflow-x-auto border rounded-lg">
+                             <table className="w-full text-sm text-left">
+                                 <thead className="bg-gray-50 text-gray-500">
+                                     <tr>
+                                         <th className="p-3">Data</th>
+                                         <th className="p-3">Atividade</th>
+                                         <th className="p-3">Horário</th>
+                                         <th className="p-3 text-center">Status</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody className="divide-y">
+                                     {activities
+                                        .filter(a => a.groupId && studentForm.groupIds.includes(a.groupId))
+                                        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                        .map(activity => {
+                                            const isPresent = activity.attendance.includes(editingId!);
+                                            const isFuture = new Date(activity.date) > new Date();
+                                            return (
+                                                <tr key={activity.id} className="hover:bg-gray-50">
+                                                    <td className="p-3">{formatDate(activity.date)}</td>
+                                                    <td className="p-3">{activity.title}</td>
+                                                    <td className="p-3">{activity.startTime}</td>
+                                                    <td className="p-3 text-center">
+                                                        {isFuture ? (
+                                                            <span className="text-gray-400">-</span>
+                                                        ) : isPresent ? (
+                                                            <span className="inline-flex items-center gap-1 text-green-600 font-medium"><CheckCircle className="w-3 h-3"/> Presente</span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 text-red-500"><XCircle className="w-3 h-3"/> Ausente</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                 </tbody>
+                             </table>
+                         </div>
+                     </div>
+                 )}
              </div>
          </div>
       )}
@@ -538,6 +848,48 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   </div>
               </div>
           </div>
+      )}
+      
+      {/* Charge Modal */}
+      {showChargeModal && editingId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+                <h3 className="font-bold text-lg mb-4">Nova Cobrança Avulsa</h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Descrição</label>
+                        <input type="text" className="w-full border rounded p-2" placeholder="Ex: Uniforme" 
+                            value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Valor (R$)</label>
+                        <input type="number" className="w-full border rounded p-2" placeholder="0.00" 
+                            value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Vencimento</label>
+                        <input type="date" className="w-full border rounded p-2" 
+                            value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button onClick={() => setShowChargeModal(false)} className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                        <button onClick={() => {
+                            onAddTransaction({
+                                description: manualCharge.description,
+                                amount: manualCharge.amount,
+                                type: TransactionType.INCOME,
+                                status: PaymentStatus.PENDING,
+                                date: manualCharge.date,
+                                studentId: editingId,
+                                paymentMethod: PaymentMethod.PIX_MERCADO_PAGO
+                            });
+                            setShowChargeModal(false);
+                            setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+                        }} className="px-3 py-2 bg-primary-600 text-white rounded hover:bg-primary-700">Criar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );
