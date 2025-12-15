@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check } from 'lucide-react';
+import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, DocumentItem } from '../types';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check, Banknote } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -19,6 +19,13 @@ interface StudentsPageProps {
   initialFilter?: string;
   currentUser?: User | null;
 }
+
+// Helper outside component to avoid dependency cycles
+const checkDoc = (doc: boolean | DocumentItem | undefined) => {
+    if (doc === undefined) return false;
+    if (typeof doc === 'boolean') return doc;
+    return doc.delivered;
+};
 
 export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, initialFilter, currentUser }) => {
   // UI State
@@ -100,8 +107,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const active = students.filter(s => s.active).length;
       const missingDocs = students.filter(s => {
           if (!s.active || !s.documents) return false;
-          const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
-          return !check(s.documents.rg) || !check(s.documents.cpf) || !check(s.documents.medical);
+          return !checkDoc(s.documents.rg) || !checkDoc(s.documents.cpf) || !checkDoc(s.documents.medical);
       }).length;
       
       // Check intersection of defaulting IDs and current students list
@@ -131,9 +137,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (financeFilter === 'DEFAULTING' && !defaultingIds.has(student.id)) return false;
 
         if (docsFilter === 'MISSING') {
-            const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
             const docs = student.documents || initialFormState.documents;
-            const isMissing = !check(docs.rg) || !check(docs.cpf) || !check(docs.medical);
+            const isMissing = !checkDoc(docs.rg) || !checkDoc(docs.cpf) || !checkDoc(docs.medical);
             if (!isMissing) return false;
         }
 
@@ -170,6 +175,53 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
+  // --- WHATSAPP ACTIONS ---
+  const handleSendPaymentReminder = (e: React.MouseEvent, student: Student) => {
+    e.stopPropagation();
+    const today = new Date();
+    const pendingTxs = transactions.filter(t => 
+        t.studentId === student.id && 
+        t.status !== PaymentStatus.PAID && 
+        t.type === TransactionType.INCOME &&
+        new Date(t.date) < today
+    );
+
+    if (pendingTxs.length === 0) return;
+
+    const totalDue = pendingTxs.reduce((acc, t) => acc + t.amount, 0);
+    const phone = student.guardian.phone.replace(/\D/g, '');
+
+    if (!phone) {
+        alert("Telefone do responsável não cadastrado.");
+        return;
+    }
+
+    const message = `Olá ${student.guardian.name}, identificamos ${pendingTxs.length} pagamento(s) pendente(s) referente ao aluno(a) *${student.name}* totalizando *R$ ${totalDue.toFixed(2)}*. \n\nPor favor, entre em contato para regularizar.`;
+    window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleSendDocReminder = (e: React.MouseEvent, student: Student) => {
+      e.stopPropagation();
+      const docs = student.documents;
+      const missing = [];
+      if (!checkDoc(docs.rg)) missing.push('RG');
+      if (!checkDoc(docs.cpf)) missing.push('CPF');
+      if (!checkDoc(docs.medical)) missing.push('Atestado Médico');
+      if (!checkDoc(docs.address)) missing.push('Comp. Residência');
+      if (!checkDoc(docs.school)) missing.push('Declaração Escolar');
+
+      if (missing.length === 0) return;
+
+      const phone = student.guardian.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("Telefone do responsável não cadastrado.");
+          return;
+      }
+
+      const message = `Olá ${student.guardian.name}, solicitamos o envio dos seguintes documentos pendentes do aluno(a) *${student.name}*: \n\n- ${missing.join('\n- ')}`;
+      window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   // --- MODAL HANDLERS ---
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -185,7 +237,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setCapturedImage(student.photoUrl || null);
     setIsGroupDropdownOpen(false);
     
-    // Ensure groupIds is always an array
     const safeGroupIds = Array.isArray(student.groupIds) ? student.groupIds : [];
     
     setStudentForm({
@@ -227,6 +278,46 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setIsModalOpen(false);
   };
 
+  const handleAddCharge = (e: React.FormEvent) => {
+      e.preventDefault();
+      // Changed 'newCharge' to 'manualCharge' to match state definition
+      if (editingId && manualCharge.description && manualCharge.amount > 0) {
+          onAddTransaction({
+              description: manualCharge.description,
+              amount: manualCharge.amount,
+              type: TransactionType.INCOME,
+              date: manualCharge.date,
+              status: PaymentStatus.PENDING,
+              studentId: editingId,
+              paymentMethod: PaymentMethod.PIX_MERCADO_PAGO 
+          });
+          setShowChargeModal(false);
+          // Reset state
+          setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+      }
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Lista de Alunos', 14, 20);
+    
+    const tableData = filteredStudents.map(s => [
+        s.name,
+        s.active ? 'Ativo' : 'Inativo',
+        s.guardian.name,
+        s.guardian.phone,
+        plans.find(p => p.id === s.planId)?.name || '-'
+    ]);
+
+    autoTable(doc, {
+        startY: 30,
+        head: [['Nome', 'Status', 'Responsável', 'Telefone', 'Plano']],
+        body: tableData,
+    });
+
+    doc.save('alunos.pdf');
+  };
+
   // --- CAMERA ---
   const startCamera = async () => {
     setIsCameraOpen(true);
@@ -259,7 +350,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       setIsCameraOpen(false);
   };
 
-  // --- CEP ---
   const handleCepBlur = async () => {
       const cep = studentForm.address.cep.replace(/\D/g, '');
       if (cep.length === 8) {
@@ -376,6 +466,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredStudents.map(student => {
                 const isDefaulting = defaultingIds.has(student.id);
+                
+                const docs = student.documents || initialFormState.documents;
+                const isMissingDocs = !checkDoc(docs.rg) || !checkDoc(docs.cpf) || !checkDoc(docs.medical);
+
                 const studentGroups = groups
                     .filter(g => student.groupIds?.includes(g.id))
                     .map(g => g.name)
@@ -432,32 +526,33 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         )}
                                     </div>
                                 </div>
-
-                                {/* Student Phone (if exists) */}
-                                {student.phone && (
-                                    <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100">
-                                         <div className="flex items-center gap-2 mb-1">
-                                             <Phone className="w-3.5 h-3.5 text-blue-400" />
-                                             <span className="text-xs font-bold text-blue-700 uppercase">Contato Aluno</span>
-                                        </div>
-                                        <div className="flex justify-between items-center pl-1">
-                                            <p className="text-xs text-blue-800 font-medium truncate mr-2">{student.phone}</p>
-                                            <a 
-                                                href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
-                                                target="_blank" 
-                                                rel="noreferrer"
-                                                className="p-1.5 bg-white text-green-600 rounded-lg hover:bg-green-50 border border-green-200 transition-colors shadow-sm flex-shrink-0"
-                                                title="WhatsApp Aluno"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <MessageCircle className="w-4 h-4" />
-                                            </a>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                             
-                            <div className="mt-auto pb-6">
+                            <div className="mt-auto pb-4 space-y-3">
+                                {/* Quick Actions */}
+                                {!isGuardian && (
+                                    <div className="flex justify-center gap-3">
+                                        {isDefaulting && (
+                                            <button 
+                                                onClick={(e) => handleSendPaymentReminder(e, student)}
+                                                className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-full transition-colors"
+                                                title="Enviar Cobrança WhatsApp"
+                                            >
+                                                <DollarSign className="w-3 h-3" /> Cobrar
+                                            </button>
+                                        )}
+                                        {isMissingDocs && (
+                                            <button 
+                                                onClick={(e) => handleSendDocReminder(e, student)}
+                                                className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-full transition-colors"
+                                                title="Solicitar Documentos WhatsApp"
+                                            >
+                                                <FileWarning className="w-3 h-3" /> Docs
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
                                 <button 
                                     onClick={() => handleOpenEdit(student)}
                                     className="w-full py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 hover:border-primary-300 hover:text-primary-700 transition-all flex items-center justify-center gap-2"
@@ -485,6 +580,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                  <tbody className="divide-y divide-gray-100">
                      {filteredStudents.map(student => {
                          const isDefaulting = defaultingIds.has(student.id);
+                         const docs = student.documents || initialFormState.documents;
+                         const isMissingDocs = !checkDoc(docs.rg) || !checkDoc(docs.cpf) || !checkDoc(docs.medical);
+
                          const studentGroups = groups
                             .filter(g => student.groupIds?.includes(g.id))
                             .map(g => g.name)
@@ -501,16 +599,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                              {student.phone && (
                                                  <div className="flex items-center gap-1 mt-0.5">
                                                     <p className="text-xs text-gray-500">{student.phone}</p>
-                                                    <a 
-                                                        href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
-                                                        target="_blank" 
-                                                        rel="noreferrer"
-                                                        className="text-green-600 hover:text-green-700 p-0.5"
-                                                        title="WhatsApp Aluno"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <MessageCircle className="w-3 h-3" />
-                                                    </a>
                                                  </div>
                                              )}
                                              {isDefaulting && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-0.5"><AlertCircle className="w-3 h-3"/> Pendente</span>}
@@ -545,9 +633,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                      </span>
                                  </td>
                                  <td className="px-6 py-3 text-right">
-                                     <button className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
-                                         <Edit className="w-4 h-4" />
-                                     </button>
+                                     <div className="flex justify-end gap-1">
+                                         {!isGuardian && isDefaulting && (
+                                             <button 
+                                                onClick={(e) => handleSendPaymentReminder(e, student)}
+                                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Cobrar Pagamento (WhatsApp)"
+                                             >
+                                                 <Banknote className="w-4 h-4" />
+                                             </button>
+                                         )}
+                                         {!isGuardian && isMissingDocs && (
+                                             <button 
+                                                onClick={(e) => handleSendDocReminder(e, student)}
+                                                className="p-2 text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors"
+                                                title="Cobrar Documentos (WhatsApp)"
+                                             >
+                                                 <FileWarning className="w-4 h-4" />
+                                             </button>
+                                         )}
+                                         <button className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
+                                             <Edit className="w-4 h-4" />
+                                         </button>
+                                     </div>
                                  </td>
                              </tr>
                          );
@@ -780,9 +888,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          {['rg', 'cpf', 'medical', 'address', 'school'].map((docKey) => {
                                              const labelMap: any = { rg: 'RG do Aluno', cpf: 'CPF do Aluno', medical: 'Atestado Médico', address: 'Comp. Residência', school: 'Declaração Escolar' };
                                              const isChecked = studentForm.documents && 
-                                                (typeof studentForm.documents[docKey] === 'boolean' 
-                                                    ? studentForm.documents[docKey] 
-                                                    : studentForm.documents[docKey]?.delivered);
+                                                (typeof (studentForm.documents as any)[docKey] === 'boolean' 
+                                                    ? (studentForm.documents as any)[docKey] 
+                                                    : (studentForm.documents as any)[docKey]?.delivered);
                                              
                                              return (
                                                  <label key={docKey} className={`flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer transition-all text-sm ${isChecked ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
