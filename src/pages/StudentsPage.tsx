@@ -275,6 +275,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleAddCharge = (e: React.FormEvent) => {
       e.preventDefault();
+      // Changed 'newCharge' to 'manualCharge' to match state definition
       if (editingId && manualCharge.description && manualCharge.amount > 0) {
           onAddTransaction({
               description: manualCharge.description,
@@ -286,6 +287,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               paymentMethod: PaymentMethod.PIX_MERCADO_PAGO 
           });
           setShowChargeModal(false);
+          // Reset state
           setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
       }
   };
