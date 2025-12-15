@@ -218,6 +218,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const getAttendeesList = (activity: Activity) => {
       if (activity.groupId) {
+          // Check if student groupIds includes activity.groupId
           return students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!) && s.active);
       }
       if (activity.participants && activity.participants.length > 0) {
@@ -411,6 +412,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   // Get eligible students for scoring (those in the group/participants)
   const getEligibleScorers = () => {
       if (targetType === 'GROUP' && newActivity.groupId) {
+          // Check using includes
           return students.filter(s => s.groupIds && s.groupIds.includes(newActivity.groupId!) && s.active);
       } else if (targetType === 'INDIVIDUAL') {
           return students.filter(s => selectedStudentIds.has(s.id));

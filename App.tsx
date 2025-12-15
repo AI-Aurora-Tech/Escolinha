@@ -13,6 +13,14 @@ import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucid
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
 
+// Helper for error formatting
+const formatError = (error: any) => {
+    if (!error) return 'Erro desconhecido';
+    if (typeof error === 'string') return error;
+    if (error.message) return error.message;
+    return JSON.stringify(error);
+};
+
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -106,22 +114,27 @@ function App() {
 
         // Mappers to match Typescript Interfaces
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => ({
-                 id: s.id,
-                 name: s.name,
-                 birthDate: s.birth_date,
-                 rg: s.rg,
-                 cpf: s.cpf,
-                 phone: s.phone,
-                 medicalCertificateExpiry: s.medical_expiry,
-                 photoUrl: s.photo_url,
-                 address: s.address, // JSONB
-                 guardian: s.guardian, // JSONB
-                 planId: s.plan_id,
-                 groupIds: s.group_ids || [], // Mapeia group_ids (array) para groupIds
-                 active: s.active,
-                 documents: s.documents // JSONB
-             }));
+             const mappedStudents: Student[] = studentsData.map((s: any) => {
+                 // Fallback for missing group_ids column using old group_id
+                 const gIds = s.group_ids || (s.group_id ? [s.group_id] : []);
+                 
+                 return {
+                     id: s.id,
+                     name: s.name,
+                     birthDate: s.birth_date,
+                     rg: s.rg,
+                     cpf: s.cpf,
+                     phone: s.phone,
+                     medicalCertificateExpiry: s.medical_expiry,
+                     photoUrl: s.photo_url,
+                     address: s.address, // JSONB
+                     guardian: s.guardian, // JSONB
+                     planId: s.plan_id,
+                     groupIds: gIds,
+                     active: s.active,
+                     documents: s.documents // JSONB
+                 };
+             });
              setStudents(mappedStudents);
         }
 
@@ -174,11 +187,11 @@ function App() {
                  type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
                  location: a.location || '',
-                 presentationTime: a.presentation_time || '', // Novo
-                 opponent: a.opponent || '', // Novo
-                 homeScore: a.home_score, // Novo
-                 awayScore: a.away_score, // Novo
-                 scorers: a.scorers || [], // Novo
+                 presentationTime: a.presentation_time || '', 
+                 opponent: a.opponent || '', 
+                 homeScore: a.home_score, 
+                 awayScore: a.away_score, 
+                 scorers: a.scorers || [], 
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -478,7 +491,7 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_ids: studentData.groupIds, // Send Array
+        group_ids: studentData.groupIds || [], // Garante envio de array
         active: studentData.active,
         documents: studentData.documents
     };
@@ -507,7 +520,10 @@ function App() {
         }
     } else { 
         console.error("Supabase error:", error);
-        alert(`Erro ao salvar aluno: ${error?.message || 'Verifique se a coluna group_ids existe no banco.'}`); 
+        alert(`Erro ao salvar aluno: ${formatError(error)}`);
+        if (error?.message?.includes('group_ids')) {
+            alert('Atenção: O banco de dados precisa ser atualizado. Falta a coluna "group_ids" (array).');
+        }
     }
     setIsLoading(false);
   };
@@ -561,7 +577,7 @@ function App() {
           }
           alert(`${newStudents.length} alunos importados com sucesso!`);
       } else {
-          alert("Erro na importação em massa.");
+          alert(`Erro na importação em massa: ${formatError(error)}`);
           console.error(error);
       }
       setIsLoading(false);
@@ -584,7 +600,7 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_ids: updatedStudent.groupIds, // Send Array
+          group_ids: updatedStudent.groupIds || [], // Garante envio de array
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
@@ -593,12 +609,14 @@ function App() {
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s));
       } else {
           console.error("Supabase Error:", error);
-          alert(`Erro ao atualizar aluno: ${error?.message || 'Erro desconhecido. Verifique o banco de dados.'}`);
+          alert(`Erro ao atualizar aluno: ${formatError(error)}`);
+          if (error?.message?.includes('group_ids')) {
+             alert('Atenção: A coluna "group_ids" (array) não existe. Atualize o banco de dados.');
+          }
       }
       setIsLoading(false);
   };
   
-  // FIX: Handle both Add and Remove (Sync) for GroupsPage
   const handleBatchAssignStudents = async (selectedIds: string[], groupId: string) => { 
       setIsLoading(true);
       const selectedSet = new Set(selectedIds);
@@ -630,7 +648,11 @@ function App() {
       // Perform updates
       for (const update of updates) {
           if (update) {
-             await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
+             const { error } = await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
+             if (error) {
+                 console.error("Error updating student groups:", error);
+                 alert(`Erro ao salvar grupos para aluno ID ${update.id}: ${formatError(error)}`);
+             }
           }
       }
       
@@ -705,7 +727,7 @@ function App() {
            setActivities(prev => [...prev, ...newActivities]);
       } else {
           console.error("Supabase Error:", error);
-          alert(`Erro ao agendar atividades: ${error?.message || 'Erro desconhecido'}`);
+          alert(`Erro ao agendar atividades: ${formatError(error)}`);
       }
       setIsLoading(false);
   };
@@ -738,7 +760,7 @@ function App() {
           setActivities(prev => prev.map(act => act.id === a.id ? a : act));
       } else {
           console.error("Supabase Update Error:", error);
-          alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
+          alert(`Erro ao atualizar atividade: ${formatError(error)}`);
       }
   };
 
@@ -797,6 +819,7 @@ function App() {
           setTransactions(prev => [...prev, { ...t, id: data.id }]);
       } else {
           console.error("Erro ao adicionar transação:", error);
+          alert(`Erro ao adicionar transação: ${formatError(error)}`);
       }
   };
   
@@ -815,6 +838,8 @@ function App() {
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
           setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
+      } else {
+          alert(`Erro ao atualizar transação: ${formatError(error)}`);
       }
   };
 
@@ -825,17 +850,20 @@ function App() {
           setGroups(prev => [...prev, { ...g, id: data.id }]);
           return data.id;
       }
+      alert(`Erro ao criar grupo: ${formatError(error)}`);
       return null;
   };
   
   const handleUpdateGroup = async (g: any) => { 
       const { error } = await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
       if(!error) setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr));
+      else alert(`Erro ao atualizar grupo: ${formatError(error)}`);
   };
   
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
       if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+      else alert(`Erro ao deletar grupo: ${formatError(error)}`);
   };
   
   const handleAddPlan = async (p: any) => { 
@@ -880,7 +908,7 @@ function App() {
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
   if (!isAuthenticated) {
-      // ... (Login render)
+      // ... (Login render - same as before)
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
