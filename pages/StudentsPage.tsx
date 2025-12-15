@@ -235,7 +235,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               context.drawImage(videoRef.current, 0, 0, 320, 240);
               const dataUrl = canvasRef.current.toDataURL('image/jpeg');
               setCapturedImage(dataUrl);
-              setStudentForm({...studentForm, photoUrl: dataUrl});
+              setStudentForm((prev: any) => ({...prev, photoUrl: dataUrl}));
               stopCamera();
           }
       }
@@ -294,7 +294,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
               const data = await response.json();
               if (!data.erro) {
-                  setStudentForm(prev => ({
+                  setStudentForm((prev: any) => ({
                       ...prev,
                       address: {
                           ...prev.address,
@@ -624,7 +624,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          </label>
                                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
                                              {groups.map(group => {
-                                                const isChecked = studentForm.groupIds.includes(group.id);
+                                                const isChecked = (studentForm.groupIds || []).includes(group.id);
                                                 return (
                                                  <label 
                                                      key={group.id} 
@@ -646,10 +646,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                          className="hidden"
                                                          checked={isChecked}
                                                          onChange={(e) => {
-                                                             const newGroups = e.target.checked
-                                                                 ? [...studentForm.groupIds, group.id]
-                                                                 : studentForm.groupIds.filter((id: string) => id !== group.id);
-                                                             setStudentForm({...studentForm, groupIds: newGroups});
+                                                             setStudentForm(prev => {
+                                                                 const currentIds = prev.groupIds || [];
+                                                                 const newGroups = e.target.checked
+                                                                     ? [...currentIds, group.id]
+                                                                     : currentIds.filter((id: string) => id !== group.id);
+                                                                 return { ...prev, groupIds: newGroups };
+                                                             });
                                                          }}
                                                      />
                                                      <span className="text-sm font-medium truncate">{group.name}</span>
