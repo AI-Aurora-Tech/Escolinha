@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -11,6 +12,26 @@ import { Student, UserRole, User, Plan, Group, Activity, Transaction, Transactio
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
+
+// Helper for error formatting - ROBUST IMPLEMENTATION
+const formatError = (error: any): string => {
+  if (!error) return 'Erro desconhecido';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  
+  if (typeof error === 'object') {
+      // Supabase specific fields
+      if (error.message) return error.message;
+      if (error.error_description) return error.error_description;
+      if (error.details) return error.details;
+      try {
+          return JSON.stringify(error);
+      } catch (e) {
+          return 'Erro detalhado não disponível (Objeto não serializável)';
+      }
+  }
+  return String(error);
+};
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -105,22 +126,32 @@ function App() {
 
         // Mappers to match Typescript Interfaces
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => ({
-                 id: s.id,
-                 name: s.name,
-                 birthDate: s.birth_date,
-                 rg: s.rg,
-                 cpf: s.cpf,
-                 phone: s.phone,
-                 medicalCertificateExpiry: s.medical_expiry,
-                 photoUrl: s.photo_url,
-                 address: s.address, // JSONB
-                 guardian: s.guardian, // JSONB
-                 planId: s.plan_id,
-                 groupId: s.group_id,
-                 active: s.active,
-                 documents: s.documents // JSONB
-             }));
+             const mappedStudents: Student[] = studentsData.map((s: any) => {
+                 // Logic to handle group_id as Array or Single Value (Legacy support)
+                 let normalizedGroupIds: string[] = [];
+                 if (Array.isArray(s.group_id)) {
+                     normalizedGroupIds = s.group_id;
+                 } else if (s.group_id) {
+                     normalizedGroupIds = [s.group_id];
+                 }
+
+                 return {
+                     id: s.id,
+                     name: s.name,
+                     birthDate: s.birth_date,
+                     rg: s.rg,
+                     cpf: s.cpf,
+                     phone: s.phone,
+                     medicalCertificateExpiry: s.medical_expiry,
+                     photoUrl: s.photo_url,
+                     address: s.address, // JSONB
+                     guardian: s.guardian, // JSONB
+                     planId: s.plan_id,
+                     groupIds: normalizedGroupIds, // Mapped to Array
+                     active: s.active,
+                     documents: s.documents // JSONB
+                 };
+             });
              setStudents(mappedStudents);
         }
 
@@ -158,11 +189,13 @@ function App() {
              let relevantActivities = activitiesData;
              if (currentUser?.role === UserRole.RESPONSAVEL && students) {
                  const studentIds = students.map(s => s.id);
-                 const studentGroupIds = students.map(s => s.groupId);
-                 relevantActivities = activitiesData.filter((a: any) => 
-                    (a.group_id && studentGroupIds.includes(a.group_id)) || 
-                    (a.participants && a.participants.some((p: string) => studentIds.includes(p)))
-                 );
+                 // Parent sees activity if one of their children is in the group (check against array) OR explicitly invited
+                 relevantActivities = activitiesData.filter((a: any) => {
+                     const activityGroupId = a.group_id;
+                     const isGroupMatch = students.some(s => s.groupIds.includes(activityGroupId));
+                     const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
+                     return isGroupMatch || isParticipant;
+                 });
              }
 
              setActivities(relevantActivities.map((a: any) => ({
@@ -171,11 +204,11 @@ function App() {
                  type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
                  location: a.location || '',
-                 presentationTime: a.presentation_time || '', // Novo
-                 opponent: a.opponent || '', // Novo
-                 homeScore: a.home_score, // Novo
-                 awayScore: a.away_score, // Novo
-                 scorers: a.scorers || [], // Novo
+                 presentationTime: a.presentation_time || '', 
+                 opponent: a.opponent || '', 
+                 homeScore: a.home_score, 
+                 awayScore: a.away_score, 
+                 scorers: a.scorers || [], 
                  groupId: a.group_id,
                  participants: a.participants || [],
                  date: a.date,
@@ -204,8 +237,7 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // --- LOGIN LOGIC ---
-  
+  // ... (Login logic handles remain identical) ...
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoggingIn(true);
@@ -372,7 +404,6 @@ function App() {
       setCurrentPage('dashboard');
   };
 
-  // Re-declaring key handlers to prevent errors in render 
   const generateAnnualTuition = async (student: Student, plan: Plan) => {
     const today = new Date();
     const currentMonth = today.getMonth();
@@ -417,7 +448,6 @@ function App() {
             plan_id: plan.id,
             payment_link: paymentLink,
             payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-            // Mapeamento correto: App (camelCase) -> Banco (snake_case)
             external_reference: externalReference 
         });
     }
@@ -467,7 +497,9 @@ function App() {
     if (studentData.photoUrl && studentData.photoUrl.startsWith('data:')) {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
-    const payload = {
+    
+    // Payload uses group_id (which can receive the array)
+    let payload: any = {
         name: studentData.name,
         birth_date: studentData.birthDate,
         rg: studentData.rg,
@@ -478,12 +510,19 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_id: studentData.groupId,
+        group_id: studentData.groupIds, // Send Array
         active: studentData.active,
         documents: studentData.documents
     };
-    const { data, error } = await supabase.from('students').insert([payload]).select().single();
+
+    let { data, error } = await supabase.from('students').insert([payload]).select().single();
+
     if (data && !error) {
+        // Logic to normalize return 
+        let normalizedGroupIds: string[] = [];
+        if (Array.isArray(data.group_id)) normalizedGroupIds = data.group_id;
+        else if (data.group_id) normalizedGroupIds = [data.group_id];
+
         const newStudent: Student = {
              id: data.id,
              name: data.name,
@@ -496,7 +535,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupId: data.group_id,
+             groupIds: normalizedGroupIds,
              active: data.active,
              documents: data.documents
         };
@@ -505,13 +544,17 @@ function App() {
             const plan = plans.find(p => p.id === newStudent.planId);
             if (plan) await generateAnnualTuition(newStudent, plan);
         }
-    } else { alert("Erro ao salvar aluno."); }
+    } else { 
+        console.error("Supabase error:", error);
+        alert(`Erro ao salvar aluno: ${formatError(error)}`);
+    }
     setIsLoading(false);
   };
 
   const handleBatchAddStudents = async (studentsData: any[]) => { 
       setIsLoading(true);
-      const payload = studentsData.map(s => ({
+      
+      let payload = studentsData.map(s => ({
         name: s.name,
         birth_date: s.birthDate,
         rg: s.rg,
@@ -522,30 +565,36 @@ function App() {
         address: s.address,
         guardian: s.guardian,
         plan_id: s.planId || null,
-        group_id: s.groupId || null,
+        group_id: s.groupIds || [],
         active: s.active,
         documents: s.documents
       }));
       
-      const { data, error } = await supabase.from('students').insert(payload).select();
-      
+      let { data, error } = await supabase.from('students').insert(payload).select();
+
       if (data && !error) {
-          const newStudents: Student[] = data.map((d: any) => ({
-             id: d.id,
-             name: d.name,
-             birthDate: d.birth_date,
-             rg: d.rg,
-             cpf: d.cpf,
-             phone: d.phone,
-             medicalCertificateExpiry: d.medical_expiry,
-             photoUrl: d.photo_url,
-             address: d.address,
-             guardian: d.guardian,
-             planId: d.plan_id,
-             groupId: d.group_id,
-             active: d.active,
-             documents: d.documents
-          }));
+          const newStudents: Student[] = data.map((d: any) => {
+             let normalizedGroupIds: string[] = [];
+             if (Array.isArray(d.group_id)) normalizedGroupIds = d.group_id;
+             else if (d.group_id) normalizedGroupIds = [d.group_id];
+
+             return {
+                 id: d.id,
+                 name: d.name,
+                 birthDate: d.birth_date,
+                 rg: d.rg,
+                 cpf: d.cpf,
+                 phone: d.phone,
+                 medicalCertificateExpiry: d.medical_expiry,
+                 photoUrl: d.photo_url,
+                 address: d.address,
+                 guardian: d.guardian,
+                 planId: d.plan_id,
+                 groupIds: normalizedGroupIds,
+                 active: d.active,
+                 documents: d.documents
+             }
+          });
           
           setStudents(prev => [...prev, ...newStudents]);
           
@@ -558,7 +607,7 @@ function App() {
           }
           alert(`${newStudents.length} alunos importados com sucesso!`);
       } else {
-          alert("Erro na importação em massa.");
+          alert(`Erro na importação em massa: ${formatError(error)}`);
           console.error(error);
       }
       setIsLoading(false);
@@ -570,7 +619,7 @@ function App() {
       if (updatedStudent.photoUrl && updatedStudent.photoUrl.startsWith('data:')) {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
-      const payload = {
+      const payload: any = {
           name: updatedStudent.name,
           birth_date: updatedStudent.birthDate,
           rg: updatedStudent.rg,
@@ -581,23 +630,63 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_id: updatedStudent.groupId,
+          group_id: updatedStudent.groupIds, // Send Array
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
-      const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
+
+      let { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
+
       if (!error) {
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s));
+      } else {
+          console.error("Supabase Error:", error);
+          alert(`Erro ao atualizar aluno: ${formatError(error)}`);
       }
       setIsLoading(false);
   };
   
-  const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
+  // This function previously overwrote the group. Now we will maintain the functionality
+  // but just setting the array to [gid] if we want to "Assign" rigidly, or append.
+  // The request "Batch Assign" typically implies putting them into a group.
+  // For simplicity and matching typical expectations of "Moving students to a group",
+  // we can append the new group ID if not present.
+  const handleBatchAssignStudents = async (selectedIds: string[], groupId: string) => { 
       setIsLoading(true);
-      const { error } = await supabase.from('students').update({ group_id: gid }).in('id', ids);
-      if (!error) {
-           setStudents(students.map(s => ids.includes(s.id) ? { ...s, groupId: gid } : s));
-      }
+      
+      // We need to process individually or use a PG function to append. 
+      // To keep it simple in React: fetch current, append, update.
+      // Or just update local state and try to best-effort save.
+      
+      // Let's iterate to be safe with arrays
+      const updates = selectedIds.map(async (id) => {
+          const student = students.find(s => s.id === id);
+          if(!student) return;
+          
+          const currentGroups = student.groupIds || [];
+          if (!currentGroups.includes(groupId)) {
+              const newGroups = [...currentGroups, groupId];
+              
+              const { error } = await supabase
+                .from('students')
+                .update({ group_id: newGroups })
+                .eq('id', id);
+                
+              if(!error) {
+                  return { id, newGroups };
+              }
+          }
+          return null;
+      });
+
+      const results = await Promise.all(updates);
+      
+      setStudents(prev => prev.map(s => {
+          const res = results.find(r => r && r.id === s.id);
+          if (res) return { ...s, groupIds: res.newGroups };
+          return s;
+      }));
+
       setIsLoading(false);
   };
   
@@ -605,7 +694,6 @@ function App() {
       setIsLoading(true);
       const payloadList = [];
 
-      // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
       
@@ -621,7 +709,6 @@ function App() {
           recurrence: a.recurrence,
           attendance: a.attendance || [],
           fee_payments: a.feePayments || [],
-          // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
           home_score: a.homeScore ?? 0,
@@ -629,10 +716,9 @@ function App() {
           scorers: a.scorers || []
       };
 
-      const startDate = new Date(a.date + 'T00:00:00'); // Use local time to prevent day shift
+      const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
 
-      // Se for recorrente, gerar para o resto do ano
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
@@ -641,11 +727,9 @@ function App() {
                    ...basePayload,
                    date: dateStr
                });
-               // Adicionar 7 dias
                current.setDate(current.getDate() + 7);
           }
       } else {
-          // Atividade pontual
           payloadList.push({
               ...basePayload,
               date: a.date
@@ -663,21 +747,20 @@ function App() {
            setActivities(prev => [...prev, ...newActivities]);
       } else {
           console.error("Supabase Error:", error);
-          alert(`Erro ao agendar atividades: ${error?.message || 'Erro desconhecido'}`);
+          alert(`Erro ao agendar atividades: ${formatError(error)}`);
       }
       setIsLoading(false);
   };
   
   const handleUpdateActivity = async (a: any) => { 
-      // Robust Sanitization
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
 
       const payload = {
           title: a.title,
           activity_type: a.type, 
-          fee: feeValue,
-          location: locationValue,
+          fee: feeValue, 
+          location: locationValue, 
           group_id: a.groupId || null,
           participants: a.participants || [],
           date: a.date,
@@ -686,7 +769,6 @@ function App() {
           recurrence: a.recurrence,
           attendance: a.attendance || [],
           fee_payments: a.feePayments || [],
-          // New Fields
           presentation_time: a.presentationTime,
           opponent: a.opponent,
           home_score: a.homeScore ?? 0,
@@ -698,7 +780,7 @@ function App() {
           setActivities(prev => prev.map(act => act.id === a.id ? a : act));
       } else {
           console.error("Supabase Update Error:", error);
-          alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
+          alert(`Erro ao atualizar atividade: ${formatError(error)}`);
       }
   };
 
@@ -729,14 +811,10 @@ function App() {
   const handleUpdateFeePayment = async (aid: string, sid: string) => {
       const activity = activities.find(a => a.id === aid);
       if(!activity) return;
-
-      // Inicializa feePayments se não existir
       const currentFeePayments = activity.feePayments || [];
-      
       const newFeePayments = currentFeePayments.includes(sid)
         ? currentFeePayments.filter(id => id !== sid)
         : [...currentFeePayments, sid];
-
       const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
@@ -754,7 +832,6 @@ function App() {
           plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
           payment_link: t.paymentLink,
-          // Mapeamento correto: App (camelCase) -> Banco (snake_case)
           external_reference: t.externalReference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
@@ -762,6 +839,7 @@ function App() {
           setTransactions(prev => [...prev, { ...t, id: data.id }]);
       } else {
           console.error("Erro ao adicionar transação:", error);
+          alert(`Erro ao adicionar transação: ${formatError(error)}`);
       }
   };
   
@@ -780,22 +858,32 @@ function App() {
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
           setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
+      } else {
+          alert(`Erro ao atualizar transação: ${formatError(error)}`);
       }
   };
 
-  const handleAddGroup = async (g: any) => { 
+  // Fix: Return the generated ID
+  const handleAddGroup = async (g: any): Promise<string | null> => { 
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
-      if(data && !error) setGroups(prev => [...prev, { ...g, id: data.id }]);
+      if(data && !error) {
+          setGroups(prev => [...prev, { ...g, id: data.id }]);
+          return data.id;
+      }
+      alert(`Erro ao criar grupo: ${formatError(error)}`);
+      return null;
   };
   
   const handleUpdateGroup = async (g: any) => { 
       const { error } = await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
       if(!error) setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr));
+      else alert(`Erro ao atualizar grupo: ${formatError(error)}`);
   };
   
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
       if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+      else alert(`Erro ao deletar grupo: ${formatError(error)}`);
   };
   
   const handleAddPlan = async (p: any) => { 
@@ -823,7 +911,6 @@ function App() {
   };
   
   const handleUpdateUser = async (u: any) => { 
-      // Remove password if empty to not overwrite
       const payload: any = { name: u.name, email: u.email, role: u.role, avatar: u.avatar };
       if(u.password) payload.password = u.password;
       
@@ -840,8 +927,8 @@ function App() {
   
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
-  // --- LOGIN SCREEN RENDER ---
   if (!isAuthenticated) {
+      // ... (Login render - same as before)
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -853,7 +940,6 @@ function App() {
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
                   </div>
                   
-                  {/* TABS */}
                   <div className="flex border-b border-gray-100">
                       <button 
                         className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -955,7 +1041,6 @@ function App() {
       );
   }
 
-  // --- APP CONTENT ---
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -982,7 +1067,6 @@ function App() {
                   currentUser={currentUser}
                />;
       case 'groups':
-        // Responsável can't edit groups
         if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
         return <GroupsPage 
                   groups={groups} 
