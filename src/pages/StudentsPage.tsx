@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
+import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, DocumentItem } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check, Banknote } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -80,6 +80,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [studentForm, setStudentForm] = useState(initialFormState);
 
+  // Helper to check documents safely
+  const checkDoc = (doc: boolean | DocumentItem | undefined) => {
+      if (doc === undefined) return false;
+      if (typeof doc === 'boolean') return doc;
+      return doc.delivered;
+  };
+
   // Apply initial props filter
   useEffect(() => {
     if (initialFilter === 'DEFAULTING') setFinanceFilter('DEFAULTING');
@@ -96,7 +103,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     );
   }, [transactions]);
 
-  const checkDoc = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
 
   const stats = useMemo(() => {
       const active = students.filter(s => s.active).length;
@@ -883,9 +889,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          {['rg', 'cpf', 'medical', 'address', 'school'].map((docKey) => {
                                              const labelMap: any = { rg: 'RG do Aluno', cpf: 'CPF do Aluno', medical: 'Atestado Médico', address: 'Comp. Residência', school: 'Declaração Escolar' };
                                              const isChecked = studentForm.documents && 
-                                                (typeof studentForm.documents[docKey] === 'boolean' 
-                                                    ? studentForm.documents[docKey] 
-                                                    : studentForm.documents[docKey]?.delivered);
+                                                (typeof (studentForm.documents as any)[docKey] === 'boolean' 
+                                                    ? (studentForm.documents as any)[docKey] 
+                                                    : (studentForm.documents as any)[docKey]?.delivered);
                                              
                                              return (
                                                  <label key={docKey} className={`flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer transition-all text-sm ${isChecked ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
