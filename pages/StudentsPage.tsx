@@ -4,6 +4,7 @@ import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, Paym
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check, Banknote } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { createMPPreference } from '../services/mercadoPago';
 
 interface StudentsPageProps {
   students: Student[];
@@ -53,6 +54,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   // Manual Charge
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+  const [isGeneratingCharge, setIsGeneratingCharge] = useState(false);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -278,10 +280,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setIsModalOpen(false);
   };
 
-  const handleAddCharge = (e: React.FormEvent) => {
+  const handleAddCharge = async (e: React.FormEvent) => {
       e.preventDefault();
-      // Corrected: Use manualCharge state instead of undefined newCharge
+      
       if (editingId && manualCharge.description && manualCharge.amount > 0) {
+          setIsGeneratingCharge(true);
+          const student = students.find(s => s.id === editingId);
+          let paymentLink = undefined;
+          let externalReference = crypto.randomUUID();
+
+          // Attempt to generate MP Link
+          if (student && student.guardian) {
+              try {
+                  const mpResult = await createMPPreference({
+                      title: manualCharge.description,
+                      price: manualCharge.amount,
+                      externalReference: externalReference,
+                      payer: {
+                          name: student.guardian.name,
+                          email: student.guardian.email || 'email@naoinformado.com',
+                          phone: student.guardian.phone,
+                          identification: { type: 'CPF', number: student.guardian.cpf }
+                      }
+                  });
+                  if (mpResult) {
+                      paymentLink = mpResult.init_point;
+                  }
+              } catch (error) {
+                  console.error("Erro ao gerar link MP:", error);
+                  // Continue without link
+              }
+          }
+
           onAddTransaction({
               description: manualCharge.description,
               amount: manualCharge.amount,
@@ -289,10 +319,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               date: manualCharge.date,
               status: PaymentStatus.PENDING,
               studentId: editingId,
-              paymentMethod: PaymentMethod.PIX_MERCADO_PAGO 
+              paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
+              paymentLink: paymentLink,
+              externalReference: paymentLink ? externalReference : undefined
           });
+
+          setIsGeneratingCharge(false);
           setShowChargeModal(false);
-          // Reset state
           setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
       }
   };
@@ -1066,39 +1099,36 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
                 <h3 className="font-bold text-lg mb-4 text-gray-900">Nova Cobrança Avulsa</h3>
-                <div className="space-y-4">
+                <form onSubmit={handleAddCharge} className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label>
                         <input type="text" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Ex: Uniforme" 
-                            value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} />
+                            value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} disabled={isGeneratingCharge} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label>
                         <input type="number" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="0.00" 
-                            value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} />
+                            value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} disabled={isGeneratingCharge} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label>
                         <input type="date" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" 
-                            value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} />
+                            value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} disabled={isGeneratingCharge} />
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
-                        <button onClick={() => setShowChargeModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancelar</button>
-                        <button onClick={() => {
-                            onAddTransaction({
-                                description: manualCharge.description,
-                                amount: manualCharge.amount,
-                                type: TransactionType.INCOME,
-                                status: PaymentStatus.PENDING,
-                                date: manualCharge.date,
-                                studentId: editingId,
-                                paymentMethod: PaymentMethod.PIX_MERCADO_PAGO
-                            });
-                            setShowChargeModal(false);
-                            setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
-                        }} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-bold shadow-lg shadow-primary-500/20">Criar Cobrança</button>
+                        <button type="button" onClick={() => setShowChargeModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium" disabled={isGeneratingCharge}>Cancelar</button>
+                        <button type="submit" disabled={isGeneratingCharge} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-bold shadow-lg shadow-primary-500/20 flex items-center gap-2">
+                            {isGeneratingCharge ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Gerando Link...
+                                </>
+                            ) : (
+                                'Criar Cobrança'
+                            )}
+                        </button>
                     </div>
-                </div>
+                </form>
             </div>
         </div>
       )}
