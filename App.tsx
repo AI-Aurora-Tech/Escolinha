@@ -13,12 +13,24 @@ import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucid
 import { supabase } from './lib/supabaseClient';
 import { createMPPreference } from './services/mercadoPago';
 
-// Helper for error formatting
-const formatError = (error: any) => {
-    if (!error) return 'Erro desconhecido';
-    if (typeof error === 'string') return error;
-    if (error.message) return error.message;
-    return JSON.stringify(error);
+// Helper for error formatting - ROBUST IMPLEMENTATION
+const formatError = (error: any): string => {
+  if (!error) return 'Erro desconhecido';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  
+  if (typeof error === 'object') {
+      // Supabase specific fields
+      if (error.message) return error.message;
+      if (error.error_description) return error.error_description;
+      if (error.details) return error.details;
+      try {
+          return JSON.stringify(error);
+      } catch (e) {
+          return 'Erro detalhado não disponível (Objeto não serializável)';
+      }
+  }
+  return String(error);
 };
 
 function App() {
@@ -480,6 +492,8 @@ function App() {
     if (studentData.photoUrl && studentData.photoUrl.startsWith('data:')) {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
+    
+    // Initial payload, try to use group_ids
     let payload: any = {
         name: studentData.name,
         birth_date: studentData.birthDate,
@@ -498,7 +512,7 @@ function App() {
 
     let { data, error } = await supabase.from('students').insert([payload]).select().single();
 
-    // FALLBACK IF group_ids does not exist
+    // FALLBACK IF group_ids does not exist (Error code 42703 usually means column does not exist)
     if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
          console.warn("Column group_ids not found, falling back to group_id");
          delete payload.group_ids;
@@ -565,6 +579,7 @@ function App() {
       // Fallback
       if (error && (error.message?.includes('group_ids') || error.code === '42703')) {
           console.warn("Batch add: Column group_ids not found, falling back to group_id");
+          // Re-map payload to use group_id (single) instead of group_ids (array)
           payload = payload.map(p => {
               const { group_ids, ...rest } = p as any;
               return {
