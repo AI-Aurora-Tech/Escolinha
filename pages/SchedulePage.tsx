@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal } from 'lucide-react';
@@ -217,7 +218,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const getAttendeesList = (activity: Activity) => {
       if (activity.groupId) {
-          return students.filter(s => s.groupId === activity.groupId && s.active);
+          return students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!) && s.active);
       }
       if (activity.participants && activity.participants.length > 0) {
           return students.filter(s => activity.participants?.includes(s.id));
@@ -410,7 +411,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   // Get eligible students for scoring (those in the group/participants)
   const getEligibleScorers = () => {
       if (targetType === 'GROUP' && newActivity.groupId) {
-          return students.filter(s => s.groupId === newActivity.groupId && s.active);
+          return students.filter(s => s.groupIds && s.groupIds.includes(newActivity.groupId!) && s.active);
       } else if (targetType === 'INDIVIDUAL') {
           return students.filter(s => selectedStudentIds.has(s.id));
       }
@@ -490,7 +491,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     const group = groups.find(g => g.id === activity.groupId);
                     const isPast = new Date(activity.date + 'T' + activity.endTime) < new Date();
                     const participantCount = activity.groupId 
-                        ? students.filter(s => s.groupId === activity.groupId).length 
+                        ? students.filter(s => s.groupIds && s.groupIds.includes(activity.groupId!)).length 
                         : (activity.participants?.length || 0);
                     const isGame = activity.type === 'GAME';
                     
