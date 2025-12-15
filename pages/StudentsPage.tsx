@@ -20,7 +20,7 @@ interface StudentsPageProps {
   currentUser?: User | null;
 }
 
-// Helper outside component to avoid dependency cycles
+// Helper outside component to avoid dependency cycles and re-creation
 const checkDoc = (doc: boolean | DocumentItem | undefined) => {
     if (doc === undefined) return false;
     if (typeof doc === 'boolean') return doc;
@@ -280,7 +280,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleAddCharge = (e: React.FormEvent) => {
       e.preventDefault();
-      // Changed 'newCharge' to 'manualCharge' to match state definition
+      // Corrected: Use manualCharge state instead of undefined newCharge
       if (editingId && manualCharge.description && manualCharge.amount > 0) {
           onAddTransaction({
               description: manualCharge.description,
