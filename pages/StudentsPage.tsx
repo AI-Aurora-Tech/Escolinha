@@ -1,11 +1,9 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileText, Filter, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, MoreVertical, TrendingUp, AlertCircle, Users, FileWarning, Shirt, FileSpreadsheet, Upload, RefreshCw, Copy, Send, Ban, HeartPulse, ShieldCheck, FolderCheck, Wallet, History, Printer, QrCode, PlusCircle, ArrowUpCircle, ArrowDownCircle, Settings, Save, Lock, Calendar, ChevronDown, Check } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { checkMPPaymentStatus, createPixPayment, getPaymentStatus, createMPPreference } from '../services/mercadoPago';
 
 interface StudentsPageProps {
   students: Student[];
@@ -14,7 +12,7 @@ interface StudentsPageProps {
   transactions: Transaction[];
   activities: Activity[];
   onAddStudent: (s: Omit<Student, 'id'>) => void;
-  onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
+  onBatchAddStudents: (s: any[]) => void;
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Transaction) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
@@ -23,7 +21,7 @@ interface StudentsPageProps {
 }
 
 export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, initialFilter, currentUser }) => {
-  // UI State - Default to LIST view as requested
+  // UI State
   const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('LIST');
   const [searchTerm, setSearchTerm] = useState('');
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
@@ -38,14 +36,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Payment PIX State
-  const [showPixModal, setShowPixModal] = useState(false);
-  const [pixLoading, setPixLoading] = useState(false);
-  const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
-  
-  // Monitoring
-  const [monitoredPayments, setMonitoredPayments] = useState<{ mpId: number, txIds: string[] }[]>([]);
-
   // Camera & Upload
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -57,15 +47,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
 
-  // Bulk Send
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [bulkQueue, setBulkQueue] = useState<Transaction[]>([]);
-  const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0);
-  const [bulkIsRunning, setBulkIsRunning] = useState(false);
-  const [bulkCountdown, setBulkCountdown] = useState(10);
-  const [bulkLogs, setBulkLogs] = useState<string[]>([]);
-  const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   const initialFormState: any = {
@@ -75,7 +56,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     cpf: '',
     phone: '',
     medicalCertificateExpiry: '',
-    groupIds: [], // Array for multiple groups
+    groupIds: [],
     planId: '',
     active: true,
     address: {
@@ -106,53 +87,59 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   }, [initialFilter]);
 
   // --- STATS CALCULATIONS ---
-  const stats = {
-      total: students.length,
-      active: students.filter(s => s.active).length,
-      defaulting: 0,
-      missingDocs: 0
-  };
+  const defaultingIds = useMemo(() => {
+    const today = new Date();
+    return new Set(
+        transactions
+            .filter(t => t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && new Date(t.date) < today && t.studentId)
+            .map(t => t.studentId)
+    );
+  }, [transactions]);
 
-  // Calculate defaulting (expensive operation, do efficiently)
-  const today = new Date();
-  const defaultingIds = new Set(
-    transactions
-        .filter(t => t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && new Date(t.date) < today)
-        .map(t => t.studentId)
-  );
-  stats.defaulting = defaultingIds.size;
+  const stats = useMemo(() => {
+      const active = students.filter(s => s.active).length;
+      const missingDocs = students.filter(s => {
+          if (!s.active || !s.documents) return false;
+          const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
+          return !check(s.documents.rg) || !check(s.documents.cpf) || !check(s.documents.medical);
+      }).length;
+      
+      // Check intersection of defaulting IDs and current students list
+      const defaultingCount = students.filter(s => defaultingIds.has(s.id)).length;
 
-  // Calculate Missing Docs
-  stats.missingDocs = students.filter(s => {
-      if (!s.active || !s.documents) return false;
-      const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
-      return !check(s.documents.rg) || !check(s.documents.cpf) || !check(s.documents.medical);
-  }).length;
-
+      return {
+          total: students.length,
+          active,
+          defaulting: defaultingCount,
+          missingDocs
+      };
+  }, [students, defaultingIds]);
 
   // --- FILTER LOGIC ---
-  const filteredStudents = students.filter(student => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
-        student.name.toLowerCase().includes(searchLower) ||
-        student.guardian.name.toLowerCase().includes(searchLower);
-    
-    if (!matchesSearch) return false;
+  const filteredStudents = useMemo(() => {
+    return students.filter(student => {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = 
+            student.name.toLowerCase().includes(searchLower) ||
+            student.guardian.name.toLowerCase().includes(searchLower);
+        
+        if (!matchesSearch) return false;
 
-    if (statusFilter === 'ACTIVE' && !student.active) return false;
-    if (statusFilter === 'INACTIVE' && student.active) return false;
+        if (statusFilter === 'ACTIVE' && !student.active) return false;
+        if (statusFilter === 'INACTIVE' && student.active) return false;
 
-    if (financeFilter === 'DEFAULTING' && !defaultingIds.has(student.id)) return false;
+        if (financeFilter === 'DEFAULTING' && !defaultingIds.has(student.id)) return false;
 
-    if (docsFilter === 'MISSING') {
-        const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
-        const docs = student.documents || initialFormState.documents;
-        const isMissing = !check(docs.rg) || !check(docs.cpf) || !check(docs.medical);
-        if (!isMissing) return false;
-    }
+        if (docsFilter === 'MISSING') {
+            const check = (doc: any) => typeof doc === 'boolean' ? doc : doc?.delivered;
+            const docs = student.documents || initialFormState.documents;
+            const isMissing = !check(docs.rg) || !check(docs.cpf) || !check(docs.medical);
+            if (!isMissing) return false;
+        }
 
-    return true;
-  });
+        return true;
+    });
+  }, [students, searchTerm, statusFilter, financeFilter, docsFilter, defaultingIds]);
 
   // --- ACTIONS ---
   const formatDate = (dateString: string) => {
@@ -198,7 +185,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setCapturedImage(student.photoUrl || null);
     setIsGroupDropdownOpen(false);
     
-    // Ensure groupIds is always an array to prevent crashes
+    // Ensure groupIds is always an array
     const safeGroupIds = Array.isArray(student.groupIds) ? student.groupIds : [];
     
     setStudentForm({
@@ -216,13 +203,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const currentIds = Array.isArray(prev.groupIds) ? prev.groupIds : [];
           const exists = currentIds.includes(groupId);
           let newGroups;
-          
           if (exists) {
               newGroups = currentIds.filter((id: string) => id !== groupId);
           } else {
               newGroups = [...currentIds, groupId];
           }
-          
           return { ...prev, groupIds: newGroups };
       });
   };
@@ -272,40 +257,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           videoRef.current.srcObject = null;
       }
       setIsCameraOpen(false);
-  };
-
-  // --- BULK SEND ---
-  const handleStartBulkSend = () => {
-      const activeStudents = students.filter(s => s.active);
-      const queue: Transaction[] = [];
-
-      activeStudents.forEach(student => {
-          const studentPendingTxs = transactions
-            .filter(t => 
-                t.studentId === student.id && 
-                t.type === TransactionType.INCOME && 
-                (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
-            )
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
-
-          if (studentPendingTxs.length > 0) {
-              queue.push(studentPendingTxs[0]);
-          }
-      });
-
-      if (queue.length === 0) {
-          alert("Não há mensalidades pendentes para enviar.");
-          return;
-      }
-
-      if (confirm(`Encontradas ${queue.length} cobranças pendentes. Deseja iniciar o envio?`)) {
-          setBulkQueue(queue);
-          setBulkCurrentIndex(0);
-          setBulkIsRunning(true);
-          setIsBulkModalOpen(true);
-          setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]);
-          setBulkCountdown(1); 
-      }
   };
 
   // --- CEP ---
@@ -410,13 +361,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               {!isGuardian && (
                   <>
                     <button 
-                        onClick={handleStartBulkSend}
-                        className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors"
-                        title="Cobrança em Massa"
-                    >
-                        <MessageCircle className="w-5 h-5" />
-                    </button>
-                    <button 
                         onClick={handleOpenAdd}
                         className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors font-medium"
                     >
@@ -432,7 +376,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredStudents.map(student => {
                 const isDefaulting = defaultingIds.has(student.id);
-                // Get list of group names
                 const studentGroups = groups
                     .filter(g => student.groupIds?.includes(g.id))
                     .map(g => g.name)
@@ -923,9 +866,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                                     </button>
                                                                 )}
                                                                 {tx.paymentLink && (
-                                                                    <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Link de Pagamento">
-                                                                        <LinkIcon className="w-4 h-4" />
-                                                                    </a>
+                                                                    <>
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                const phone = studentForm.guardian.phone.replace(/\D/g, '');
+                                                                                if (phone) {
+                                                                                    const msg = `Olá ${studentForm.guardian.name}, segue o link para pagamento referente a: *${tx.description}* (Venc: ${formatDate(tx.date)})\n\nLink: ${tx.paymentLink}`;
+                                                                                    window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                                                                                } else {
+                                                                                    alert("Telefone do responsável não cadastrado.");
+                                                                                }
+                                                                            }}
+                                                                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                                                                            title="Enviar Link no WhatsApp"
+                                                                        >
+                                                                            <Send className="w-4 h-4" />
+                                                                        </button>
+                                                                        <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Abrir Link de Pagamento">
+                                                                            <LinkIcon className="w-4 h-4" />
+                                                                        </a>
+                                                                    </>
                                                                 )}
                                                             </>
                                                         )}
@@ -994,31 +954,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       )}
 
       {/* --- EXTRA MODALS (Bulk Send & Charge) --- */}
-      {isBulkModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-                  <h3 className="text-lg font-bold mb-4">Envio em Massa - WhatsApp</h3>
-                  <div className="mb-4">
-                      {bulkIsRunning ? (
-                           <div className="text-center py-6">
-                               <Loader2 className="w-10 h-10 animate-spin mx-auto text-primary-600 mb-3" />
-                               <p className="text-sm text-gray-600 font-medium">Enviando {bulkCurrentIndex + 1} de {bulkQueue.length}...</p>
-                               <p className="text-xs text-gray-400 mt-1">Próximo envio em {bulkCountdown}s</p>
-                           </div>
-                      ) : (
-                          <div className="text-center text-green-600 font-bold py-6">Processo Finalizado!</div>
-                      )}
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-lg h-32 overflow-y-auto text-xs font-mono mb-4 border border-gray-100">
-                      {bulkLogs.map((log, i) => <div key={i}>{log}</div>)}
-                  </div>
-                  <div className="flex justify-end">
-                      <button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium">Fechar</button>
-                  </div>
-              </div>
-          </div>
-      )}
-      
       {showChargeModal && editingId && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
