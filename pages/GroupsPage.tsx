@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 interface GroupsPageProps {
   groups: Group[];
   students: Student[];
-  onAddGroup: (group: Group) => Promise<string | null>; // Atualizado para retornar Promise com ID
+  onAddGroup: (group: Group) => Promise<string | null>;
   onUpdateGroup: (group: Group) => void;
   onDeleteGroup: (id: string) => void;
   onBatchAssignStudents: (studentIds: string[], groupId: string) => void;
@@ -53,8 +53,11 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
         name: group.name
     });
     
-    // Check which students have this group ID in their groupIds array
-    const currentStudents = students.filter(s => s.groupIds.includes(group.id)).map(s => s.id);
+    // Check if student has this group in their groupIds array
+    const currentStudents = students
+        .filter(s => s.groupIds && s.groupIds.includes(group.id))
+        .map(s => s.id);
+
     setSelectedStudentIds(new Set(currentStudents));
     setSearchTerm('');
     setIsModalOpen(true);
@@ -62,22 +65,21 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let groupId = editingId;
+    let targetGroupId = editingId;
     
     if (editingId) {
         onUpdateGroup({ ...form, id: editingId });
     } else {
-        // Passamos um ID temporário vazio, pois o App.tsx vai gerar o real
-        const newId = await onAddGroup({ ...form, id: '' });
-        if (newId) {
-            groupId = newId;
-        }
+        // Wait for ID from Supabase
+        const newId = await onAddGroup({ ...form, id: '' }); // ID is ignored in insert usually
+        targetGroupId = newId;
     }
     
-    // Só vincula os alunos se tivermos um ID de grupo válido (existente ou recém-criado)
-    if (groupId) {
-        onBatchAssignStudents(Array.from(selectedStudentIds), groupId);
+    // Assign/Sync students
+    if (targetGroupId) {
+        onBatchAssignStudents(Array.from(selectedStudentIds), targetGroupId);
     }
+    
     setIsModalOpen(false);
   };
 
@@ -88,7 +90,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   };
 
   const handleExportGroupPDF = (group: Group) => {
-    const groupStudents = students.filter(s => s.groupIds.includes(group.id));
+    const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
 
     if (groupStudents.length === 0) {
         alert('Este grupo não possui alunos para exportar.');
@@ -158,7 +160,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {groups.map(group => {
-            const studentCount = students.filter(s => s.groupIds.includes(group.id)).length;
+            const studentCount = students.filter(s => s.groupIds && s.groupIds.includes(group.id)).length;
 
             return (
                 <div key={group.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:border-primary-200 transition-colors">
@@ -213,9 +215,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                 placeholder="Ex: Fraldinha A"
                                 value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
                         </div>
-                        <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-200 mt-2">
-                            <p><strong>Nota:</strong> Um aluno pode ser selecionado para participar de múltiplos grupos simultaneamente.</p>
-                        </div>
                     </div>
 
                     <div className="flex flex-col h-[400px]">
@@ -240,10 +239,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                     {filteredStudents.map(student => {
                                         const isSelected = selectedStudentIds.has(student.id);
                                         const age = calculateAge(student.birthDate);
-                                        // Show other groups the student is part of
-                                        const otherGroupNames = groups
-                                            .filter(g => student.groupIds.includes(g.id) && g.id !== editingId)
-                                            .map(g => g.name);
+                                        const studentGroupNames = student.groupIds ? student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') : '';
 
                                         return (
                                             <div 
@@ -259,15 +255,11 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                                     <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>
                                                         {student.name}
                                                     </p>
-                                                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-1">
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500">
                                                         <span>{age} anos</span>
-                                                        {otherGroupNames.length > 0 && (
-                                                            <span className="flex gap-1 flex-wrap">
-                                                                {otherGroupNames.map(gn => (
-                                                                     <span key={gn} className="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">
-                                                                        {gn}
-                                                                     </span>
-                                                                ))}
+                                                        {studentGroupNames && (
+                                                            <span className="truncate max-w-[150px] text-gray-400" title={studentGroupNames}>
+                                                                • {studentGroupNames}
                                                             </span>
                                                         )}
                                                     </div>
