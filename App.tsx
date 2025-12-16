@@ -108,17 +108,26 @@ function App() {
         if (studentsData) {
              const mappedStudents: Student[] = studentsData.map((s: any) => {
                  // Logic to retrieve groupIds from multiple sources
-                 // 1. Try DB 'group_ids' column (Primary)
-                 // 2. Try 'guardian.system_metadata.group_ids' (Legacy Workaround)
+                 // 1. Try DB 'group_ids' column (Primary if migration ran)
+                 // 2. Try 'guardian.system_metadata.group_ids' (Robust Backup)
                  // 3. Fallback to 'group_id' (Legacy single column)
                  let finalGroupIds: string[] = [];
                  
-                 if (s.group_ids && Array.isArray(s.group_ids)) {
+                 // Priority 1: New Array Column (if exists and populated)
+                 if (s.group_ids && Array.isArray(s.group_ids) && s.group_ids.length > 0) {
                      finalGroupIds = s.group_ids;
-                 } else if (s.guardian?.system_metadata?.group_ids) {
+                 } 
+                 // Priority 2: Metadata in Guardian (The "Fail-safe")
+                 else if (s.guardian?.system_metadata?.group_ids && Array.isArray(s.guardian.system_metadata.group_ids)) {
                      finalGroupIds = s.guardian.system_metadata.group_ids;
-                 } else if (s.group_id) {
-                     finalGroupIds = [s.group_id];
+                 } 
+                 // Priority 3: Legacy Single Column
+                 else if (s.group_id) {
+                     // Handle if it's a string ID or a JSONB object (which caused your error)
+                     const val = typeof s.group_id === 'object' ? (s.group_id as any)?.id : s.group_id;
+                     if (typeof val === 'string' && val.length > 0) {
+                        finalGroupIds = [val];
+                     }
                  }
 
                  return {
@@ -483,8 +492,19 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     
+    // --- WORKAROUND LOGIC ---
+    // Mesmo tentando salvar em 'group_ids' (array), salvamos também no 'guardian.system_metadata.group_ids'.
+    // Isso garante que os dados persistam mesmo que a coluna nova não exista ou a migração tenha falhado.
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-    
+
+    const enrichedGuardian = {
+        ...studentData.guardian,
+        system_metadata: {
+            ...((studentData.guardian as any).system_metadata || {}),
+            group_ids: studentData.groupIds // Backup here!
+        }
+    };
+
     const payload = {
         name: studentData.name,
         birth_date: studentData.birthDate,
@@ -494,9 +514,9 @@ function App() {
         medical_expiry: studentData.medicalCertificateExpiry,
         photo_url: finalPhotoUrl,
         address: studentData.address,
-        guardian: studentData.guardian, 
+        guardian: enrichedGuardian, // Saved with backup metadata
         plan_id: studentData.planId,
-        group_ids: studentData.groupIds, // Send Array to new column
+        group_ids: studentData.groupIds, // Try saving to new column (might be ignored if missing)
         group_id: primaryGroupId, // Sync legacy column for fallback
         active: studentData.active,
         documents: studentData.documents
@@ -515,6 +535,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
+             // Use local state immediately to reflect UI
              groupIds: studentData.groupIds,
              active: data.active,
              documents: data.documents
@@ -535,6 +556,16 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
+        
+        // Add backup metadata
+        const enrichedGuardian = {
+            ...s.guardian,
+            system_metadata: {
+                ...(s.guardian.system_metadata || {}),
+                group_ids: s.groupIds
+            }
+        };
+
         return {
             name: s.name,
             birth_date: s.birthDate,
@@ -544,7 +575,7 @@ function App() {
             medical_expiry: s.medicalCertificateExpiry,
             photo_url: s.photoUrl,
             address: s.address,
-            guardian: s.guardian,
+            guardian: enrichedGuardian,
             plan_id: s.planId || null,
             group_ids: s.groupIds || [],
             group_id: primaryGroupId, // Sync legacy
@@ -597,8 +628,16 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       
-      // Handle legacy sync
+      // Handle legacy sync & Backup Metadata
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
+
+      const enrichedGuardian = {
+          ...updatedStudent.guardian,
+          system_metadata: {
+              ...((updatedStudent.guardian as any).system_metadata || {}),
+              group_ids: updatedStudent.groupIds // Backup here!
+          }
+      };
 
       const payload = {
           name: updatedStudent.name,
@@ -609,7 +648,7 @@ function App() {
           medical_expiry: updatedStudent.medicalCertificateExpiry,
           photo_url: finalPhotoUrl,
           address: updatedStudent.address,
-          guardian: updatedStudent.guardian,
+          guardian: enrichedGuardian,
           plan_id: updatedStudent.planId,
           group_ids: updatedStudent.groupIds, // Send to new column
           group_id: primaryGroupId, // Keep legacy column in sync
@@ -620,7 +659,8 @@ function App() {
       if (!error) {
           setStudents(students.map(s => s.id === updatedStudent.id ? { 
               ...updatedStudent, 
-              photoUrl: finalPhotoUrl
+              photoUrl: finalPhotoUrl,
+              guardian: enrichedGuardian // Update local state guardian too to preserve metadata
           } : s));
       } else {
           console.error("Supabase Error:", error);
@@ -652,7 +692,16 @@ function App() {
           }
 
           if (changed) {
-              return { id: student.id, group_ids: Array.from(currentGroups), guardian: student.guardian };
+              const newGroupIds = Array.from(currentGroups);
+              // Update guardian metadata locally
+              const enrichedGuardian = {
+                  ...student.guardian,
+                  system_metadata: {
+                      ...((student.guardian as any).system_metadata || {}),
+                      group_ids: newGroupIds
+                  }
+              };
+              return { id: student.id, group_ids: newGroupIds, guardian: enrichedGuardian };
           }
           return null;
       }).filter(Boolean);
@@ -666,7 +715,8 @@ function App() {
                 .from('students')
                 .update({ 
                     group_ids: update.group_ids,
-                    group_id: legacyGroupId
+                    group_id: legacyGroupId,
+                    guardian: update.guardian // Save backup
                 })
                 .eq('id', update.id);
              
