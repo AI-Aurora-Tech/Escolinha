@@ -425,12 +425,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {/* --- TOOLBAR --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-              <div className="relative">
+              <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input 
                       type="text" 
                       placeholder="Buscar aluno..." 
-                      className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full sm:w-64"
+                      className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -464,7 +464,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   <>
                     <button 
                         onClick={handleOpenAdd}
-                        className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors font-medium"
+                        className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors font-medium whitespace-nowrap"
                     >
                         <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Novo Aluno</span>
                     </button>
@@ -579,101 +579,104 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-             <table className="w-full text-left border-collapse">
-                 <thead className="bg-gray-50 border-b border-gray-200">
-                     <tr>
-                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
-                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade / Grupos</th>
-                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Responsável</th>
-                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Status</th>
-                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
-                     </tr>
-                 </thead>
-                 <tbody className="divide-y divide-gray-100">
-                     {filteredStudents.map(student => {
-                         const isDefaulting = defaultingIds.has(student.id);
-                         const docs = student.documents || initialFormState.documents;
-                         const isMissingDocs = !checkDoc(docs.rg) || !checkDoc(docs.cpf) || !checkDoc(docs.medical);
+             {/* Wraps table for horizontal scroll on mobile */}
+             <div className="overflow-x-auto">
+                 <table className="w-full text-left border-collapse min-w-[800px]">
+                     <thead className="bg-gray-50 border-b border-gray-200">
+                         <tr>
+                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
+                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade / Grupos</th>
+                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Responsável</th>
+                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Status</th>
+                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                         </tr>
+                     </thead>
+                     <tbody className="divide-y divide-gray-100">
+                         {filteredStudents.map(student => {
+                             const isDefaulting = defaultingIds.has(student.id);
+                             const docs = student.documents || initialFormState.documents;
+                             const isMissingDocs = !checkDoc(docs.rg) || !checkDoc(docs.cpf) || !checkDoc(docs.medical);
 
-                         const studentGroups = groups
-                            .filter(g => student.groupIds?.includes(g.id))
-                            .map(g => g.name)
-                            .join(', ');
+                             const studentGroups = groups
+                                .filter(g => student.groupIds?.includes(g.id))
+                                .map(g => g.name)
+                                .join(', ');
 
-                         return (
-                             <tr key={student.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => handleOpenEdit(student)}>
-                                 <td className="px-6 py-3">
-                                     <div className="flex items-center gap-3">
-                                         <img src={student.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}`} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt=""/>
-                                         <div>
-                                             <p className="font-medium text-gray-900">{student.name}</p>
-                                             {/* Student Phone in List */}
-                                             {student.phone && (
-                                                 <div className="flex items-center gap-1 mt-0.5">
-                                                    <p className="text-xs text-gray-500">{student.phone}</p>
-                                                 </div>
-                                             )}
-                                             {isDefaulting && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-0.5"><AlertCircle className="w-3 h-3"/> Pendente</span>}
+                             return (
+                                 <tr key={student.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => handleOpenEdit(student)}>
+                                     <td className="px-6 py-3">
+                                         <div className="flex items-center gap-3">
+                                             <img src={student.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}`} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt=""/>
+                                             <div>
+                                                 <p className="font-medium text-gray-900">{student.name}</p>
+                                                 {/* Student Phone in List */}
+                                                 {student.phone && (
+                                                     <div className="flex items-center gap-1 mt-0.5">
+                                                        <p className="text-xs text-gray-500">{student.phone}</p>
+                                                     </div>
+                                                 )}
+                                                 {isDefaulting && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-0.5"><AlertCircle className="w-3 h-3"/> Pendente</span>}
+                                             </div>
                                          </div>
-                                     </div>
-                                 </td>
-                                 <td className="px-6 py-3">
-                                     <p className="text-sm text-gray-900">{calculateAge(student.birthDate)} anos</p>
-                                     <p className="text-xs text-gray-500 max-w-[150px] truncate" title={studentGroups}>{studentGroups || '-'}</p>
-                                 </td>
-                                 <td className="px-6 py-3 hidden md:table-cell">
-                                     <p className="text-sm text-gray-900">{student.guardian.name}</p>
-                                     <div className="flex items-center gap-1">
-                                        <p className="text-xs text-gray-500">{student.guardian.phone}</p>
-                                        {student.guardian.phone && (
-                                            <a 
-                                                href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
-                                                target="_blank" 
-                                                rel="noreferrer"
-                                                className="text-green-600 hover:text-green-700 p-1"
-                                                title="Conversar no WhatsApp"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <MessageCircle className="w-3 h-3" />
-                                            </a>
-                                        )}
-                                     </div>
-                                 </td>
-                                 <td className="px-6 py-3 text-center">
-                                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${student.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                         {student.active ? 'Ativo' : 'Inativo'}
-                                     </span>
-                                 </td>
-                                 <td className="px-6 py-3 text-right">
-                                     <div className="flex justify-end gap-1">
-                                         {!isGuardian && isDefaulting && (
-                                             <button 
-                                                onClick={(e) => handleSendPaymentReminder(e, student)}
-                                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="Cobrar Pagamento (WhatsApp)"
-                                             >
-                                                 <Banknote className="w-4 h-4" />
+                                     </td>
+                                     <td className="px-6 py-3">
+                                         <p className="text-sm text-gray-900">{calculateAge(student.birthDate)} anos</p>
+                                         <p className="text-xs text-gray-500 max-w-[150px] truncate" title={studentGroups}>{studentGroups || '-'}</p>
+                                     </td>
+                                     <td className="px-6 py-3 hidden md:table-cell">
+                                         <p className="text-sm text-gray-900">{student.guardian.name}</p>
+                                         <div className="flex items-center gap-1">
+                                            <p className="text-xs text-gray-500">{student.guardian.phone}</p>
+                                            {student.guardian.phone && (
+                                                <a 
+                                                    href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
+                                                    target="_blank" 
+                                                    rel="noreferrer"
+                                                    className="text-green-600 hover:text-green-700 p-1"
+                                                    title="Conversar no WhatsApp"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <MessageCircle className="w-3 h-3" />
+                                                </a>
+                                            )}
+                                         </div>
+                                     </td>
+                                     <td className="px-6 py-3 text-center">
+                                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${student.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                             {student.active ? 'Ativo' : 'Inativo'}
+                                         </span>
+                                     </td>
+                                     <td className="px-6 py-3 text-right">
+                                         <div className="flex justify-end gap-1">
+                                             {!isGuardian && isDefaulting && (
+                                                 <button 
+                                                    onClick={(e) => handleSendPaymentReminder(e, student)}
+                                                    className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Cobrar Pagamento (WhatsApp)"
+                                                 >
+                                                     <Banknote className="w-4 h-4" />
+                                                 </button>
+                                             )}
+                                             {!isGuardian && isMissingDocs && (
+                                                 <button 
+                                                    onClick={(e) => handleSendDocReminder(e, student)}
+                                                    className="p-2 text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors"
+                                                    title="Cobrar Documentos (WhatsApp)"
+                                                 >
+                                                     <FileWarning className="w-4 h-4" />
+                                                 </button>
+                                             )}
+                                             <button className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
+                                                 <Edit className="w-4 h-4" />
                                              </button>
-                                         )}
-                                         {!isGuardian && isMissingDocs && (
-                                             <button 
-                                                onClick={(e) => handleSendDocReminder(e, student)}
-                                                className="p-2 text-orange-500 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors"
-                                                title="Cobrar Documentos (WhatsApp)"
-                                             >
-                                                 <FileWarning className="w-4 h-4" />
-                                             </button>
-                                         )}
-                                         <button className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
-                                             <Edit className="w-4 h-4" />
-                                         </button>
-                                     </div>
-                                 </td>
-                             </tr>
-                         );
-                     })}
-                 </tbody>
-             </table>
+                                         </div>
+                                     </td>
+                                 </tr>
+                             );
+                         })}
+                     </tbody>
+                 </table>
+             </div>
         </div>
       )}
 
@@ -984,70 +987,72 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                              )}
 
                              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                                 <table className="w-full text-sm text-left">
-                                     <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
-                                         <tr>
-                                             <th className="p-4">Vencimento</th>
-                                             <th className="p-4">Descrição</th>
-                                             <th className="p-4">Valor</th>
-                                             <th className="p-4">Status</th>
-                                             <th className="p-4 text-right">Ações</th>
-                                         </tr>
-                                     </thead>
-                                     <tbody className="divide-y divide-gray-100 bg-white">
-                                         {transactions
-                                            .filter(t => t.studentId === editingId && t.type === TransactionType.INCOME)
-                                            .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                            .map(tx => (
-                                                <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="p-4 text-gray-600">{formatDate(tx.date)}</td>
-                                                    <td className="p-4 font-medium text-gray-900">{tx.description}</td>
-                                                    <td className="p-4 font-medium">R$ {tx.amount.toFixed(2)}</td>
-                                                    <td className="p-4">
-                                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
-                                                            tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
-                                                            tx.status === PaymentStatus.PENDING ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                                                        }`}>
-                                                            {tx.status === PaymentStatus.PAID ? 'Pago' : tx.status === PaymentStatus.PENDING ? 'Pendente' : 'Atrasado'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-4 text-right flex justify-end gap-2">
-                                                        {tx.status !== PaymentStatus.PAID && (
-                                                            <>
-                                                                {!isGuardian && (
-                                                                    <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Receber Dinheiro">
-                                                                        <DollarSign className="w-4 h-4" />
-                                                                    </button>
-                                                                )}
-                                                                {tx.paymentLink && (
-                                                                    <>
-                                                                        <button 
-                                                                            onClick={() => {
-                                                                                const phone = studentForm.guardian.phone.replace(/\D/g, '');
-                                                                                if (phone) {
-                                                                                    const msg = `Olá ${studentForm.guardian.name}, segue o link para pagamento referente a: *${tx.description}* (Venc: ${formatDate(tx.date)})\n\nLink: ${tx.paymentLink}`;
-                                                                                    window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
-                                                                                } else {
-                                                                                    alert("Telefone do responsável não cadastrado.");
-                                                                                }
-                                                                            }}
-                                                                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
-                                                                            title="Enviar Link no WhatsApp"
-                                                                        >
-                                                                            <Send className="w-4 h-4" />
+                                 <div className="overflow-x-auto">
+                                     <table className="w-full text-sm text-left min-w-[700px]">
+                                         <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                             <tr>
+                                                 <th className="p-4">Vencimento</th>
+                                                 <th className="p-4">Descrição</th>
+                                                 <th className="p-4">Valor</th>
+                                                 <th className="p-4">Status</th>
+                                                 <th className="p-4 text-right">Ações</th>
+                                             </tr>
+                                         </thead>
+                                         <tbody className="divide-y divide-gray-100 bg-white">
+                                             {transactions
+                                                .filter(t => t.studentId === editingId && t.type === TransactionType.INCOME)
+                                                .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                .map(tx => (
+                                                    <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="p-4 text-gray-600">{formatDate(tx.date)}</td>
+                                                        <td className="p-4 font-medium text-gray-900">{tx.description}</td>
+                                                        <td className="p-4 font-medium">R$ {tx.amount.toFixed(2)}</td>
+                                                        <td className="p-4">
+                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                                                                tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                                                tx.status === PaymentStatus.PENDING ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                                                            }`}>
+                                                                {tx.status === PaymentStatus.PAID ? 'Pago' : tx.status === PaymentStatus.PENDING ? 'Pendente' : 'Atrasado'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-right flex justify-end gap-2">
+                                                            {tx.status !== PaymentStatus.PAID && (
+                                                                <>
+                                                                    {!isGuardian && (
+                                                                        <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Receber Dinheiro">
+                                                                            <DollarSign className="w-4 h-4" />
                                                                         </button>
-                                                                        <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Abrir Link de Pagamento">
-                                                                            <LinkIcon className="w-4 h-4" />
-                                                                        </a>
-                                                                    </>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                     </tbody>
-                                 </table>
+                                                                    )}
+                                                                    {tx.paymentLink && (
+                                                                        <>
+                                                                            <button 
+                                                                                onClick={() => {
+                                                                                    const phone = studentForm.guardian.phone.replace(/\D/g, '');
+                                                                                    if (phone) {
+                                                                                        const msg = `Olá ${studentForm.guardian.name}, segue o link para pagamento referente a: *${tx.description}* (Venc: ${formatDate(tx.date)})\n\nLink: ${tx.paymentLink}`;
+                                                                                        window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                                                                                    } else {
+                                                                                        alert("Telefone do responsável não cadastrado.");
+                                                                                    }
+                                                                                }}
+                                                                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                                                                                title="Enviar Link no WhatsApp"
+                                                                            >
+                                                                                <Send className="w-4 h-4" />
+                                                                            </button>
+                                                                            <a href={tx.paymentLink} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Abrir Link de Pagamento">
+                                                                                <LinkIcon className="w-4 h-4" />
+                                                                            </a>
+                                                                        </>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                         </tbody>
+                                     </table>
+                                 </div>
                              </div>
                          </div>
                      )}
@@ -1064,41 +1069,43 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                  </div>
                              </div>
                              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                                 <table className="w-full text-sm text-left">
-                                     <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
-                                         <tr>
-                                             <th className="p-4">Data</th>
-                                             <th className="p-4">Atividade</th>
-                                             <th className="p-4">Horário</th>
-                                             <th className="p-4 text-center">Status</th>
-                                         </tr>
-                                     </thead>
-                                     <tbody className="divide-y divide-gray-100 bg-white">
-                                         {activities
-                                            .filter(a => a.groupId && studentForm.groupIds.includes(a.groupId))
-                                            .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                            .map(activity => {
-                                                const isPresent = activity.attendance.includes(editingId!);
-                                                const isFuture = new Date(activity.date) > new Date();
-                                                return (
-                                                    <tr key={activity.id} className="hover:bg-gray-50">
-                                                        <td className="p-4 text-gray-600">{formatDate(activity.date)}</td>
-                                                        <td className="p-4 font-medium text-gray-900">{activity.title}</td>
-                                                        <td className="p-4 text-gray-500">{activity.startTime}</td>
-                                                        <td className="p-4 text-center">
-                                                            {isFuture ? (
-                                                                <span className="text-gray-400 font-medium">-</span>
-                                                            ) : isPresent ? (
-                                                                <span className="inline-flex items-center gap-1 text-green-600 font-bold bg-green-50 px-2 py-1 rounded-full text-xs"><CheckCircle className="w-3 h-3"/> Presente</span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center gap-1 text-red-500 font-bold bg-red-50 px-2 py-1 rounded-full text-xs"><XCircle className="w-3 h-3"/> Ausente</span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                     </tbody>
-                                 </table>
+                                 <div className="overflow-x-auto">
+                                     <table className="w-full text-sm text-left min-w-[600px]">
+                                         <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                             <tr>
+                                                 <th className="p-4">Data</th>
+                                                 <th className="p-4">Atividade</th>
+                                                 <th className="p-4">Horário</th>
+                                                 <th className="p-4 text-center">Status</th>
+                                             </tr>
+                                         </thead>
+                                         <tbody className="divide-y divide-gray-100 bg-white">
+                                             {activities
+                                                .filter(a => a.groupId && studentForm.groupIds.includes(a.groupId))
+                                                .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                .map(activity => {
+                                                    const isPresent = activity.attendance.includes(editingId!);
+                                                    const isFuture = new Date(activity.date) > new Date();
+                                                    return (
+                                                        <tr key={activity.id} className="hover:bg-gray-50">
+                                                            <td className="p-4 text-gray-600">{formatDate(activity.date)}</td>
+                                                            <td className="p-4 font-medium text-gray-900">{activity.title}</td>
+                                                            <td className="p-4 text-gray-500">{activity.startTime}</td>
+                                                            <td className="p-4 text-center">
+                                                                {isFuture ? (
+                                                                    <span className="text-gray-400 font-medium">-</span>
+                                                                ) : isPresent ? (
+                                                                    <span className="inline-flex items-center gap-1 text-green-600 font-bold bg-green-50 px-2 py-1 rounded-full text-xs"><CheckCircle className="w-3 h-3"/> Presente</span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 text-red-500 font-bold bg-red-50 px-2 py-1 rounded-full text-xs"><XCircle className="w-3 h-3"/> Ausente</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                         </tbody>
+                                     </table>
+                                 </div>
                              </div>
                          </div>
                      )}
