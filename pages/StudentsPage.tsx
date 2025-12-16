@@ -286,7 +286,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     cpf: '',
     phone: '',
     medicalCertificateExpiry: '',
-    groupId: '',
+    groupIds: [],
     planId: '',
     active: true,
     address: {
@@ -689,7 +689,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           cpf: student.cpf,
           phone: student.phone,
           medicalCertificateExpiry: student.medicalCertificateExpiry,
-          groupId: student.groupId,
+          groupIds: student.groupIds || [],
           planId: student.planId,
           active: student.active,
           address: student.address || { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
@@ -845,6 +845,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
         const d = s.documents as any;
         const missing = !getStatus(d.rg) || !getStatus(d.cpf) || !getStatus(d.medical) || !getStatus(d.address) || !getStatus(d.school);
+        const groupNames = groups.filter(g => s.groupIds.includes(g.id)).map(g => g.name).join(', ');
         
         return {
             'Nome do Aluno': s.name,
@@ -852,7 +853,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             'Idade': calculateAge(s.birthDate),
             'RG': s.rg,
             'CPF Aluno': s.cpf,
-            'Grupo': groups.find(g => g.id === s.groupId)?.name || 'N/A',
+            'Grupos': groupNames || 'N/A',
             'Nome Responsável': s.guardian.name,
             'CPF Responsável': s.guardian.cpf,
             'Telefone': s.guardian.phone,
@@ -949,7 +950,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     phone: row['Telefone'] ? String(row['Telefone']) : '',
                     medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)'] || row['Validade Atestado (YYYY-MM-DD)']),
                     photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`,
-                    groupId: matchedGroup ? matchedGroup.id : '',
+                    groupIds: matchedGroup ? [matchedGroup.id] : [],
                     planId: matchedPlan ? matchedPlan.id : '',
                     active: true,
                     address: {
@@ -992,20 +993,23 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.setFontSize(10);
     doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 30);
     
-    const tableData = filteredStudents.map(s => [
-        s.name,
-        s.rg,
-        s.cpf,
-        formatDate(s.birthDate),
-        calculateAge(s.birthDate).toString(),
-        groups.find(g => g.id === s.groupId)?.name || 'N/A',
-        s.guardian.name,
-        s.active ? 'Ativo' : 'Inativo'
-    ]);
+    const tableData = filteredStudents.map(s => {
+        const groupNames = groups.filter(g => s.groupIds.includes(g.id)).map(g => g.name).join(', ');
+        return [
+            s.name,
+            s.rg,
+            s.cpf,
+            formatDate(s.birthDate),
+            calculateAge(s.birthDate).toString(),
+            groupNames || 'N/A',
+            s.guardian.name,
+            s.active ? 'Ativo' : 'Inativo'
+        ];
+    });
 
     autoTable(doc, {
         startY: 35,
-        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupo', 'Responsável', 'Status']],
+        head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Grupos', 'Responsável', 'Status']],
         body: tableData,
         styles: { fontSize: 8 },
         headStyles: { fillColor: [249, 115, 22] } 
@@ -1030,7 +1034,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.setFontSize(10);
     
     const today = new Date().toLocaleDateString('pt-BR');
-    const groupName = groups.find(g => g.id === studentForm.groupId)?.name || '________________';
+    const groupNames = groups.filter(g => studentForm.groupIds.includes(g.id)).map(g => g.name).join(', ') || '________________';
     
     const headerText = `
     CONTRATANTE (RESPONSÁVEL):
@@ -1042,7 +1046,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     Nome: ${studentForm.name}
     RG: ${studentForm.rg} | CPF: ${studentForm.cpf}
     Data de Nascimento: ${formatDate(studentForm.birthDate)}
-    Grupo/Categoria: ${groupName}
+    Grupo/Categoria: ${groupNames}
     `;
     
     doc.text(headerText, margin, 40);
@@ -1086,7 +1090,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const studentActivities = activities.filter(a => {
       if (!editingId) return false;
       
-      const isGroupMatch = a.groupId === studentForm.groupId; 
+      const isGroupMatch = a.groupId && studentForm.groupIds.includes(a.groupId); 
       const isParticipant = a.participants?.includes(editingId);
       // Incluir se estiver na lista de presença, independente de grupo ou agendamento
       const isPresent = a.attendance?.includes(editingId);
@@ -1377,7 +1381,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupo</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
@@ -1385,7 +1389,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredStudents.map((student) => {
-                const groupName = groups.find(g => g.id === student.groupId)?.name || 'Sem Grupo';
+                const groupNames = groups.filter(g => student.groupIds.includes(g.id)).map(g => g.name);
                 const expired = isMedicalExpired(student.medicalCertificateExpiry);
                 const missingDocs = hasMissingDocs(student);
                 const age = calculateAge(student.birthDate);
@@ -1426,7 +1430,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 font-medium">{age} anos</td>
-                    <td className="px-6 py-4 text-sm text-gray-600"><span className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium">{groupName}</span></td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                        {groupNames.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                                {groupNames.map(gn => (
+                                    <span key={gn} className="px-2 py-1 bg-gray-100 rounded-md text-xs font-medium whitespace-nowrap">{gn}</span>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-xs text-gray-400 italic">Sem Grupo</span>
+                        )}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
@@ -1628,7 +1642,39 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             {/* Right Column */}
                             <div className="space-y-4">
                                 <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><UserIcon className="w-4 h-4 text-primary-600" /> Dados do Responsável</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF do Responsável</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="000.000.000-00" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Responsável</label><input required disabled={isGuardian} type="tel" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none text-sm disabled:bg-gray-100" placeholder="(00) 00000-0000" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div></div></div>
-                                <div><h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Status</h4><div className="space-y-3"><div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupo/Categoria</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.groupId} onChange={e => setStudentForm({...studentForm, groupId: e.target.value})}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 border-b pb-2 mb-3"><Edit className="w-4 h-4 text-primary-600" /> Plano e Grupos</h4>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Grupos/Categorias (Multipla Seleção)</label>
+                                            <div className="flex flex-wrap gap-2 p-2 border rounded-lg bg-gray-50 min-h-[46px]">
+                                                {groups.map(group => {
+                                                    const isSelected = studentForm.groupIds.includes(group.id);
+                                                    return (
+                                                        <button
+                                                            key={group.id}
+                                                            type="button"
+                                                            disabled={isGuardian}
+                                                            onClick={() => {
+                                                                const newGroups = isSelected 
+                                                                    ? studentForm.groupIds.filter((id: string) => id !== group.id)
+                                                                    : [...studentForm.groupIds, group.id];
+                                                                setStudentForm({...studentForm, groupIds: newGroups});
+                                                            }}
+                                                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                                                isSelected 
+                                                                ? 'bg-primary-100 text-primary-700 border-primary-200' 
+                                                                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                                                            }`}
+                                                        >
+                                                            {group.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {groups.length === 0 && <span className="text-xs text-gray-400 italic">Nenhum grupo cadastrado</span>}
+                                            </div>
+                                        </div>
+                                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                             </div>
                         </div>
                     </form>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -117,7 +118,7 @@ function App() {
                  address: s.address, // JSONB
                  guardian: s.guardian, // JSONB
                  planId: s.plan_id,
-                 groupId: s.group_id,
+                 groupIds: s.group_ids || (s.group_id ? [s.group_id] : []), // Support multiple groups
                  active: s.active,
                  documents: s.documents // JSONB
              }));
@@ -158,7 +159,7 @@ function App() {
              let relevantActivities = activitiesData;
              if (currentUser?.role === UserRole.RESPONSAVEL && students) {
                  const studentIds = students.map(s => s.id);
-                 const studentGroupIds = students.map(s => s.groupId);
+                 const studentGroupIds = students.flatMap(s => s.groupIds);
                  relevantActivities = activitiesData.filter((a: any) => 
                     (a.group_id && studentGroupIds.includes(a.group_id)) || 
                     (a.participants && a.participants.some((p: string) => studentIds.includes(p)))
@@ -478,7 +479,7 @@ function App() {
         address: studentData.address,
         guardian: studentData.guardian,
         plan_id: studentData.planId,
-        group_id: studentData.groupId,
+        group_ids: studentData.groupIds, // Array
         active: studentData.active,
         documents: studentData.documents
     };
@@ -496,7 +497,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupId: data.group_id,
+             groupIds: data.group_ids || [],
              active: data.active,
              documents: data.documents
         };
@@ -522,7 +523,7 @@ function App() {
         address: s.address,
         guardian: s.guardian,
         plan_id: s.planId || null,
-        group_id: s.groupId || null,
+        group_ids: s.groupIds || (s.groupId ? [s.groupId] : []),
         active: s.active,
         documents: s.documents
       }));
@@ -542,7 +543,7 @@ function App() {
              address: d.address,
              guardian: d.guardian,
              planId: d.plan_id,
-             groupId: d.group_id,
+             groupIds: d.group_ids || [],
              active: d.active,
              documents: d.documents
           }));
@@ -581,7 +582,7 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_id: updatedStudent.groupId,
+          group_ids: updatedStudent.groupIds,
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
@@ -592,11 +593,41 @@ function App() {
       setIsLoading(false);
   };
   
-  const handleBatchAssignStudents = async (ids: string[], gid: string) => { 
+  const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => { 
       setIsLoading(true);
-      const { error } = await supabase.from('students').update({ group_id: gid }).in('id', ids);
-      if (!error) {
-           setStudents(students.map(s => ids.includes(s.id) ? { ...s, groupId: gid } : s));
+      // Logic: For each student in `students`:
+      // If student.id is in studentIds -> Ensure groupId is in s.groupIds
+      // If student.id is NOT in studentIds -> Ensure groupId is NOT in s.groupIds (remove it if it was there)
+      
+      const updates = students.map(s => {
+          const shouldBeInGroup = studentIds.includes(s.id);
+          const currentGroups = s.groupIds || [];
+          const isInGroup = currentGroups.includes(groupId);
+
+          let newGroups = currentGroups;
+          if (shouldBeInGroup && !isInGroup) {
+              newGroups = [...currentGroups, groupId];
+          } else if (!shouldBeInGroup && isInGroup) {
+              newGroups = currentGroups.filter(id => id !== groupId);
+          }
+
+          if (newGroups !== currentGroups) {
+              return { ...s, groupIds: newGroups };
+          }
+          return null;
+      }).filter(Boolean) as Student[];
+
+      if (updates.length > 0) {
+          // Process updates in parallel
+          await Promise.all(updates.map(u => 
+              supabase.from('students').update({ group_ids: u.groupIds }).eq('id', u.id)
+          ));
+
+          // Update local state
+          setStudents(prev => prev.map(s => {
+              const updated = updates.find(u => u.id === s.id);
+              return updated ? updated : s;
+          }));
       }
       setIsLoading(false);
   };
