@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, DocumentItem } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check, Banknote } from 'lucide-react';
+import { Search, Plus, User as UserIcon, Edit, Camera, X, CheckSquare, FileText, MessageCircle, MapPin, Loader2, Link as LinkIcon, CalendarCheck, XCircle, CheckCircle, DollarSign, LayoutGrid, List, TrendingUp, AlertCircle, Users, FileWarning, Shirt, Send, ChevronDown, Check, Banknote } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { createMPPreference } from '../services/mercadoPago';
@@ -328,27 +328,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           setShowChargeModal(false);
           setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
       }
-  };
-
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    doc.text('Lista de Alunos', 14, 20);
-    
-    const tableData = filteredStudents.map(s => [
-        s.name,
-        s.active ? 'Ativo' : 'Inativo',
-        s.guardian.name,
-        s.guardian.phone,
-        plans.find(p => p.id === s.planId)?.name || '-'
-    ]);
-
-    autoTable(doc, {
-        startY: 30,
-        head: [['Nome', 'Status', 'Responsável', 'Telefone', 'Plano']],
-        body: tableData,
-    });
-
-    doc.save('alunos.pdf');
   };
 
   // --- CAMERA ---
@@ -1076,4 +1055,96 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                      {activeTab === 'ATTENDANCE' && editingId && (
                          <div className="space-y-6">
                              <div className="bg-orange-50 p-6 rounded-xl border border-orange-100 flex items-center gap-4">
-                                 <div className="p-3 bg
+                                 <div className="p-3 bg-orange-100 rounded-full text-orange-600"><TrendingUp className="w-6 h-6" /></div>
+                                 <div>
+                                     <span className="text-sm font-medium text-orange-800">Frequência (30 dias)</span>
+                                     <p className="text-2xl font-bold text-gray-900">
+                                         {activities.filter(a => a.attendance.includes(editingId!) && new Date(a.date) > new Date(Date.now() - 30*24*60*60*1000)).length} <span className="text-sm font-normal text-gray-500">presenças</span>
+                                     </p>
+                                 </div>
+                             </div>
+                             <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                 <table className="w-full text-sm text-left">
+                                     <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                         <tr>
+                                             <th className="p-4">Data</th>
+                                             <th className="p-4">Atividade</th>
+                                             <th className="p-4">Horário</th>
+                                             <th className="p-4 text-center">Status</th>
+                                         </tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-gray-100 bg-white">
+                                         {activities
+                                            .filter(a => a.groupId && studentForm.groupIds.includes(a.groupId))
+                                            .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                            .map(activity => {
+                                                const isPresent = activity.attendance.includes(editingId!);
+                                                const isFuture = new Date(activity.date) > new Date();
+                                                return (
+                                                    <tr key={activity.id} className="hover:bg-gray-50">
+                                                        <td className="p-4 text-gray-600">{formatDate(activity.date)}</td>
+                                                        <td className="p-4 font-medium text-gray-900">{activity.title}</td>
+                                                        <td className="p-4 text-gray-500">{activity.startTime}</td>
+                                                        <td className="p-4 text-center">
+                                                            {isFuture ? (
+                                                                <span className="text-gray-400 font-medium">-</span>
+                                                            ) : isPresent ? (
+                                                                <span className="inline-flex items-center gap-1 text-green-600 font-bold bg-green-50 px-2 py-1 rounded-full text-xs"><CheckCircle className="w-3 h-3"/> Presente</span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 text-red-500 font-bold bg-red-50 px-2 py-1 rounded-full text-xs"><XCircle className="w-3 h-3"/> Ausente</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                     </tbody>
+                                 </table>
+                             </div>
+                         </div>
+                     )}
+                 </div>
+             </div>
+         </div>
+      )}
+
+      {/* --- EXTRA MODALS (Bulk Send & Charge) --- */}
+      {showChargeModal && editingId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                <h3 className="font-bold text-lg mb-4 text-gray-900">Nova Cobrança Avulsa</h3>
+                <form onSubmit={handleAddCharge} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label>
+                        <input type="text" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Ex: Uniforme" 
+                            value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} disabled={isGeneratingCharge} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label>
+                        <input type="number" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="0.00" 
+                            value={manualCharge.amount} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value)})} disabled={isGeneratingCharge} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label>
+                        <input type="date" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" 
+                            value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} disabled={isGeneratingCharge} />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={() => setShowChargeModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium" disabled={isGeneratingCharge}>Cancelar</button>
+                        <button type="submit" disabled={isGeneratingCharge} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-bold shadow-lg shadow-primary-500/20 flex items-center gap-2">
+                            {isGeneratingCharge ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Gerando Link...
+                                </>
+                            ) : (
+                                'Criar Cobrança'
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
+    </div>
+  );
+};
