@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -8,9 +7,10 @@ import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
-import { Student, UserRole, User, Plan, Group, Activity, Transaction, TransactionType, PaymentStatus, PaymentMethod } from './types';
-import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
+import { AICoachPage } from './pages/AICoachPage';
+import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod } from './types';
 import { supabase } from './lib/supabaseClient';
+import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { createMPPreference } from './services/mercadoPago';
 
 function App() {
@@ -118,7 +118,9 @@ function App() {
                  address: s.address, // JSONB
                  guardian: s.guardian, // JSONB
                  planId: s.plan_id,
-                 groupIds: s.group_ids || [], // Mapeia group_ids (array) para groupIds
+                 // CRITICAL FIX: Fallback to singular group_id if group_ids array is empty/null
+                 // This ensures students with existing legacy group assignments are not lost
+                 groupIds: (s.group_ids && s.group_ids.length > 0) ? s.group_ids : (s.group_id ? [s.group_id] : []),
                  active: s.active,
                  documents: s.documents // JSONB
              }));
@@ -467,6 +469,10 @@ function App() {
     if (studentData.photoUrl && studentData.photoUrl.startsWith('data:')) {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
+    
+    // Ensure we handle both new array column and legacy singular column if needed
+    const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
+
     const payload = {
         name: studentData.name,
         birth_date: studentData.birthDate,
@@ -479,6 +485,7 @@ function App() {
         guardian: studentData.guardian,
         plan_id: studentData.planId,
         group_ids: studentData.groupIds, // Send Array
+        group_id: primaryGroupId, // Sync legacy column
         active: studentData.active,
         documents: studentData.documents
     };
@@ -514,21 +521,25 @@ function App() {
 
   const handleBatchAddStudents = async (studentsData: any[]) => { 
       setIsLoading(true);
-      const payload = studentsData.map(s => ({
-        name: s.name,
-        birth_date: s.birthDate,
-        rg: s.rg,
-        cpf: s.cpf,
-        phone: s.phone,
-        medical_expiry: s.medicalCertificateExpiry,
-        photo_url: s.photoUrl,
-        address: s.address,
-        guardian: s.guardian,
-        plan_id: s.planId || null,
-        group_ids: s.groupIds || [], // Handle array
-        active: s.active,
-        documents: s.documents
-      }));
+      const payload = studentsData.map(s => {
+        const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
+        return {
+            name: s.name,
+            birth_date: s.birthDate,
+            rg: s.rg,
+            cpf: s.cpf,
+            phone: s.phone,
+            medical_expiry: s.medicalCertificateExpiry,
+            photo_url: s.photoUrl,
+            address: s.address,
+            guardian: s.guardian,
+            plan_id: s.planId || null,
+            group_ids: s.groupIds || [],
+            group_id: primaryGroupId, // Sync legacy
+            active: s.active,
+            documents: s.documents
+        };
+      });
       
       const { data, error } = await supabase.from('students').insert(payload).select();
       
@@ -573,6 +584,10 @@ function App() {
       if (updatedStudent.photoUrl && updatedStudent.photoUrl.startsWith('data:')) {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
+      
+      // Handle legacy sync
+      const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
+
       const payload = {
           name: updatedStudent.name,
           birth_date: updatedStudent.birthDate,
@@ -585,6 +600,7 @@ function App() {
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
           group_ids: updatedStudent.groupIds, // Send Array
+          group_id: primaryGroupId, // Keep legacy column in sync
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
@@ -614,7 +630,7 @@ function App() {
                   changed = true;
               }
           } else {
-              // Should NOT be in group
+              // Should NOT be in group (This acts as a remove from THIS group only)
               if (currentGroups.has(groupId)) {
                   currentGroups.delete(groupId);
                   changed = true;
@@ -630,7 +646,19 @@ function App() {
       // Perform updates
       for (const update of updates) {
           if (update) {
-             await supabase.from('students').update({ group_ids: update.group_ids }).eq('id', update.id);
+             const legacyGroupId = update.group_ids.length > 0 ? update.group_ids[0] : null;
+             // Update both new array column and legacy column
+             const { error } = await supabase
+                .from('students')
+                .update({ 
+                    group_ids: update.group_ids,
+                    group_id: legacyGroupId 
+                })
+                .eq('id', update.id);
+             
+             if (error) {
+                 console.error(`Failed to update student ${update.id}`, error);
+             }
           }
       }
       
@@ -789,7 +817,7 @@ function App() {
           student_id: t.studentId || null,
           plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
-          payment_link: t.paymentLink,
+          payment_link: t.payment_link,
           external_reference: t.externalReference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
@@ -810,7 +838,7 @@ function App() {
           student_id: t.studentId || null,
           plan_id: t.plan_id || null,
           payment_method: t.paymentMethod,
-          payment_link: t.paymentLink
+          payment_link: t.payment_link
       };
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
@@ -1042,7 +1070,7 @@ function App() {
                   students={students} 
                   groups={groups} 
                   onAddActivity={handleAddActivity} 
-                  onUpdateActivity={handleUpdateActivity}
+                  onUpdateActivity={handleUpdateActivity} 
                   onUpdateAttendance={handleUpdateAttendance}
                   onUpdateFeePayment={handleUpdateFeePayment}
                   onDeleteActivity={handleDeleteActivity}
