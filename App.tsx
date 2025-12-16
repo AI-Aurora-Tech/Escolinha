@@ -106,24 +106,38 @@ function App() {
 
         // Mappers to match Typescript Interfaces
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => ({
-                 id: s.id,
-                 name: s.name,
-                 birthDate: s.birth_date,
-                 rg: s.rg,
-                 cpf: s.cpf,
-                 phone: s.phone,
-                 medicalCertificateExpiry: s.medical_expiry,
-                 photoUrl: s.photo_url,
-                 address: s.address, // JSONB
-                 guardian: s.guardian, // JSONB
-                 planId: s.plan_id,
-                 // CRITICAL FIX: Fallback to singular group_id if group_ids array is empty/null
-                 // This ensures students with existing legacy group assignments are not lost
-                 groupIds: (s.group_ids && s.group_ids.length > 0) ? s.group_ids : (s.group_id ? [s.group_id] : []),
-                 active: s.active,
-                 documents: s.documents // JSONB
-             }));
+             const mappedStudents: Student[] = studentsData.map((s: any) => {
+                 // Logic to retrieve groupIds from multiple sources
+                 // 1. Try DB 'group_ids' column (Primary)
+                 // 2. Try 'guardian.system_metadata.group_ids' (Legacy Workaround)
+                 // 3. Fallback to 'group_id' (Legacy single column)
+                 let finalGroupIds: string[] = [];
+                 
+                 if (s.group_ids && Array.isArray(s.group_ids)) {
+                     finalGroupIds = s.group_ids;
+                 } else if (s.guardian?.system_metadata?.group_ids) {
+                     finalGroupIds = s.guardian.system_metadata.group_ids;
+                 } else if (s.group_id) {
+                     finalGroupIds = [s.group_id];
+                 }
+
+                 return {
+                     id: s.id,
+                     name: s.name,
+                     birthDate: s.birth_date,
+                     rg: s.rg,
+                     cpf: s.cpf,
+                     phone: s.phone,
+                     medicalCertificateExpiry: s.medical_expiry,
+                     photoUrl: s.photo_url,
+                     address: s.address, // JSONB
+                     guardian: s.guardian, // JSONB
+                     planId: s.plan_id,
+                     groupIds: finalGroupIds,
+                     active: s.active,
+                     documents: s.documents // JSONB
+                 };
+             });
              setStudents(mappedStudents);
         }
 
@@ -150,7 +164,6 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
-                 // Mapeamento correto: Banco (snake_case) -> App (camelCase)
                  externalReference: t.external_reference, 
                  preferenceId: t.preference_id
              })));
@@ -470,9 +483,8 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     
-    // Ensure we handle both new array column and legacy singular column if needed
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-
+    
     const payload = {
         name: studentData.name,
         birth_date: studentData.birthDate,
@@ -482,10 +494,10 @@ function App() {
         medical_expiry: studentData.medicalCertificateExpiry,
         photo_url: finalPhotoUrl,
         address: studentData.address,
-        guardian: studentData.guardian,
+        guardian: studentData.guardian, 
         plan_id: studentData.planId,
-        group_ids: studentData.groupIds, // Send Array
-        group_id: primaryGroupId, // Sync legacy column
+        group_ids: studentData.groupIds, // Send Array to new column
+        group_id: primaryGroupId, // Sync legacy column for fallback
         active: studentData.active,
         documents: studentData.documents
     };
@@ -503,7 +515,7 @@ function App() {
              address: data.address,
              guardian: data.guardian,
              planId: data.plan_id,
-             groupIds: data.group_ids || [],
+             groupIds: studentData.groupIds,
              active: data.active,
              documents: data.documents
         };
@@ -514,7 +526,7 @@ function App() {
         }
     } else { 
         console.error("Supabase error:", error);
-        alert(`Erro ao salvar aluno: ${error?.message || 'Verifique se a coluna group_ids existe no banco.'}`); 
+        alert(`Erro ao salvar aluno: ${error?.message || 'Verifique o banco de dados.'}`); 
     }
     setIsLoading(false);
   };
@@ -544,7 +556,7 @@ function App() {
       const { data, error } = await supabase.from('students').insert(payload).select();
       
       if (data && !error) {
-          const newStudents: Student[] = data.map((d: any) => ({
+          const newStudents: Student[] = data.map((d: any, idx: number) => ({
              id: d.id,
              name: d.name,
              birthDate: d.birth_date,
@@ -556,7 +568,7 @@ function App() {
              address: d.address,
              guardian: d.guardian,
              planId: d.plan_id,
-             groupIds: d.group_ids || [],
+             groupIds: studentsData[idx].groupIds || [],
              active: d.active,
              documents: d.documents
           }));
@@ -599,22 +611,24 @@ function App() {
           address: updatedStudent.address,
           guardian: updatedStudent.guardian,
           plan_id: updatedStudent.planId,
-          group_ids: updatedStudent.groupIds, // Send Array
+          group_ids: updatedStudent.groupIds, // Send to new column
           group_id: primaryGroupId, // Keep legacy column in sync
           active: updatedStudent.active,
           documents: updatedStudent.documents
       };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) {
-          setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s));
+          setStudents(students.map(s => s.id === updatedStudent.id ? { 
+              ...updatedStudent, 
+              photoUrl: finalPhotoUrl
+          } : s));
       } else {
           console.error("Supabase Error:", error);
-          alert(`Erro ao atualizar aluno: ${error?.message || 'Erro desconhecido. Verifique o banco de dados.'}`);
+          alert(`Erro ao atualizar aluno: ${error?.message}`);
       }
       setIsLoading(false);
   };
   
-  // FIX: Handle both Add and Remove (Sync) for GroupsPage
   const handleBatchAssignStudents = async (selectedIds: string[], groupId: string) => { 
       setIsLoading(true);
       const selectedSet = new Set(selectedIds);
@@ -638,7 +652,7 @@ function App() {
           }
 
           if (changed) {
-              return { id: student.id, group_ids: Array.from(currentGroups) };
+              return { id: student.id, group_ids: Array.from(currentGroups), guardian: student.guardian };
           }
           return null;
       }).filter(Boolean);
@@ -647,12 +661,12 @@ function App() {
       for (const update of updates) {
           if (update) {
              const legacyGroupId = update.group_ids.length > 0 ? update.group_ids[0] : null;
-             // Update both new array column and legacy column
+             
              const { error } = await supabase
                 .from('students')
                 .update({ 
                     group_ids: update.group_ids,
-                    group_id: legacyGroupId 
+                    group_id: legacyGroupId
                 })
                 .eq('id', update.id);
              
