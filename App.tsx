@@ -752,13 +752,16 @@ function App() {
       setIsLoading(false);
   };
   
-  const handleUpdateActivity = async (a: any) => { 
+  const handleUpdateActivity = async (a: Activity) => { 
+      // Find original in state before update
+      const original = activities.find(act => act.id === a.id);
+      
       const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
       const locationValue = a.location || '';
 
-      const payload = {
+      const basePayload = {
           title: a.title,
-          activity_type: a.type, 
+          activity_type: a.type,
           fee: feeValue,
           location: locationValue,
           group_id: a.groupId || null,
@@ -775,13 +778,105 @@ function App() {
           away_score: a.awayScore ?? 0,
           scorers: a.scorers || []
       };
-      const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
-      if(!error) {
-          setActivities(prev => prev.map(act => act.id === a.id ? a : act));
-      } else {
+
+      // 1. Update the target activity
+      const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
+      
+      if (error) {
           console.error("Supabase Update Error:", error);
           alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
+          return;
       }
+
+      // 2. Handle Recurring Future Updates
+      if (original && original.recurrence === 'weekly') {
+          // Find strictly future siblings based on ORIGINAL data
+          let query = supabase.from('activities')
+               .select('*')
+               .eq('recurrence', 'weekly')
+               .eq('title', original.title)
+               .eq('start_time', original.startTime)
+               .gt('date', original.date);
+
+           if (original.groupId) {
+               query = query.eq('group_id', original.groupId);
+           } else {
+               query = query.is('group_id', null);
+           }
+           
+           const { data: futureEvents } = await query;
+
+           if (futureEvents && futureEvents.length > 0) {
+               const oldDate = new Date(original.date);
+               const newDate = new Date(a.date);
+               // Calculate day difference (UTC to ensure correctness across potential DST gaps if simple arithmetic used)
+               const dayDiff = Math.round((newDate.getTime() - oldDate.getTime()) / (1000 * 3600 * 24));
+               
+               const updates = futureEvents.map((evt: any) => {
+                   let nextDateStr = evt.date;
+                   if (dayDiff !== 0) {
+                        const evtD = new Date(evt.date);
+                        evtD.setDate(evtD.getDate() + dayDiff);
+                        nextDateStr = evtD.toISOString().split('T')[0];
+                   }
+
+                   return {
+                       id: evt.id,
+                       title: basePayload.title,
+                       activity_type: basePayload.activity_type,
+                       fee: basePayload.fee,
+                       location: basePayload.location,
+                       group_id: basePayload.group_id,
+                       participants: basePayload.participants,
+                       start_time: basePayload.start_time,
+                       end_time: basePayload.end_time,
+                       presentation_time: basePayload.presentation_time,
+                       opponent: basePayload.opponent,
+                       recurrence: basePayload.recurrence,
+                       date: nextDateStr,
+                       // Preserve instance specific data
+                       attendance: evt.attendance,
+                       fee_payments: evt.fee_payments,
+                       home_score: evt.home_score,
+                       away_score: evt.away_score,
+                       scorers: evt.scorers
+                   };
+               });
+
+               const { error: batchError } = await supabase.from('activities').upsert(updates);
+               
+               if (batchError) {
+                   console.error("Error propagating update:", batchError);
+               } else {
+                   const updatesMap = new Map(updates.map((u: any) => [u.id, u]));
+                   setActivities(prev => prev.map(act => {
+                       if (act.id === a.id) return a; 
+                       if (updatesMap.has(act.id)) {
+                           const up = updatesMap.get(act.id) as any;
+                           return {
+                               ...act,
+                               title: up.title,
+                               type: up.activity_type,
+                               fee: up.fee,
+                               location: up.location,
+                               startTime: up.start_time,
+                               endTime: up.end_time,
+                               presentationTime: up.presentation_time,
+                               opponent: up.opponent,
+                               recurrence: up.recurrence,
+                               groupId: up.group_id,
+                               participants: up.participants,
+                               date: up.date
+                           };
+                       }
+                       return act;
+                   }));
+                   return; 
+               }
+           }
+      }
+
+      setActivities(prev => prev.map(act => act.id === a.id ? a : act));
   };
 
   const handleDeleteActivity = async (id: string) => {
