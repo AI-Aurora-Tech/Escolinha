@@ -1175,10 +1175,23 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       // Filter activities by the selected month
       const filteredActivities = studentActivities.filter(a => a.date.startsWith(attendanceMonth));
       
+      if (filteredActivities.length === 0) {
+          alert("Nenhuma atividade encontrada neste mês para gerar relatório.");
+          return;
+      }
+
+      // Calculate Stats
       const stats = {
           total: filteredActivities.length,
           present: filteredActivities.filter(a => a.attendance.includes(editingId)).length,
-          absent: filteredActivities.filter(a => !a.attendance.includes(editingId) && new Date(a.date + 'T' + a.endTime) <= new Date()).length
+          absent: filteredActivities.filter(a => !a.attendance.includes(editingId) && new Date(a.date + 'T' + a.endTime) <= new Date()).length,
+          games: filteredActivities.filter(a => a.type === 'GAME' && a.attendance.includes(editingId)).length,
+          goals: filteredActivities.reduce((total, activity) => {
+              if (activity.type === 'GAME' && activity.scorers) {
+                 return total + activity.scorers.filter(id => id === editingId).length;
+              }
+              return total;
+          }, 0)
       };
 
       const rate = stats.total > 0 
@@ -1189,16 +1202,101 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
       const monthName = monthNames[parseInt(month) - 1];
 
+      // --- GENERATE PDF ---
+      const doc = new jsPDF();
+      
+      // Header
+      doc.setFillColor(249, 115, 22); // Orange Primary
+      doc.rect(0, 0, 210, 20, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Garotos do Martinica", 105, 13, { align: "center" });
+      
+      // Info
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.text(`Relatório de Desempenho: ${studentForm.name}`, 14, 30);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Período: ${monthName}/${year}`, 14, 36);
+      doc.text(`Responsável: ${studentForm.guardian.name}`, 14, 42);
+
+      // Stats Box
+      doc.setDrawColor(200, 200, 200);
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(14, 48, 180, 20, 3, 3, 'FD');
+      
+      doc.setFont("helvetica", "bold");
+      doc.text(`Presença: ${rate}%`, 20, 60);
+      doc.setTextColor(22, 163, 74); // Green
+      doc.text(`Jogos: ${stats.games}`, 70, 60);
+      doc.setTextColor(234, 179, 8); // Yellow/Gold
+      doc.text(`Gols: ${stats.goals}`, 120, 60);
+      doc.setTextColor(0,0,0);
+
+      // Table Data
+      const tableData = filteredActivities.map(activity => {
+          const isPresent = activity.attendance.includes(editingId);
+          const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+          let status = 'AGENDADO';
+          if (isPresent) status = 'PRESENTE';
+          else if (isPast) status = 'AUSENTE';
+          
+          const isGame = activity.type === 'GAME';
+          const goalsInMatch = activity.scorers?.filter(id => id === editingId).length || 0;
+          
+          return [
+              formatDate(activity.date),
+              isGame ? `JOGO vs ${activity.opponent || 'Adversário'}` : activity.title,
+              status,
+              isGame ? goalsInMatch.toString() : '-'
+          ];
+      });
+
+      autoTable(doc, {
+          startY: 75,
+          head: [['Data', 'Atividade', 'Status', 'Gols']],
+          body: tableData,
+          headStyles: { fillColor: [249, 115, 22] },
+          didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 2) {
+                  if (data.cell.raw === 'AUSENTE') data.cell.styles.textColor = [220, 38, 38];
+                  if (data.cell.raw === 'PRESENTE') data.cell.styles.textColor = [22, 163, 74];
+              }
+              if (data.section === 'body' && data.column.index === 3 && data.cell.raw !== '-' && data.cell.raw !== '0') {
+                   data.cell.styles.fontStyle = 'bold';
+                   data.cell.styles.textColor = [234, 179, 8];
+              }
+          }
+      });
+      
+      // Footer
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(8);
+      doc.setTextColor(150,150,150);
+      doc.text("Relatório gerado automaticamente pelo sistema Garotos do Martinica.", 105, finalY, { align: "center" });
+
+      const fileName = `Relatorio_${studentForm.name.replace(/\s+/g, '_')}_${monthName}.pdf`;
+      doc.save(fileName);
+
+      // --- SEND MESSAGE ---
       const message = `Olá ${studentForm.guardian.name}, tudo bem? ⚽\n\n` +
-          `Segue o relatório de frequência de *${studentForm.name}* referente a *${monthName}/${year}*.\n\n` +
-          `📊 *Resumo do Mês:*\n` +
-          `✅ Presenças: ${stats.present}\n` +
-          `❌ Faltas: ${stats.absent}\n` +
-          `📉 Frequência: ${rate}%\n\n` +
-          `Agradecemos a parceria!`;
+          `Estamos enviando o relatório detalhado de *${studentForm.name}* referente a *${monthName}/${year}*.\n\n` +
+          `📄 *O arquivo PDF foi baixado no seu dispositivo.*\n` +
+          `Por favor, anexe-o a esta conversa para visualizar os detalhes de presença, jogos e gols.\n\n` +
+          `Resumo:\n` +
+          `✅ Frequência: ${rate}%\n` +
+          `🏆 Jogos: ${stats.games}\n` +
+          `⚽ Gols: ${stats.goals}\n\n` +
+          `Atenciosamente,\nGarotos do Martinica`;
 
       const encodedMessage = encodeURIComponent(message);
-      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+      
+      // Small timeout to allow download to start before tab switch
+      setTimeout(() => {
+          window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+      }, 1000);
   };
 
   const updateDoc = (field: string, subField: 'delivered' | 'isDigital', value: boolean) => {
