@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -1106,6 +1106,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       present: studentActivities.filter(a => a.attendance.includes(editingId!)).length,
       absent: studentActivities.filter(a => !a.attendance.includes(editingId!) && new Date(a.date + 'T' + a.endTime) <= new Date()).length
   };
+
+  // New stats for Games
+  const gameStats = {
+      played: studentActivities.filter(a => a.type === 'GAME' && a.attendance.includes(editingId!)).length,
+      goals: studentActivities.reduce((total, activity) => {
+          if (activity.type === 'GAME' && activity.scorers) {
+             return total + activity.scorers.filter(id => id === editingId).length;
+          }
+          return total;
+      }, 0)
+  };
+
   const attendanceRate = attendanceStats.total > 0 
       ? Math.round((attendanceStats.present / attendanceStats.total) * 100) 
       : 0;
@@ -1258,6 +1270,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   return (
     <div className="space-y-6">
+      {/* ... (Search and Filter UI remains unchanged) ... */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         
@@ -1393,7 +1406,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* ... (Table content remains unchanged) ... */}
+         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
@@ -1681,6 +1695,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             ) : activeTab === 'FINANCE' ? (
                 // FINANCE HISTORY
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                    {/* ... (Finance Tab content - unchanged) ... */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                         <div className="flex items-center gap-2 bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold w-full md:w-auto">
                             <Wallet className="w-4 h-4" /> Histórico Financeiro
@@ -1701,7 +1716,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 </button>
                             </div>
                         )}
-                        {/* Selected Actions */}
                         {selectedFinanceIds.size > 0 && (
                             <div className="flex items-center gap-3 bg-indigo-50 p-2 rounded-lg border border-indigo-100 w-full md:w-auto justify-between md:justify-start">
                                 <span className="text-xs font-bold text-indigo-700 px-2">{selectedFinanceIds.size} selecionados (R$ {selectedTotal.toFixed(2)})</span>
@@ -1726,7 +1740,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                      <div key={tx.id} className={`p-4 rounded-xl border transition-all ${isLate ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'} hover:shadow-md`}>
                                          <div className="flex justify-between items-start">
                                              <div className="flex items-start gap-3">
-                                                 {/* Checkbox for Combo Payment */}
                                                  {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
                                                      <div onClick={() => toggleFinanceSelection(tx.id)} className="mt-1 cursor-pointer text-gray-400 hover:text-primary-600">
                                                          {isSelected ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
@@ -1738,7 +1751,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                                                          <Clock className="w-3 h-3" /> Vencimento: {dueDate}
                                                      </p>
-                                                     {/* STATUS BADGE */}
                                                      <div className="mt-2 flex items-center gap-2">
                                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
                                                              tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700 border-green-200' :
@@ -1760,10 +1772,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                              </div>
                                              <div className="text-right">
                                                  <p className="font-bold text-gray-900">R$ {tx.amount.toFixed(2)}</p>
-                                                 {/* ACTIONS */}
                                                  {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
                                                      <div className="flex flex-col gap-2 mt-2">
-                                                         {/* Pagar com PIX */}
                                                          <button 
                                                             onClick={() => initiatePixPayment(tx.id)}
                                                             className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md font-bold hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1 border border-indigo-100"
@@ -1773,7 +1783,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
                                                          {!isGuardian && (
                                                             <div className="flex gap-1 justify-end">
-                                                                {/* Check Status */}
                                                                 <button
                                                                     onClick={() => checkStatus(tx)}
                                                                     disabled={checkingStatusId === tx.id}
@@ -1782,7 +1791,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                                 >
                                                                     {checkingStatusId === tx.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                                                                 </button>
-                                                                {/* Send WhatsApp */}
                                                                 <button 
                                                                     onClick={() => sendChargeMessage(tx)}
                                                                     className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"
@@ -1790,7 +1798,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                                 >
                                                                     <Send className="w-3 h-3" />
                                                                 </button>
-                                                                {/* Send PIX Code */}
                                                                 <button 
                                                                     onClick={() => handleSendPixToWhatsApp(tx)}
                                                                     className="p-1.5 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
@@ -1798,7 +1805,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                                 >
                                                                     <QrCode className="w-3 h-3" />
                                                                 </button>
-                                                                {/* Manual Pay */}
                                                                 <button 
                                                                     onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)}
                                                                     className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
@@ -1806,7 +1812,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                                 >
                                                                     <CheckCircle className="w-3 h-3" />
                                                                 </button>
-                                                                {/* Cancel */}
                                                                 <button 
                                                                     onClick={() => handleCancelTransaction(tx)}
                                                                     className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-100"
@@ -1820,7 +1825,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                  )}
                                              </div>
                                          </div>
-                                         {/* Link Display if available */}
                                          {tx.paymentLink && tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
                                               <div className="mt-3 pt-2 border-t border-gray-100">
                                                   <div className="flex items-center justify-between bg-gray-50 p-2 rounded text-xs text-gray-500">
@@ -1870,22 +1874,35 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         )}
                     </div>
                     
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
                         <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-center">
-                             <p className="text-xs text-gray-500 uppercase font-bold">Total Aulas</p>
-                             <p className="text-xl font-bold text-gray-900">{attendanceStats.total}</p>
+                             <p className="text-[10px] text-gray-500 uppercase font-bold">Total Aulas</p>
+                             <p className="text-lg font-bold text-gray-900">{attendanceStats.total}</p>
                         </div>
                         <div className="bg-green-50 p-3 rounded-lg border border-green-100 text-center">
-                             <p className="text-xs text-green-600 uppercase font-bold">Presenças</p>
-                             <p className="text-xl font-bold text-green-700">{attendanceStats.present}</p>
+                             <p className="text-[10px] text-green-600 uppercase font-bold">Presenças</p>
+                             <p className="text-lg font-bold text-green-700">{attendanceStats.present}</p>
                         </div>
                         <div className="bg-red-50 p-3 rounded-lg border border-red-100 text-center">
-                             <p className="text-xs text-red-600 uppercase font-bold">Faltas</p>
-                             <p className="text-xl font-bold text-red-700">{attendanceStats.absent}</p>
+                             <p className="text-[10px] text-red-600 uppercase font-bold">Faltas</p>
+                             <p className="text-lg font-bold text-red-700">{attendanceStats.absent}</p>
                         </div>
                         <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-center">
-                             <p className="text-xs text-blue-600 uppercase font-bold">Frequência</p>
-                             <p className="text-xl font-bold text-blue-700">{attendanceRate}%</p>
+                             <p className="text-[10px] text-blue-600 uppercase font-bold">Frequência</p>
+                             <p className="text-lg font-bold text-blue-700">{attendanceRate}%</p>
+                        </div>
+                        {/* New Game Stats */}
+                         <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 text-center">
+                             <p className="text-[10px] text-yellow-600 uppercase font-bold">Jogos</p>
+                             <p className="text-lg font-bold text-yellow-700 flex items-center justify-center gap-1">
+                                 <Trophy className="w-3 h-3" /> {gameStats.played}
+                             </p>
+                        </div>
+                         <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 text-center">
+                             <p className="text-[10px] text-yellow-600 uppercase font-bold">Gols</p>
+                             <p className="text-lg font-bold text-yellow-700 flex items-center justify-center gap-1">
+                                 <Medal className="w-3 h-3" /> {gameStats.goals}
+                             </p>
                         </div>
                     </div>
 
@@ -1894,14 +1911,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                              studentActivities.map(activity => {
                                  const isPresent = activity.attendance.includes(studentForm.id || editingId || '');
                                  const isPast = new Date(activity.date + 'T' + activity.endTime) <= new Date();
+                                 const isGame = activity.type === 'GAME';
                                  
+                                 // Check goals for this specific activity
+                                 const goalsInMatch = activity.scorers?.filter(id => id === (studentForm.id || editingId)).length || 0;
+
                                  return (
-                                     <div key={activity.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
+                                     <div key={activity.id} className={`flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50 ${isGame ? 'bg-yellow-50/30' : ''}`}>
                                          <div className="flex items-center gap-3">
                                              <div className={`w-2 h-2 rounded-full ${isPresent ? 'bg-green-500' : isPast ? 'bg-red-500' : 'bg-gray-300'}`}></div>
                                              <div>
-                                                 <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                                                 <div className="flex items-center gap-2">
+                                                     {isGame && <Trophy className="w-3 h-3 text-yellow-600" />}
+                                                     <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                                                     {goalsInMatch > 0 && (
+                                                         <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold border border-yellow-200 flex items-center gap-0.5">
+                                                             ⚽ {goalsInMatch}
+                                                         </span>
+                                                     )}
+                                                 </div>
                                                  <p className="text-xs text-gray-500">{formatDate(activity.date)} • {activity.startTime}</p>
+                                                 {isGame && activity.opponent && (
+                                                     <p className="text-[10px] text-gray-400">vs {activity.opponent} ({activity.homeScore}x{activity.awayScore})</p>
+                                                 )}
                                              </div>
                                          </div>
                                          <div>
@@ -1923,6 +1955,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 </div>
             )}
             
+            {/* ... (Footer actions remain unchanged) ... */}
             <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-between items-center flex-shrink-0">
                 {!isGuardian && (
                     <div className="flex gap-2">
@@ -1953,7 +1986,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       )}
       
-      {/* ... (Charge and PIX Modals remain same) ... */}
+      {/* ... (Modals remain unchanged) ... */}
       
       {/* Manual Charge Modal */}
       {showChargeModal && (
