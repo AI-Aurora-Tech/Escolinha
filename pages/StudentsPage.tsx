@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,6 +29,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [medicalFilter, setMedicalFilter] = useState('ALL');
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
+  const [planFilter, setPlanFilter] = useState('ALL');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
@@ -611,7 +612,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (docsFilter === 'OK') matchesDocs = !missing;
     }
 
-    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs;
+    let matchesPlan = true;
+    if (planFilter !== 'ALL') {
+        matchesPlan = s.planId === planFilter;
+    }
+
+    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs && matchesPlan;
   });
 
   const startCamera = async () => {
@@ -1316,25 +1322,37 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
-          <div className="md:col-span-4 relative">
+          <div className="md:col-span-3 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input 
               type="text" 
-              placeholder="Buscar por aluno ou responsável..." 
+              placeholder="Buscar aluno/responsável..." 
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="md:col-span-2 relative">
-             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <div className="md:col-span-1 relative">
              <input 
                 type="number"
                 placeholder="Idade" 
-                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow"
                 value={ageFilter}
                 onChange={(e) => setAgeFilter(e.target.value)}
              />
+          </div>
+           <div className="md:col-span-2 relative">
+            <Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <select
+                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow appearance-none bg-white text-gray-600"
+                value={planFilter}
+                onChange={(e) => setPlanFilter(e.target.value)}
+            >
+                <option value="ALL">Plano: Todos</option>
+                {plans.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+            </select>
           </div>
           <div className="md:col-span-2 relative">
             <ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
