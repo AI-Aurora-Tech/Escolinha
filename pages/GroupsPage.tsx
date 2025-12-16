@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 interface GroupsPageProps {
   groups: Group[];
   students: Student[];
-  onAddGroup: (group: Group) => void;
+  onAddGroup: (group: Group) => Promise<string | null>; // Atualizado para retornar Promise com ID
   onUpdateGroup: (group: Group) => void;
   onDeleteGroup: (id: string) => void;
   onBatchAssignStudents: (studentIds: string[], groupId: string) => void;
@@ -60,15 +60,21 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let groupId = editingId;
+    
     if (editingId) {
         onUpdateGroup({ ...form, id: editingId });
     } else {
-        groupId = Math.random().toString(36).substr(2, 9);
-        onAddGroup({ ...form, id: groupId });
+        // Passamos um ID temporário vazio, pois o App.tsx vai gerar o real
+        const newId = await onAddGroup({ ...form, id: '' });
+        if (newId) {
+            groupId = newId;
+        }
     }
+    
+    // Só vincula os alunos se tivermos um ID de grupo válido (existente ou recém-criado)
     if (groupId) {
         onBatchAssignStudents(Array.from(selectedStudentIds), groupId);
     }
