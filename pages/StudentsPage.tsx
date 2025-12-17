@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers } from 'lucide-react';
@@ -481,32 +480,71 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       setCheckingStatusId(null);
   };
 
-  const sendBatchChargeMessage = (txs: Transaction[]) => {
+  const sendBatchChargeMessage = async (txs: Transaction[]) => {
+      const pendingTxs = txs.filter(t => t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED);
+      
+      if (pendingTxs.length === 0) {
+          alert("Não há cobranças pendentes ou em atraso para este atleta.");
+          return;
+      }
+
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
       if (!phone) {
           alert("Telefone do responsável não encontrado.");
           return;
       }
+      
+      if (!studentForm.guardian.cpf) {
+          alert("CPF do responsável é obrigatório para gerar o PIX único.");
+          return;
+      }
 
-      const totalAmount = txs.reduce((acc, t) => acc + t.amount, 0);
-      const comboRef = `combo_${txs[0].id}`;
-      const comboLink = `https://www.mercadopago.com.br/checkout/pay?pref_id=${comboRef}&amount=${totalAmount}`;
+      const totalAmount = pendingTxs.reduce((acc, t) => acc + t.amount, 0);
+      setSendingPixId('batch');
 
-      let details = "";
-      txs.forEach(t => {
-          details += `- ${t.description} (${formatDate(t.date)}): R$ ${t.amount.toFixed(2)}\n`;
-      });
+      try {
+          const externalRef = `batch_${editingId}_${Date.now()}`;
+          const description = `Pendências acumuladas - ${studentForm.name}`;
+          
+          const mpResult = await createPixPayment({
+              title: description,
+              price: totalAmount,
+              externalReference: externalRef,
+              payer: {
+                  name: studentForm.guardian.name,
+                  email: studentForm.guardian.email,
+                  phone: studentForm.guardian.phone,
+                  identification: { type: 'CPF', number: studentForm.guardian.cpf }
+              }
+          });
 
-      const message = `Olá ${studentForm.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\n` +
-          `Identificamos as seguintes pendências em aberto:\n\n` +
-          `${details}\n` +
-          `*Total Acumulado: R$ ${totalAmount.toFixed(2)}*\n\n` +
-          `Para facilitar, geramos um link único para pagamento (Mercado Pago/PIX) do valor total:\n` +
-          `${comboLink}\n\n` +
-          `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
+          if (mpResult && mpResult.qrCode) {
+              // Adiciona ao monitoramento para dar baixa em todas as transações quando pago
+              setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: pendingTxs.map(t => t.id) }]);
+              
+              let details = "";
+              pendingTxs.forEach(t => {
+                  details += `- ${t.description} (${formatDate(t.date)}): R$ ${t.amount.toFixed(2)}\n`;
+              });
 
-      const encodedMessage = encodeURIComponent(message);
-      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
+              const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\n\n` +
+                  `Identificamos os seguintes débitos em aberto de *${studentForm.name}*:\n\n` +
+                  `${details}\n` +
+                  `*Total para quitação: R$ ${totalAmount.toFixed(2)}*\n\n` +
+                  `Geramos um código PIX único para facilitar o pagamento:\n\n` +
+                  `${mpResult.qrCode}\n\n` +
+                  `Basta utilizar a opção "PIX Copia e Cola" no app do seu banco. O sistema confirmará automaticamente. Obrigado!`;
+
+              window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+          } else {
+              alert("Erro ao gerar o PIX unificado. Verifique se o CPF do responsável é válido.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Erro de comunicação com o sistema de pagamento.");
+      } finally {
+          setSendingPixId(null);
+      }
   };
 
   const handleSendPixToWhatsApp = async (tx: Transaction) => {
@@ -688,7 +726,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
       videoRef.current.srcObject = null;
     }
     setIsCameraOpen(false);
@@ -784,7 +823,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setSelectedFinanceIds(new Set());
   };
 
-  // ... (keeping other handlers like handlePayTransaction, handleCancelTransaction etc unchanged)
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
       const tx = transactions.find(t => t.id === id);
       if(tx) {
@@ -803,6 +841,24 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             ...tx,
             status: PaymentStatus.CANCELLED
         });
+    }
+  };
+
+  // Fix for the missing handleSaveManualCharge function
+  const handleSaveManualCharge = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualCharge.description && manualCharge.amount > 0 && editingId) {
+      onAddTransaction({
+        description: manualCharge.description,
+        amount: manualCharge.amount,
+        date: manualCharge.date,
+        type: TransactionType.INCOME,
+        status: PaymentStatus.PENDING,
+        studentId: editingId,
+        paymentMethod: PaymentMethod.CASH,
+      });
+      setShowChargeModal(false);
+      setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
     }
   };
 
@@ -1111,7 +1167,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     
     1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;
     
-    2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;
+    2 - Apresentar o ATESTADO MÉDITO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;
     
     3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);
     
@@ -1263,49 +1319,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
           }
       });
-  };
-
-  const handleSaveManualCharge = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingId) return;
-
-    const externalReference = crypto.randomUUID();
-    let paymentLink = '';
-
-    try {
-        if (studentForm.guardian.cpf) {
-            const mpResult = await createMPPreference({
-                title: manualCharge.description,
-                price: manualCharge.amount,
-                externalReference: externalReference,
-                payer: {
-                    name: studentForm.guardian.name,
-                    email: studentForm.guardian.email,
-                    phone: studentForm.guardian.phone,
-                    identification: { type: 'CPF', number: studentForm.guardian.cpf }
-                }
-            });
-            if (mpResult) {
-                paymentLink = mpResult.init_point;
-            }
-        }
-    } catch (e) { console.warn("Could not generate MP Link for manual charge"); }
-
-    onAddTransaction({
-        description: manualCharge.description,
-        amount: manualCharge.amount,
-        type: TransactionType.INCOME,
-        date: manualCharge.date,
-        status: PaymentStatus.PENDING,
-        studentId: editingId,
-        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO, 
-        paymentLink: paymentLink,
-        externalReference: externalReference
-    });
-
-    setShowChargeModal(false);
-    setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
-    alert("Cobrança criada com sucesso!");
   };
 
   const toggleGroupSelection = (groupId: string) => {
@@ -1817,7 +1830,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     <PlusCircle className="w-4 h-4" /> Nova Cobrança
                                 </button>
                                 <button 
-                                    onClick={() => sendBatchChargeMessage(studentTransactions.filter(t => t.status !== PaymentStatus.PAID))}
+                                    onClick={() => sendBatchChargeMessage(studentTransactions)}
                                     className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"
                                 >
                                     <MessageCircle className="w-4 h-4" /> Cobrar Tudo
@@ -2033,7 +2046,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                      {isGame && <Trophy className="w-3 h-3 text-yellow-600" />}
                                                      <p className="text-sm font-medium text-gray-900">{activity.title}</p>
                                                      {goalsInMatch > 0 && (
-                                                         <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold border border-yellow-200 flex items-center gap-0.5">
+                                                         <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5 border border-yellow-200">
                                                              ⚽ {goalsInMatch}
                                                          </span>
                                                      )}
@@ -2063,7 +2076,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 </div>
             )}
             
-            {/* ... (Footer actions remain unchanged) ... */}
             <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-between items-center flex-shrink-0">
                 {!isGuardian && (
                     <div className="flex gap-2">
@@ -2093,8 +2105,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           </div>
         </div>
       )}
-      
-      {/* ... (Modals remain unchanged) ... */}
       
       {/* Manual Charge Modal */}
       {showChargeModal && (

@@ -1,27 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Helper to access env vars safely in Vite/Browser
-const getApiKey = () => {
-  // 1. Try import.meta.env (Vite Standard)
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-    // @ts-ignore
-    return import.meta.env.VITE_GEMINI_API_KEY;
-  }
-  
-  // No fallback to process.env to avoid "ReferenceError: process is not defined" in browser
-  return '';
-};
+// Guideline: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+// Guideline: Use this process.env.API_KEY string directly when initializing.
 
 export const generateTrainingDrill = async (ageGroup: string, focusSkill: string, duration: string): Promise<string> => {
   try {
-    const apiKey = getApiKey();
-    if (!apiKey) return "Chave da API não configurada. Configure VITE_GEMINI_API_KEY no arquivo .env ou no painel da Vercel.";
+    // Guideline: Initialize inside the function safely using process.env.API_KEY.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    // Initialize inside the function safely
-    const ai = new GoogleGenAI({ apiKey });
-
-    const model = 'gemini-2.5-flash';
+    // Guideline: Use gemini-3-flash-preview for basic text tasks.
+    const model = 'gemini-3-flash-preview';
     const prompt = `
       Você é um técnico de futebol profissional da escolinha "Garotos do Martinica".
       Crie um plano de treino detalhado.
@@ -44,6 +32,7 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
       contents: prompt,
     });
 
+    // Guideline: Use response.text directly (not a method).
     return response.text || "Não foi possível gerar o treino no momento.";
   } catch (error) {
     console.error("Erro ao chamar Gemini:", error);
@@ -53,13 +42,9 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
 
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return "Chave da API não configurada. Configure VITE_GEMINI_API_KEY no arquivo .env ou no painel da Vercel.";
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-        // Initialize inside the function safely
-        const ai = new GoogleGenAI({ apiKey });
-
-        const model = 'gemini-2.5-flash';
+        const model = 'gemini-3-flash-preview';
         const prompt = `
           Analise a saúde financeira da escolinha de futebol "Garotos do Martinica".
           Dados do mês atual:
