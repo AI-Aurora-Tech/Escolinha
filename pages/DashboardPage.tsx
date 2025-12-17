@@ -25,21 +25,26 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       .length;
   }, [transactions]);
 
-  // Calculate distinct students who are defaulting
+  // Calculate distinct active students who are defaulting
   const defaultingStudentsCount = useMemo(() => {
-    const today = new Date();
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const activeStudentIds = new Set(students.filter(s => s.active).map(s => s.id));
+    
     const defaulterIds = new Set(
         transactions
             .filter(t => 
                 t.type === TransactionType.INCOME && 
                 t.status !== PaymentStatus.PAID && 
+                t.status !== PaymentStatus.CANCELLED && // Ignora cancelados
                 t.studentId &&
-                new Date(t.date) < today
+                activeStudentIds.has(t.studentId) && // Apenas alunos ativos
+                t.date < todayStr // Atrasado é estritamente antes de hoje
             )
             .map(t => t.studentId)
     );
     return defaulterIds.size;
-  }, [transactions]);
+  }, [transactions, students]);
 
   const missingDocsCount = useMemo(() => {
       return students.filter(s => {
@@ -174,14 +179,19 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Próximo Treino</p>
-            <h3 className="text-lg font-bold text-gray-900 mt-1 truncate max-w-[120px] sm:max-w-[150px]">
-              {nextActivity ? nextActivity.title : 'Sem treinos'}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-500 font-medium">Próxima Atividade</p>
+            <h3 className="text-lg font-bold text-gray-900 mt-1 truncate">
+              {nextActivity ? (
+                <span className="flex items-center gap-1">
+                  {nextActivity.type === 'GAME' ? 'Jogo: ' : 'Treino: '}
+                  {nextActivity.title}
+                </span>
+              ) : 'Sem atividades'}
             </h3>
             {nextActivity && <p className="text-xs text-gray-400">{formatDate(nextActivity.date)} às {nextActivity.startTime}</p>}
           </div>
-          <div className="bg-indigo-50 p-3 rounded-lg">
+          <div className="bg-indigo-50 p-3 rounded-lg flex-shrink-0">
             <CalendarCheck className="w-6 h-6 text-indigo-600" />
           </div>
         </div>
