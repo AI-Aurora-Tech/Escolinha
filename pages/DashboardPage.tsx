@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
-import { Users, DollarSign, CalendarCheck, AlertCircle, Download, Cake, ChevronRight, FileWarning } from 'lucide-react';
+import { Users, CalendarCheck, AlertCircle, Download, Cake, FileWarning, Trophy } from 'lucide-react';
 import { Student, Transaction, Activity, UserRole, TransactionType, PaymentStatus } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -18,12 +18,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   const [birthdayMonth, setBirthdayMonth] = useState(new Date().getMonth());
   
   const activeStudents = students.filter(s => s.active).length;
-  
-  const monthlyRevenue = useMemo(() => {
-    return transactions
-      .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
-      .reduce((acc, curr) => acc + curr.amount, 0);
-  }, [transactions]);
 
   const pendingPayments = useMemo(() => {
     return transactions
@@ -133,45 +127,35 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     doc.save(`Aniversariantes_${months[birthdayMonth]}.pdf`);
   };
 
-  // --- CÁLCULO DINÂMICO DO GRÁFICO (Últimos 6 meses) ---
-  const chartData = useMemo(() => {
-    const data = [];
-    const today = new Date();
-    
-    // Loop para os últimos 6 meses (incluindo o atual)
-    for (let i = 5; i >= 0; i--) {
-        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        const monthName = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
-        const year = d.getFullYear();
-        const month = d.getMonth();
+  // --- CÁLCULO RESULTADOS DOS JOGOS (ANO CORRENTE) ---
+  const gameStats = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+    const now = new Date();
 
-        // Filtra transações deste mês específico
-        const monthlyTxs = transactions.filter(t => {
-            const tDate = new Date(t.date);
-            // Ajuste de fuso horário simples (pega o mês UTC ou local dependendo de como salvou)
-            // Como usamos YYYY-MM-DD string, new Date(string) as vezes dá problema de fuso
-            // Vamos usar string compare que é mais seguro para YYYY-MM
-            const txMonthStr = t.date.substring(0, 7); // "2024-05"
-            const currentMonthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
-            return txMonthStr === currentMonthStr;
-        });
+    activities.forEach(a => {
+        // Verifica se é jogo, se é do ano atual e se já aconteceu (data passada)
+        if (a.type === 'GAME' && a.date.startsWith(String(currentYear))) {
+             const activityDate = new Date(a.date + 'T' + a.endTime);
+             if (activityDate < now) {
+                 const home = a.homeScore || 0;
+                 const away = a.awayScore || 0;
 
-        const receita = monthlyTxs
-            .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
-            .reduce((sum, t) => sum + t.amount, 0);
+                 if (home > away) wins++;
+                 else if (home < away) losses++;
+                 else draws++;
+             }
+        }
+    });
 
-        const despesa = monthlyTxs
-            .filter(t => t.type === TransactionType.EXPENSE)
-            .reduce((sum, t) => sum + t.amount, 0);
-
-        data.push({
-            name: monthName.charAt(0).toUpperCase() + monthName.slice(1), // Capitaliza (Jan, Fev...)
-            receita,
-            despesa
-        });
-    }
-    return data;
-  }, [transactions]);
+    return [
+        { name: 'Vitórias', value: wins, color: '#22c55e' }, // Green
+        { name: 'Empates', value: draws, color: '#eab308' }, // Yellow
+        { name: 'Derrotas', value: losses, color: '#ef4444' } // Red
+    ];
+  }, [activities]);
 
   return (
     <div className="space-y-6">
@@ -188,18 +172,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             <Users className="w-6 h-6 text-blue-600" />
           </div>
         </div>
-
-        {role === UserRole.ADMIN && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Receita Total (Paga)</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">R$ {monthlyRevenue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        )}
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
@@ -252,39 +224,39 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Financial Chart (Admin Only) */}
-        {role === UserRole.ADMIN ? (
-             <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6">Desempenho Financeiro (Últimos 6 Meses)</h3>
-                <div className="h-64 md:h-80 w-full">
-                    {transactions.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
-                                <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
-                                <Tooltip 
-                                    cursor={{fill: '#f9fafb'}} 
-                                    formatter={(value: number) => [`R$ ${value.toFixed(2)}`, '']}
-                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
-                                />
-                                <Bar dataKey="receita" name="Receitas" fill="#f97316" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                            <DollarSign className="w-12 h-12 mb-2 opacity-20" />
-                            <p>Nenhuma movimentação financeira registrada ainda.</p>
-                        </div>
-                    )}
-                </div>
+        {/* Game Stats Chart */}
+         <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <Trophy className="w-5 h-5 text-yellow-500" /> Resultados nos Jogos ({new Date().getFullYear()})
+                </h3>
             </div>
-        ) : (
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-center text-gray-400 min-h-[300px]">
-                <p>Área reservada para gráficos administrativos.</p>
+            <div className="h-64 md:h-80 w-full">
+                {gameStats.some(s => s.value > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={gameStats} layout="horizontal">
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#4b5563', fontSize: 14, fontWeight: 500}} />
+                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} allowDecimals={false} />
+                            <Tooltip 
+                                cursor={{fill: '#f9fafb'}} 
+                                contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
+                            />
+                            <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={60}>
+                                {gameStats.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                        <Trophy className="w-12 h-12 mb-2 opacity-20" />
+                        <p>Nenhum jogo realizado neste ano ainda.</p>
+                    </div>
+                )}
             </div>
-        )}
+        </div>
 
         {/* Birthdays Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full lg:min-h-[400px]">
