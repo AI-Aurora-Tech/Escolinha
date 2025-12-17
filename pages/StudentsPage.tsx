@@ -1,7 +1,7 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,6 +30,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
   const [planFilter, setPlanFilter] = useState('ALL');
+  
+  // Category Multi-Select State
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
@@ -81,6 +86,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
+
+  // Click outside to close category dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+        if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+            setIsCategoryDropdownOpen(false);
+        }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [categoryDropdownRef]);
 
   // Inicializar filtro se passado via prop
   useEffect(() => {
@@ -576,6 +594,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         setIsLoadingCep(false);
     }
   };
+  
+  // Dynamic categories based on students list
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    const currentYear = new Date().getFullYear();
+    students.forEach(s => {
+         const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+         cats.add(`Sub-${currentYear - birthYear}`);
+    });
+    return Array.from(cats).sort((a, b) => {
+        const ageA = parseInt(a.replace('Sub-', ''));
+        const ageB = parseInt(b.replace('Sub-', ''));
+        return ageA - ageB;
+    });
+  }, [students]);
+
+  const toggleCategory = (cat: string) => {
+      setSelectedCategories(prev => {
+          if (prev.includes(cat)) {
+              return prev.filter(c => c !== cat);
+          } else {
+              return [...prev, cat];
+          }
+      });
+  };
 
   const filteredStudents = students.filter(s => {
     const matchesSearch = 
@@ -585,6 +628,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     let matchesAge = true;
     if (ageFilter) {
         matchesAge = calculateAge(s.birthDate) === parseInt(ageFilter);
+    }
+    
+    let matchesCategory = true;
+    if (selectedCategories.length > 0) {
+        const currentYear = new Date().getFullYear();
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        const cat = `Sub-${currentYear - birthYear}`;
+        matchesCategory = selectedCategories.includes(cat);
     }
 
     let matchesStatus = true;
@@ -617,7 +668,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         matchesPlan = s.planId === planFilter;
     }
 
-    return matchesSearch && matchesAge && matchesStatus && matchesMedical && matchesFinance && matchesDocs && matchesPlan;
+    return matchesSearch && matchesAge && matchesCategory && matchesStatus && matchesMedical && matchesFinance && matchesDocs && matchesPlan;
   });
 
   const startCamera = async () => {
@@ -1335,11 +1386,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
-          <div className="md:col-span-3 relative">
+          <div className="md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input 
               type="text" 
-              placeholder="Buscar aluno/responsável..." 
+              placeholder="Buscar..." 
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1353,6 +1404,51 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 value={ageFilter}
                 onChange={(e) => setAgeFilter(e.target.value)}
              />
+          </div>
+          {/* Category Filter Multi-Select */}
+          <div className="md:col-span-2 relative" ref={categoryDropdownRef}>
+            <div 
+                className="w-full pl-3 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 text-sm cursor-pointer flex items-center justify-between hover:border-primary-300 transition-colors"
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+            >
+                <div className="flex items-center gap-2 overflow-hidden truncate">
+                     <Layers className="w-4 h-4 flex-shrink-0" />
+                     <span className="truncate">
+                        {selectedCategories.length > 0 
+                            ? `${selectedCategories.length} Selecionadas` 
+                            : 'Categorias: Todas'}
+                     </span>
+                </div>
+                <ChevronDown className={`w-4 h-4 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+            {isCategoryDropdownOpen && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>
+                    {availableCategories.length > 0 ? (
+                        availableCategories.map(cat => (
+                            <label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors">
+                                <input 
+                                    type="checkbox" 
+                                    checked={selectedCategories.includes(cat)}
+                                    onChange={() => toggleCategory(cat)}
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4"
+                                />
+                                <span className={selectedCategories.includes(cat) ? 'text-primary-700 font-medium' : 'text-gray-700'}>{cat}</span>
+                            </label>
+                        ))
+                    ) : (
+                        <div className="p-2 text-sm text-gray-400 text-center">Nenhuma categoria</div>
+                    )}
+                    {selectedCategories.length > 0 && (
+                        <button 
+                            onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }}
+                            className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50"
+                        >
+                            Limpar Filtro
+                        </button>
+                    )}
+                </div>
+            )}
           </div>
            <div className="md:col-span-2 relative">
             <Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -1386,21 +1482,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 value={financeFilter}
                 onChange={(e) => setFinanceFilter(e.target.value)}
             >
-                <option value="ALL">Financeiro: Todos</option>
+                <option value="ALL">Fin.: Todos</option>
                 <option value="DEFAULTING">Inadimplentes</option>
                 <option value="OK">Em dia</option>
             </select>
           </div>
-          <div className="md:col-span-2 relative">
+          <div className="md:col-span-1 relative">
             <FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <select
-                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow appearance-none bg-white text-gray-600"
+                className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow appearance-none bg-white text-gray-600 text-sm"
                 value={docsFilter}
                 onChange={(e) => setDocsFilter(e.target.value)}
             >
-                <option value="ALL">Docs: Todos</option>
-                <option value="MISSING_DOCS">Pendentes</option>
-                <option value="OK">Entregues</option>
+                <option value="ALL">Docs</option>
+                <option value="MISSING_DOCS">Pend.</option>
+                <option value="OK">OK</option>
             </select>
           </div>
       </div>
@@ -1412,6 +1508,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
@@ -1426,6 +1523,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 const missingDocs = hasMissingDocs(student);
                 const age = calculateAge(student.birthDate);
                 const overdueCount = getStudentOverdueCount(student.id);
+
+                // Category Calculation
+                const currentYear = new Date().getFullYear();
+                const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
+                const categoryAge = currentYear - birthYear;
+                const categoryLabel = `Sub-${categoryAge}`;
 
                 return (
                   <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${overdueCount > 0 ? 'bg-red-50/30' : ''}`}>
@@ -1460,6 +1563,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           </div>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-bold border border-gray-200 inline-block">
+                            {categoryLabel}
+                        </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 font-medium">{age} anos</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
@@ -1687,7 +1795,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         {groups.length === 0 && <p className="text-xs text-gray-400">Nenhum grupo cadastrado.</p>}
                                     </div>
                                 </div>
-                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano de Mensalidade</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm disabled:bg-gray-100" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price} (Dia {p.dueDay})</option>)}</select></div><div className="pt-2"><label className="block text-xs font-semibold text-gray-600 mb-2">Status da Matrícula</label><div className="flex items-center gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${studentForm.active ? 'bg-green-50 border-green-200 text-green-700 border-green-500 ring-1 ring-green-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${!studentForm.active ? 'bg-red-50 border-red-200 text-red-700 border-red-500 ring-1 ring-red-500' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{!studentForm.active ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}Inativo</button></div></div></div></div>
                             </div>
                         </div>
                     </form>
