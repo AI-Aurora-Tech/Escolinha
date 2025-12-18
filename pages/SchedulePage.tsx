@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, ChevronLeft, ChevronRight, PlusCircle, Medal, Printer } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, ChevronLeft, ChevronRight, PlusCircle, Medal, Printer, ChevronDown } from 'lucide-react';
 import { sendZApiMessage } from '../services/zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -275,10 +275,26 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-4">
         <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"><ChevronLeft /></button>
-        <div className="flex flex-col items-center">
-          <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data Selecionada</span>
-          <span className="text-xl font-black text-primary-600">{formatDate(selectedDate)}</span>
+        
+        {/* Seletor de Data por Calendário */}
+        <div className="relative group cursor-pointer flex flex-col items-center">
+          <input 
+            type="date" 
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
+            value={selectedDate} 
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+          <div className="flex flex-col items-center group-hover:bg-gray-50 px-6 py-1 rounded-xl transition-all border border-transparent group-hover:border-gray-100">
+            <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest flex items-center gap-1.5 mb-1">
+              <CalendarIcon className="w-3 h-3 text-primary-500" /> Selecionar Data
+            </span>
+            <span className="text-xl font-black text-primary-600 flex items-center gap-2">
+              {formatDate(selectedDate)}
+              <ChevronDown className="w-4 h-4 text-gray-300 group-hover:text-primary-400 transition-colors" />
+            </span>
+          </div>
         </div>
+
         <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"><ChevronRight /></button>
       </div>
 

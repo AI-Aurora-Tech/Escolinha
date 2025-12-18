@@ -97,7 +97,7 @@ function App() {
         }
 
         if (groupsData) setGroups(groupsData);
-        if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, due_day: p.due_day, description: p.description })));
+        if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, dueDay: p.due_day, description: p.description })));
         if (transactionsData) {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status,
@@ -199,7 +199,6 @@ function App() {
         cpf: s.cpf,
         phone: s.phone,
         medical_expiry: s.medicalCertificateExpiry,
-        // Fix: Use photoUrl from Student interface
         photo_url: s.photoUrl,
         address: s.address,
         guardian: s.guardian,
@@ -220,7 +219,6 @@ function App() {
         cpf: s.cpf,
         phone: s.phone,
         medical_expiry: s.medicalCertificateExpiry,
-        // Fix: Ensure we use photoUrl from Student interface to avoid snake_case errors
         photo_url: s.photoUrl,
         address: s.address,
         guardian: s.guardian,
@@ -244,7 +242,6 @@ function App() {
         student_id: t.studentId,
         plan_id: t.planId,
         payment_method: t.paymentMethod,
-        // Fix: Use camelCase properties paymentLink, externalReference, and preferenceId from Transaction interface
         payment_link: t.paymentLink,
         external_reference: t.externalReference,
         preference_id: t.preferenceId
@@ -260,7 +257,6 @@ function App() {
         type: t.type,
         date: t.date,
         status: t.status,
-        // Fix: Use correct camelCase property names when accessing Transaction object properties
         student_id: t.studentId,
         plan_id: t.planId,
         payment_method: t.paymentMethod,
