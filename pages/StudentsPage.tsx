@@ -396,7 +396,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
-  // Fix: navigator.clipboard.readText does not take arguments; changed to writeText for copying functionality
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código Copiado!"); } };
 
   const handleExportExcel = () => {
@@ -668,7 +667,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
                         <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 w-fit"><Wallet className="w-4 h-4" /> Histórico Financeiro</div>
                         <div className="flex gap-2">
-                            {isGuardian && selectedFinanceIds.size > 0 && (
+                            {(isGuardian || true) && selectedFinanceIds.size > 0 && (
                                 <button onClick={() => initiatePixPayment()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-bold animate-pulse shadow-lg">
                                     <QrCode className="w-4 h-4" /> PAGAR SELECIONADOS (R$ {selectedTotal.toFixed(2)})
                                 </button>

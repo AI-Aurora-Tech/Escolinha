@@ -230,11 +230,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 w-full sm:w-auto">
               <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronLeft /></button>
-              <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer">
+              <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer overflow-hidden">
                   <CalendarIcon className="w-4 h-4 text-primary-600" />
-                  <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={selectedDate} onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} />
-                  <span className="text-gray-800 font-bold text-sm">{formatDate(selectedDate)}</span>
-                  <ChevronDown className="w-3 h-3 text-gray-400" />
+                  {/* Native Date Input Overlay - Permite abrir o calendário ao clicar na data exibida */}
+                  <input 
+                    type="date" 
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
+                    value={selectedDate} 
+                    onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} 
+                  />
+                  <span className="text-gray-800 font-bold text-sm relative z-0">{formatDate(selectedDate)}</span>
+                  <ChevronDown className="w-3 h-3 text-gray-400 relative z-0" />
               </div>
               <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronRight /></button>
           </div>
@@ -417,7 +423,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         <input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> 
                         <Zap className="w-4 h-4" /> Treino
                       </label>
-                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-yellow-200'}`}>
+                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}>
                         <input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> 
                         <Trophy className="w-4 h-4" /> Jogo
                       </label>
