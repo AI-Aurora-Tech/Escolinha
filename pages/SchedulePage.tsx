@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
@@ -113,29 +113,69 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
 
+  // --- LOGICA DE RELATORIOS ---
+
   const generateTrainingReport = () => {
-      const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino encontrado no período selecionado.");
+      const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino no período.");
       const doc = new jsPDF(); 
-      doc.setFontSize(16);
-      doc.text('Relatório de Frequência de TREINOS', 14, 20);
+      doc.text('Relatório de Frequência - TREINOS', 14, 20);
       doc.setFontSize(10);
       doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
       const rows = students.filter(s => s.active).map(s => {
-          const relevantActivities = training.filter(a => (a.groupId && s.groupIds?.includes(a.groupId)) || a.participants?.includes(s.id));
-          if (!relevantActivities.length) return null;
-          const presences = relevantActivities.filter(a => a.attendance.includes(s.id)).length;
-          return [s.name, relevantActivities.length, presences, `${Math.round((presences/relevantActivities.length)*100)}%`];
+          const rel = training.filter(a => (a.groupId && s.groupIds?.includes(a.groupId)) || a.participants?.includes(s.id));
+          if (!rel.length) return null;
+          const pres = rel.filter(a => a.attendance.includes(s.id)).length;
+          return [s.name, rel.length, pres, `${Math.round((pres/rel.length)*100)}%`];
       }).filter(Boolean);
 
-      autoTable(doc, { 
-          startY: 35, 
-          head: [['Atleta', 'Treinos Previstos', 'Presenças', '% Frequência']], 
-          body: rows as any[],
-          headStyles: { fillColor: [234, 88, 12] }
-      });
+      autoTable(doc, { startY: 35, head: [['Atleta', 'Treinos', 'Presenças', '%']], body: rows as any[], headStyles: { fillColor: [249, 115, 22] } });
+      doc.save(`Frequencia_Treinos_${reportStartDate}.pdf`);
+  };
 
-      doc.save(`Frequencia_Treinos_${reportStartDate}_${reportEndDate}.pdf`);
+  const generateGameGeneralReport = () => {
+    const games = getFilteredActivitiesForReport('GAME'); if (!games.length) return alert("Nenhum jogo no período.");
+    const doc = new jsPDF();
+    doc.text('Relatório Geral de JOGOS', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
+    let wins = 0, draws = 0, losses = 0, goalsFor = 0, goalsAgainst = 0;
+    const tableData = games.map(a => {
+        const h = a.homeScore || 0; const v = a.awayScore || 0;
+        goalsFor += h; goalsAgainst += v;
+        if (h > v) wins++; else if (h < v) losses++; else draws++;
+        return [formatDate(a.date), a.title, a.opponent || '-', `${h} x ${v}`];
+    });
+
+    autoTable(doc, { startY: 35, head: [['Data', 'Atividade', 'Adversário', 'Placar']], body: tableData, headStyles: { fillColor: [249, 115, 22] } });
+    
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFont("helvetica", "bold");
+    doc.text('RESUMO DO PERÍODO:', 14, finalY);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Total de Jogos: ${games.length} | Vitórias: ${wins} | Empates: ${draws} | Derrotas: ${losses}`, 14, finalY + 7);
+    doc.text(`Gols Marcados: ${goalsFor} | Gols Sofridos: ${goalsAgainst} | Saldo: ${goalsFor - goalsAgainst}`, 14, finalY + 14);
+
+    doc.save(`Relatorio_Geral_Jogos_${reportStartDate}.pdf`);
+  };
+
+  const generateStudentStatsReport = () => {
+    const games = getFilteredActivitiesForReport('GAME'); if (!games.length) return alert("Nenhum jogo no período.");
+    const doc = new jsPDF();
+    doc.text('Estatísticas dos Atletas (Artilharia)', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
+    const stats = students.filter(s => s.active).map(s => {
+        const goals = games.reduce((acc, g) => acc + (g.scorers?.filter(id => id === s.id).length || 0), 0);
+        const matches = games.filter(g => g.attendance.includes(s.id)).length;
+        if (goals === 0 && matches === 0) return null;
+        return [s.name, matches, goals];
+    }).filter(Boolean).sort((a: any, b: any) => b[2] - a[2]);
+
+    autoTable(doc, { startY: 35, head: [['Atleta', 'Jogos Disputados', 'Gols Marcados']], body: stats as any[], headStyles: { fillColor: [249, 115, 22] } });
+    doc.save(`Artilharia_Atletas_${reportStartDate}.pdf`);
   };
 
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
@@ -189,14 +229,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"><ChevronLeft /></button>
+              <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronLeft /></button>
               <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer">
                   <CalendarIcon className="w-4 h-4 text-primary-600" />
                   <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={selectedDate} onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} />
                   <span className="text-gray-800 font-bold text-sm">{formatDate(selectedDate)}</span>
                   <ChevronDown className="w-3 h-3 text-gray-400" />
               </div>
-              <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"><ChevronRight /></button>
+              <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronRight /></button>
           </div>
           <button onClick={handleGoToday} className="text-sm text-primary-600 font-medium hover:bg-primary-50 px-3 py-1.5 rounded-lg">Hoje</button>
       </div>
@@ -204,15 +244,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
             {dailyActivities.length > 0 ? dailyActivities.map(a => {
-                    const g = groups.find(x => x.id === a.groupId); const counts = {}; a.scorers?.forEach(s => counts[s] = (counts[s] || 0) + 1);
+                    const g = groups.find(x => x.id === a.groupId); 
                     return (
-                      <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100'}`} onClick={() => setSelectedActivityId(a.id)}>
+                      <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100 hover:border-primary-200'}`} onClick={() => setSelectedActivityId(a.id)}>
                         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                             <div className="flex-1">
                                 <h4 className="font-bold flex items-center gap-2 text-lg">
                                   {a.type === 'GAME' ? <Trophy className="text-yellow-500 w-5 h-5" /> : <CalendarIcon className="text-primary-500 w-5 h-5" />}
                                   {a.title}
-                                  {a.fee ? <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2">TAXA: R$ {a.fee}</span> : null}
+                                  {a.fee ? <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 uppercase">Taxa: R$ {a.fee}</span> : null}
                                 </h4>
                                 {a.type === 'GAME' && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
                                     <div className="font-bold text-sm mb-2 text-gray-600 uppercase tracking-tight">{a.opponent || 'Adversário não informado'}</div>
@@ -229,8 +269,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             {selectedActivity ? (
                 <div className="bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm">
                     <div className="p-4 border-b bg-gray-50 rounded-t-xl font-bold flex justify-between items-center">
-                      <span>Lista: {selectedActivity.title}</span>
-                      {selectedActivity.fee ? <span className="text-xs text-orange-600 font-bold bg-orange-100 px-2 py-1 rounded">R$ {selectedActivity.fee.toFixed(2)}</span> : null}
+                      <span className="truncate mr-2">Lista: {selectedActivity.title}</span>
+                      {selectedActivity.fee ? <span className="text-xs text-orange-600 font-bold bg-orange-100 px-2 py-1 rounded whitespace-nowrap">R$ {selectedActivity.fee.toFixed(2)}</span> : null}
                     </div>
                     <div className="p-2 max-h-[500px] overflow-y-auto">
                         {getAttendeesList(selectedActivity).map(s => {
@@ -247,12 +287,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     <div className="flex items-center gap-2">
                                         {!isGuardian ? (
                                             <>
-                                                {/* Botão de Presença */}
                                                 <button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>
                                                     {pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                                                 </button>
-                                                
-                                                {/* Botão de Taxa de Jogo */}
                                                 {selectedActivity.fee && selectedActivity.fee > 0 && (
                                                     <button 
                                                         onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} 
@@ -291,65 +328,76 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         </div>
       </div>
 
-      {/* MODAL DE RELATÓRIOS (CORREÇÃO: Implementado JSX que estava ausente) */}
+      {/* MODAL DE RELATÓRIOS */}
       {showReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Gerar Relatórios</h3>
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Exportar Relatórios</h3>
               <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
             </div>
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Início</label>
-                  <input type="date" className="w-full border rounded-lg p-2 text-sm" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Inicial</label>
+                  <input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fim</label>
-                  <input type="date" className="w-full border rounded-lg p-2 text-sm" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Final</label>
+                  <input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
                 </div>
               </div>
 
-              <div className="pt-4 border-t">
-                <p className="text-sm text-gray-600 mb-4">Selecione o tipo de relatório que deseja exportar em PDF:</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <button 
-                    onClick={generateTrainingReport}
-                    className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all group text-left"
-                  >
+              <div className="pt-4 border-t space-y-3">
+                <p className="text-sm text-gray-600 mb-2 font-medium">Selecione o relatório desejado:</p>
+                
+                <button 
+                  onClick={generateTrainingReport}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all group text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors"><CheckSquare className="w-5 h-5 text-orange-600" /></div>
                     <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência de Treinos</span>
-                      <span className="text-xs text-gray-500">Resumo de presenças vs faltas dos alunos ativos.</span>
+                      <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência nos Treinos</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
-                  </button>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                </button>
 
-                  <button 
-                    onClick={() => {
-                        const games = getFilteredActivitiesForReport('GAME');
-                        if (!games.length) return alert("Nenhum jogo no período.");
-                        const doc = new jsPDF();
-                        doc.text('Relatório de Jogos e Artilharia', 14, 20);
-                        const tableData = games.map(a => [formatDate(a.date), a.title, a.opponent || '-', `${a.homeScore} x ${a.awayScore}`]);
-                        autoTable(doc, { startY: 30, head: [['Data', 'Atividade', 'Adversário', 'Placar']], body: tableData, headStyles: { fillColor: [234, 88, 12] } });
-                        doc.save(`Jogos_${reportStartDate}_${reportEndDate}.pdf`);
-                    }}
-                    className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-yellow-50 border border-gray-100 hover:border-yellow-200 rounded-xl transition-all group text-left"
-                  >
+                <button 
+                  onClick={generateGameGeneralReport}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-yellow-50 border border-gray-100 hover:border-yellow-200 rounded-xl transition-all group text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-yellow-100 rounded-lg group-hover:bg-yellow-200 transition-colors"><BarChart3 className="w-5 h-5 text-yellow-600" /></div>
                     <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-yellow-700">Resultados e Jogos</span>
-                      <span className="text-xs text-gray-500">Histórico de placares e adversários.</span>
+                      <span className="font-bold text-gray-800 block group-hover:text-yellow-700">Geral dos Jogos</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Vitórias, Derrotas e Gols</span>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-yellow-500" />
-                  </button>
-                </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-yellow-500" />
+                </button>
+
+                <button 
+                  onClick={generateStudentStatsReport}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 rounded-xl transition-all group text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div>
+                    <div>
+                      <span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
+                </button>
               </div>
             </div>
             
             <div className="flex justify-end mt-8">
-              <button onClick={() => setShowReportModal(false)} className="px-6 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Fechar</button>
+              <button onClick={() => setShowReportModal(false)} className="px-6 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
             </div>
           </div>
         </div>
@@ -365,11 +413,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div className="flex gap-4">
-                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}>
+                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}>
                         <input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> 
                         <Zap className="w-4 h-4" /> Treino
                       </label>
-                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}>
+                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-yellow-200'}`}>
                         <input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> 
                         <Trophy className="w-4 h-4" /> Jogo
                       </label>
@@ -384,7 +432,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                  <div className="text-2xl font-light text-gray-300">X</div>
                                  <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
                              </div>
-                             {(newActivity.homeScore || 0) > 0 && (<div className="space-y-2 pt-2 border-t border-yellow-100">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2"><span className="text-[10px] font-black text-yellow-700 w-12">GOL {idx + 1}:</span><select className="flex-1 border border-yellow-200 rounded-lg p-2 bg-white text-xs outline-none" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Selecione o artilheiro...</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div>)}
+                             {(newActivity.homeScore || 0) > 0 && (<div className="space-y-2 pt-2 border-t border-yellow-100">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2"><span className="text-[10px] font-black text-yellow-700 w-12 uppercase">Gol {idx + 1}:</span><select className="flex-1 border border-yellow-200 rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Selecione o artilheiro...</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div>)}
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
                         </div>)}
 
@@ -395,22 +443,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
                     <div className="bg-gray-50 p-4 rounded-xl space-y-3">
                       <div className="flex items-center gap-2">
-                        <input type="checkbox" id="modal-has-fee" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4" />
+                        <input type="checkbox" id="modal-has-fee" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer" />
                         <label htmlFor="modal-has-fee" className="text-sm font-bold text-gray-700 cursor-pointer">Possui taxa extra?</label>
                       </div>
                       {hasFee && (
                         <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                          <label className="block text-[10px] font-black text-primary-600 uppercase mb-1">Valor da Taxa (R$)</label>
-                          <input type="number" step="0.01" className="w-full border border-primary-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-primary-500" placeholder="0,00" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} />
+                          <label className="block text-[10px] font-black text-primary-600 uppercase mb-1 tracking-wider">Valor da Taxa (R$)</label>
+                          <input type="number" step="0.01" className="w-full border border-primary-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-primary-500 font-bold" placeholder="0,00" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} />
                         </div>
                       )}
                     </div>
 
-                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Ex: Quadra 01, Estádio Municipal..." value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
+                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Quadra 01, Estádio Municipal..." value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
-                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
+                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
+                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
                     </div>
 
                     <div className="flex justify-end gap-3 pt-6 border-t mt-6">
@@ -425,8 +473,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {notifyModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border-t-4 border-blue-500">
-            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-black flex items-center gap-2 text-gray-800"><Megaphone className="w-5 h-5 text-blue-600" /> DISPAROS AUTOMÁTICOS</h3>{!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="text-gray-400" /></button>}</div>
-            <div className="mb-6"><div className="flex justify-between text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><span>Status da Fila:</span><span>{notifyCurrentIndex} de {notifyQueue.length}</span></div><div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${(notifyCurrentIndex / notifyQueue.length) * 100}%` }}></div></div>{notifyIsRunning ? (<div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm text-center font-bold animate-pulse">Enviando comunicado em {notifyCountdown}s...</div>) : (<div className="bg-green-50 text-green-800 p-3 rounded-xl text-sm text-center font-bold">Processo de Notificação Concluído!</div>)}</div>
+            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-black flex items-center gap-2 text-gray-800 uppercase tracking-tighter"><Megaphone className="w-5 h-5 text-blue-600" /> Disparos Z-API</h3>{!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="text-gray-400" /></button>}</div>
+            <div className="mb-6"><div className="flex justify-between text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><span>Progresso da Fila:</span><span>{notifyCurrentIndex} de {notifyQueue.length}</span></div><div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${(notifyCurrentIndex / notifyQueue.length) * 100}%` }}></div></div>{notifyIsRunning ? (<div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm text-center font-bold animate-pulse">Enviando em {notifyCountdown}s...</div>) : (<div className="bg-green-50 text-green-800 p-3 rounded-xl text-sm text-center font-bold">Processo Concluído!</div>)}</div>
             <div className="bg-gray-900 text-green-400 p-4 rounded-xl h-48 overflow-y-auto text-xs font-mono shadow-inner mb-4">{notifyLogs.map((log, i) => (<div key={i} className="mb-1 border-b border-gray-800 pb-1 last:border-0">{log}</div>))}</div>
             <div className="flex justify-end gap-2">{notifyIsRunning ? (<button onClick={() => setNotifyIsRunning(false)} className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors"><Pause className="w-4 h-4 inline mr-1" /> PAUSAR</button>) : (<button onClick={() => setNotifyIsRunning(true)} className="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-xl text-sm font-bold hover:bg-green-200 transition-colors" disabled={notifyCurrentIndex >= notifyQueue.length}><Play className="w-4 h-4 inline mr-1" /> CONTINUAR</button>)}<button onClick={() => setNotifyModalOpen(false)} className="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">FECHAR</button></div>
           </div>
