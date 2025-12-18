@@ -58,7 +58,8 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
-    const response = await fetch(`https://api.z-api.io/instances/${config.instanceId}/token/${config.token}/send-text`, {
+    // Usando o prefixo /api/zapi para passar pelo proxy do Vite ou Vercel
+    const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
