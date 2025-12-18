@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -249,6 +248,7 @@ function App() {
 
   const handleAddStudent = async (s: Omit<Student, 'id'>) => {
     setIsLoading(true);
+    // Fix: Using s.medicalCertificateExpiry and s.photoUrl instead of incorrect snake_case properties on s.
     const payload = {
         name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
         photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
@@ -268,6 +268,7 @@ function App() {
   };
 
   const handleUpdateStudent = async (s: Student) => {
+      // Fix: Using s.medicalCertificateExpiry and s.photoUrl instead of incorrect snake_case properties on s.
       const payload = {
           name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
           photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
@@ -305,7 +306,8 @@ function App() {
   const handleNavigate = (p: string, d?: any) => { setCurrentPage(p); setPageData(d); };
 
   const renderContent = () => {
-    if (!currentUser) return <Loader2 className="animate-spin mx-auto mt-20" />;
+    if (!currentUser) return <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-primary-600 w-10 h-10" /></div>;
+    
     switch (currentPage) {
       case 'dashboard': return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser.role} onNavigate={handleNavigate} />;
       case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={() => {}} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} initialFilter={pageData?.filter} currentUser={currentUser} />;
@@ -371,7 +373,7 @@ function App() {
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar currentUser={currentUser} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="flex-1 md:ml-64 p-4 md:p-8 w-full">
-        {isLoading && students.length === 0 ? <Loader2 className="animate-spin mx-auto mt-20" /> : renderContent()}
+        {isLoading && students.length === 0 ? <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-primary-600 w-10 h-10" /></div> : renderContent()}
       </main>
     </div>
   );

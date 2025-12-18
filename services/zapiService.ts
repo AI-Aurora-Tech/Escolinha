@@ -45,13 +45,16 @@ export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   const config = await getZApiConfig();
   
+  // Se não houver configuração, retorna false para o frontend abrir o WhatsApp manual
   if (!config) {
     console.warn("Z-API não configurada nas definições do sistema.");
     return false;
   }
 
   let cleanPhone = phone.replace(/\D/g, '');
+  // Remove zero à esquerda se houver (ex: 011...)
   if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+  // Garante o código do país
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
@@ -73,8 +76,22 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
     }
 
     const result = await response.json();
-    // Verifica por múltiplos campos de sucesso comuns em diferentes versões da Z-API
-    return !!(result.messageId || result.id || result.zaapId || result.status === 'success' || result.status === 200);
+    
+    // Diferentes versões da Z-API retornam campos diferentes de sucesso
+    const isSuccess = !!(
+      result.messageId || 
+      result.id || 
+      result.zaapId || 
+      result.status === 'success' || 
+      result.status === 200 ||
+      result.sent === true
+    );
+
+    if (!isSuccess) {
+      console.warn("Z-API respondeu sem ID de sucesso:", result);
+    }
+
+    return isSuccess;
   } catch (error) {
     console.error("Falha na comunicação com o proxy Z-API:", error);
     return false;
