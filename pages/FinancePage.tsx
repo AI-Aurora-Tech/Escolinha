@@ -196,9 +196,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
                       <p className="text-xs text-gray-500 mt-1">Integração para envios de comunicados e cobranças automáticas.</p>
                   </div>
                   <div className="space-y-4">
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">ID da Instância</label><input type="text" value={zapiInstanceId} onChange={(e) => setZapiInstanceId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="ID da sua instância" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Token da Instância</label><input type="password" value={zapiToken} onChange={(e) => setZapiToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Token da instância" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Client-Token</label><input type="password" value={zapiClientToken} onChange={(e) => setZapiClientToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Client-Token da Z-API" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">ID da instancia</label><input type="text" value={zapiInstanceId} onChange={(e) => setZapiInstanceId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="ID da sua instância" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Token da instancia</label><input type="password" value={zapiToken} onChange={(e) => setZapiToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Token da instância" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Client- Token</label><input type="password" value={zapiClientToken} onChange={(e) => setZapiClientToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Client-Token da Z-API" /></div>
                   </div>
               </div>
 
@@ -272,7 +272,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 my-8">
                 <h3 className="text-lg font-bold mb-4">Novo Lançamento</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
