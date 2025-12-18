@@ -12,13 +12,13 @@ export const getZApiConfig = async (): Promise<ZApiConfig | null> => {
       .from('app_settings')
       .select('value')
       .eq('key', 'zapi_instance_id')
-      .single();
+      .maybeSingle();
 
     const { data: tokenData } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'zapi_token')
-      .single();
+      .maybeSingle();
 
     if (!instanceData?.value || !tokenData?.value) return null;
 
@@ -52,20 +52,19 @@ export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   const config = await getZApiConfig();
   if (!config) {
-    console.warn("Z-API não configurada: ID ou Token ausentes.");
+    console.warn("Z-API não configurada no sistema.");
     return false;
   }
 
-  // Limpeza robusta: remove tudo que não é dígito e remove o zero inicial se houver (ex: 011 -> 11)
+  // Limpeza do telefone: remove tudo que não é número
   let cleanPhone = phone.replace(/\D/g, '');
-  if (cleanPhone.startsWith('0')) {
-    cleanPhone = cleanPhone.substring(1);
-  }
-
+  
   // Z-API espera o formato 55 + DDD + Número
+  // Adiciona 55 se não houver
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
+    // A chamada agora é feita para o próprio domínio (/api/zapi), que o servidor redireciona
     const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
       method: 'POST',
       headers: {
@@ -80,13 +79,14 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
     const result = await response.json();
     
     if (result.messageId || result.id) {
+      console.log("Mensagem enviada via Z-API com sucesso.");
       return true;
     } else {
-      console.error("Z-API recusou o envio:", result);
+      console.error("Z-API retornou erro:", result);
       return false;
     }
   } catch (error) {
-    console.error("Falha na requisição para Z-API (verifique o Proxy/CORS):", error);
+    console.error("Falha na comunicação com a Z-API:", error);
     return false;
   }
 };
