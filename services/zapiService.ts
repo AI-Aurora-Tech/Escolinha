@@ -27,21 +27,16 @@ export const getZApiConfig = async (): Promise<ZApiConfig | null> => {
       token: tokenData.value
     };
   } catch (err) {
+    console.error("Erro ao ler config Z-API:", err);
     return null;
   }
 };
 
 export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
   try {
-    const { error: err1 } = await supabase
-      .from('app_settings')
-      .upsert({ key: 'zapi_instance_id', value: config.instanceId });
-    
-    const { error: err2 } = await supabase
-      .from('app_settings')
-      .upsert({ key: 'zapi_token', value: config.token });
-    
-    return !err1 && !err2;
+    await supabase.from('app_settings').upsert({ key: 'zapi_instance_id', value: config.instanceId });
+    await supabase.from('app_settings').upsert({ key: 'zapi_token', value: config.token });
+    return true;
   } catch (err) {
     return false;
   }
@@ -49,7 +44,12 @@ export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
 
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   const config = await getZApiConfig();
-  if (!config) return false;
+  
+  // Se não houver configuração, retorna false para o frontend abrir o WhatsApp manual
+  if (!config) {
+    console.warn("Z-API não configurada nas definições do sistema.");
+    return false;
+  }
 
   let cleanPhone = phone.replace(/\D/g, '');
   if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
@@ -58,14 +58,25 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
   try {
     const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: targetPhone, message: message })
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        phone: targetPhone,
+        message: message
+      })
     });
 
-    if (!response.ok) return false;
+    if (!response.ok) {
+        const errLog = await response.text();
+        console.error("Z-API erro na resposta:", errLog);
+        return false;
+    }
+
     const result = await response.json();
     return !!(result.messageId || result.id);
   } catch (error) {
+    console.error("Falha na comunicação com o proxy Z-API:", error);
     return false;
   }
 };
