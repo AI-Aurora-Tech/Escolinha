@@ -1,9 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, ChevronLeft, ChevronRight, PlusCircle, Medal } from 'lucide-react';
 import { sendZApiMessage } from '../services/zapiService';
 
 interface SchedulePageProps {
@@ -28,7 +26,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
 
-  // --- NOTIFICATION STATE ---
+  // Notificação State
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
   const [notifyQueue, setNotifyQueue] = useState<Student[]>([]);
   const [notifyCurrentIndex, setNotifyCurrentIndex] = useState(0);
@@ -81,27 +79,66 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     return [];
   };
 
-  // --- NOTIFICATION LOGIC ---
+  const toggleStudentSelection = (id: string) => {
+    const newSet = new Set(selectedStudentIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedStudentIds(newSet);
+  };
+
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setNewActivity({
+      title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', 
+      groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '',
+      opponent: '', homeScore: 0, awayScore: 0, scorers: []
+    });
+    setTargetType('GROUP');
+    setSelectedStudentIds(new Set());
+    setShowAddModal(true);
+  };
+
+  const handleOpenEdit = (e: React.MouseEvent, act: Activity) => {
+    e.stopPropagation();
+    setEditingId(act.id);
+    setNewActivity(act);
+    setTargetType(act.participants && act.participants.length > 0 ? 'INDIVIDUAL' : 'GROUP');
+    setSelectedStudentIds(new Set(act.participants || []));
+    setShowAddModal(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const data = {
+      ...newActivity,
+      groupId: targetType === 'GROUP' ? newActivity.groupId : undefined,
+      participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : []
+    };
+    if (editingId) onUpdateActivity({ ...data, id: editingId } as Activity);
+    else onAddActivity(data as Omit<Activity, 'id'>);
+    setShowAddModal(false);
+  };
+
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
     const targets = getAttendeesList(activity);
     if (targets.length === 0) {
-      alert("Nenhum atleta vinculado a esta atividade.");
+      alert("Nenhum atleta convocado para esta atividade.");
       return;
     }
     setNotifyActivity(activity);
     setNotifyQueue(targets);
     setNotifyCurrentIndex(0);
-    setNotifyLogs([`Fila preparada para ${targets.length} atletas.`]);
+    setNotifyLogs([`Iniciando disparos para ${targets.length} atletas...`]);
     setNotifyModalOpen(true);
-    setNotifyCountdown(1);
+    setNotifyIsRunning(false);
   };
 
   useEffect(() => {
     if (!notifyModalOpen || !notifyIsRunning || !notifyActivity) return;
     if (notifyCurrentIndex >= notifyQueue.length) {
       setNotifyIsRunning(false);
-      setNotifyLogs(prev => ["✅ Disparos finalizados!", ...prev]);
+      setNotifyLogs(prev => ["✅ Finalizado com sucesso!", ...prev]);
       return;
     }
     if (notifyCountdown > 0) {
@@ -120,7 +157,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
       
       let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n` +
-          `*COMUNICADO: ${type}*\n` +
+          `*CONVOCAÇÃO: ${type}*\n` +
           `Atleta: *${student.name}*\n\n` +
           `📌 *${notifyActivity.title}*\n` +
           `📅 Data: ${formatDate(notifyActivity.date)}\n` +
@@ -128,168 +165,208 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       if (notifyActivity.type === 'GAME') {
         if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
-        if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
+        if (notifyActivity.presentationTime) msg += `🕒 Apresentação: ${notifyActivity.presentationTime}\n`;
         if (notifyActivity.fee && notifyActivity.fee > 0) msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
       }
 
       if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-      msg += `\nContamos com a presença! Por favor, confirme.\nObrigado!`;
+      msg += `\nFavor confirmar presença. Obrigado!`;
 
       const sent = await sendZApiMessage(phone, msg);
       setNotifyLogs(prev => [`${sent ? '✅' : '⚠️'} ${student.name}`, ...prev]);
       if (!sent) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
     }
     setNotifyCurrentIndex(prev => prev + 1);
-    setNotifyCountdown(10);
-  };
-
-  const handleOpenEdit = (e: React.MouseEvent, act: Activity) => {
-    e.stopPropagation();
-    setEditingId(act.id);
-    setNewActivity(act);
-    setTargetType(act.groupId ? 'GROUP' : 'INDIVIDUAL');
-    setSelectedStudentIds(new Set(act.participants || []));
-    setShowAddModal(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const data = {
-      ...newActivity,
-      groupId: targetType === 'GROUP' ? newActivity.groupId : undefined,
-      participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : []
-    };
-    if (editingId) onUpdateActivity({ ...data, id: editingId } as Activity);
-    else onAddActivity(data as Omit<Activity, 'id'>);
-    setShowAddModal(false);
-  };
-
-  const toggleStudentSelection = (id: string) => {
-    const newSet = new Set(selectedStudentIds);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedStudentIds(newSet);
+    setNotifyCountdown(5); // 5 segundos entre disparos na Z-API é seguro
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Agenda Garotos do Martinica</h2>
         {!isGuardian && (
-          <button onClick={() => { setEditingId(null); setShowAddModal(true); }} className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium">
-            <PlusCircle className="w-4 h-4" /> Agendar Atividade
+          <button onClick={handleOpenAdd} className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-lg transition-all text-sm font-bold">
+            <PlusCircle className="w-5 h-5" /> Agendar Atividade
           </button>
         )}
       </div>
 
-      <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-        <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"><ChevronLeft /></button>
-        <div className="flex-1 text-center font-bold text-primary-600 text-lg">{formatDate(selectedDate)}</div>
-        <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"><ChevronRight /></button>
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-4">
+        <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"><ChevronLeft /></button>
+        <div className="flex flex-col items-center">
+          <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Data Selecionada</span>
+          <span className="text-xl font-black text-primary-600">{formatDate(selectedDate)}</span>
+        </div>
+        <button onClick={() => { const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"><ChevronRight /></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           {dailyActivities.map(act => (
-            <div key={act.id} onClick={() => setSelectedActivityId(act.id)} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer hover:shadow-md ${selectedActivityId === act.id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'}`}>
+            <div key={act.id} onClick={() => setSelectedActivityId(act.id)} className={`bg-white p-5 rounded-2xl border transition-all cursor-pointer hover:shadow-xl ${selectedActivityId === act.id ? 'border-primary-500 ring-2 ring-primary-500/20' : 'border-gray-100 shadow-sm'}`}>
               <div className="flex justify-between items-start gap-4">
                 <div className="flex-1">
-                  <h4 className="font-bold text-lg flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${act.type === 'GAME' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {act.type === 'GAME' ? 'Jogo' : 'Treino'}
+                    </span>
+                    {/* Fixed: Wrapped Repeat icon in a span with title for tooltip support as lucide-react icons do not support 'title' prop */}
+                    {act.recurrence === 'weekly' && <span title="Repete semanalmente"><Repeat className="w-3 h-3 text-gray-400" /></span>}
+                  </div>
+                  <h4 className="font-bold text-lg flex items-center gap-2 text-gray-900">
                     {act.type === 'GAME' ? <Trophy className="w-5 h-5 text-yellow-500" /> : <CalendarIcon className="w-5 h-5 text-primary-500" />}
                     {act.title}
                   </h4>
                   {act.type === 'GAME' && act.opponent && (
-                    <div className="mt-2 text-sm font-semibold text-gray-700 bg-orange-50 px-3 py-1 rounded-lg border border-orange-100 w-fit">
-                      🆚 {act.opponent} 
-                      {act.homeScore !== undefined && ` | ${act.homeScore} x ${act.awayScore}`}
+                    <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center gap-4">
+                       <div className="text-center px-4 border-r"><span className="text-[10px] uppercase font-bold text-gray-400 block">Garotos</span><span className="text-xl font-black text-primary-600">{act.homeScore ?? 0}</span></div>
+                       <div className="text-xs font-bold text-gray-400">VS</div>
+                       <div className="flex-1">
+                          <span className="text-[10px] uppercase font-bold text-gray-400 block">Adversário</span>
+                          <span className="text-sm font-bold text-gray-800">{act.opponent}</span>
+                       </div>
+                       <div className="text-center px-4 border-l"><span className="text-[10px] uppercase font-bold text-gray-400 block">Eles</span><span className="text-xl font-black text-gray-700">{act.awayScore ?? 0}</span></div>
                     </div>
                   )}
-                  <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-500 font-medium">
-                    <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {act.startTime} - {act.endTime}</span>
-                    {act.presentationTime && <span className="flex items-center gap-1 text-orange-600"><MapPin className="w-4 h-4" /> Apres: {act.presentationTime}</span>}
-                    {act.fee && act.fee > 0 && <span className="flex items-center gap-1 text-green-600 font-bold"><Coins className="w-4 h-4" /> R$ {act.fee.toFixed(2)}</span>}
+                  <div className="flex flex-wrap items-center gap-4 mt-4 text-xs font-bold text-gray-500">
+                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded"><Clock className="w-3.5 h-3.5" /> {act.startTime} - {act.endTime}</span>
+                    {act.presentationTime && <span className="flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded"><MapPin className="w-3.5 h-3.5" /> Chegar: {act.presentationTime}</span>}
+                    {act.fee && act.fee > 0 && <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded"><Coins className="w-3.5 h-3.5" /> Taxa: R$ {act.fee.toFixed(2)}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {!isGuardian && (
-                    <>
-                      <button onClick={(e) => handleOpenNotify(e, act)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="Notificar via WhatsApp"><Megaphone className="w-4 h-4" /></button>
-                      <button onClick={(e) => handleOpenEdit(e, act)} className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors" title="Editar"><Edit className="w-4 h-4" /></button>
-                    </>
-                  )}
-                </div>
+                {!isGuardian && (
+                  <div className="flex flex-col gap-2">
+                    <button onClick={(e) => handleOpenNotify(e, act)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 shadow-sm" title="Disparar via WhatsApp"><Megaphone className="w-5 h-5" /></button>
+                    <button onClick={(e) => handleOpenEdit(e, act)} className="p-2 bg-gray-50 text-gray-500 rounded-lg hover:bg-gray-100 shadow-sm" title="Editar"><Edit className="w-5 h-5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); if(confirm('Excluir atividade?')) onDeleteActivity?.(act.id); }} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 shadow-sm" title="Excluir"><Trash2 className="w-5 h-5" /></button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
-          {dailyActivities.length === 0 && <div className="p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><CalendarIcon className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>Nenhuma atividade para este dia.</p></div>}
+          {dailyActivities.length === 0 && <div className="p-20 text-center text-gray-400 bg-white rounded-2xl border-2 border-dashed border-gray-100 flex flex-col items-center gap-4"><CalendarIcon className="w-16 h-16 opacity-10" /><p className="font-medium text-gray-400 italic">Nenhuma atividade agendada para hoje.</p></div>}
         </div>
 
-        {/* Painel de Presença */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-fit">
-          <div className="p-4 border-b bg-gray-50 font-bold text-gray-800">
-            {selectedActivity ? `Lista: ${selectedActivity.title}` : 'Selecione uma atividade'}
+        {/* Painel de Presença e Taxas */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit sticky top-6">
+          <div className="p-5 border-b bg-gray-50">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+               <CheckSquare className="w-5 h-5 text-primary-600" /> 
+               {selectedActivity ? 'Chamada & Taxas' : 'Lista de Presença'}
+            </h3>
+            <p className="text-[10px] text-gray-400 uppercase font-bold mt-1 tracking-tighter">{selectedActivity?.title || 'Selecione ao lado'}</p>
           </div>
-          <div className="p-2 max-h-[500px] overflow-y-auto">
+          <div className="p-2 max-h-[600px] overflow-y-auto">
             {selectedActivity ? (
               getAttendeesList(selectedActivity).map(s => {
                 const isPresent = selectedActivity.attendance.includes(s.id);
+                const isPaid = selectedActivity.feePayments?.includes(s.id);
+                const goalCount = selectedActivity.scorers?.filter(id => id === s.id).length || 0;
+                
                 return (
-                  <div key={s.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors border-b border-gray-50 last:border-0">
-                    <span className="text-sm font-medium text-gray-700">{s.name}</span>
-                    {!isGuardian ? (
-                      <button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1 rounded-full transition-colors ${isPresent ? 'text-green-600 bg-green-50' : 'text-gray-300 bg-gray-50'}`}>
-                        <CheckCircle className="w-7 h-7" />
+                  <div key={s.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-all border-b border-gray-50 last:border-0">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-gray-800 flex items-center gap-1">
+                        {s.name}
+                        {goalCount > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded-full font-black">⚽ {goalCount}</span>}
+                      </span>
+                      <span className="text-[9px] text-gray-400 font-medium">Resp: {s.guardian.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       {selectedActivity.type === 'GAME' && selectedActivity.fee! > 0 && (
+                          <button 
+                            onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)}
+                            disabled={isGuardian}
+                            className={`p-2 rounded-lg transition-all ${isPaid ? 'bg-green-100 text-green-700' : 'bg-orange-50 text-orange-300'}`}
+                            title={isPaid ? 'Taxa Paga' : 'Pendente de Pagamento'}
+                          >
+                             <DollarSign className="w-5 h-5" />
+                          </button>
+                       )}
+                       <button 
+                        onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} 
+                        disabled={isGuardian}
+                        className={`p-2 rounded-lg transition-all ${isPresent ? 'bg-green-600 text-white shadow-md' : 'bg-gray-100 text-gray-300'}`}
+                        title={isPresent ? 'Presente' : 'Ausente'}
+                       >
+                        <CheckCircle className="w-5 h-5" />
                       </button>
-                    ) : (
-                      <div className={isPresent ? 'text-green-600' : 'text-gray-300'}><CheckCircle className="w-7 h-7" /></div>
-                    )}
+                    </div>
                   </div>
                 );
               })
-            ) : <p className="text-xs text-gray-400 text-center py-8">Clique em uma atividade para ver a lista de presença.</p>}
+            ) : <div className="text-center py-12 px-6 text-gray-300 flex flex-col items-center gap-2"><Users className="w-12 h-12 opacity-10" /><p className="text-xs font-bold italic">Selecione uma atividade para gerenciar presença e pagamentos.</p></div>}
           </div>
         </div>
       </div>
 
+      {/* Modal de Agendamento */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8">
-            <h3 className="text-lg font-bold mb-6 text-gray-900 border-b pb-4 flex items-center gap-2">
-              <CalendarIcon className="text-primary-600" /> {editingId ? 'Editar Atividade' : 'Agendar Nova Atividade'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8 my-8 relative animate-in zoom-in duration-200">
+            <button onClick={() => setShowAddModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600"><X /></button>
+            <h3 className="text-xl font-black mb-8 text-gray-900 border-b pb-4 flex items-center gap-2">
+              <PlusCircle className="text-primary-600" /> {editingId ? 'Alterar Atividade' : 'Nova Atividade'}
             </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div><label className="block text-sm font-medium mb-1">Título da Atividade</label><input required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-primary-500" value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} placeholder="Ex: Treino Tático ou Jogo Contra..." /></div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium mb-1">Tipo</label><select className="w-full border rounded-lg p-2 bg-white" value={newActivity.type} onChange={e => setNewActivity({...newActivity, type: e.target.value as 'TRAINING' | 'GAME'})}><option value="TRAINING">Treino</option><option value="GAME">Jogo</option></select></div>
-                <div><label className="block text-sm font-medium mb-1">Grupo Alvo</label><select className="w-full border rounded-lg p-2 bg-white" value={newActivity.groupId} onChange={e => {setNewActivity({...newActivity, groupId: e.target.value}); setTargetType('GROUP');}}><option value="">Selecione...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+            
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-400 mb-2">Tipo de Evento</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button type="button" onClick={() => setNewActivity({...newActivity, type: 'TRAINING'})} className={`py-3 rounded-2xl border-2 font-bold transition-all ${newActivity.type === 'TRAINING' ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-gray-100 text-gray-400'}`}>Treino</button>
+                  <button type="button" onClick={() => setNewActivity({...newActivity, type: 'GAME'})} className={`py-3 rounded-2xl border-2 font-bold transition-all ${newActivity.type === 'GAME' ? 'bg-orange-50 border-orange-600 text-orange-700' : 'bg-white border-gray-100 text-gray-400'}`}>Jogo</button>
+                </div>
               </div>
 
+              <div><label className="block text-xs font-black uppercase text-gray-400 mb-1">Título</label><input required className="w-full border-2 border-gray-100 rounded-xl p-3 focus:border-primary-500 outline-none font-medium" value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} placeholder="Ex: Treino de Finalização" /></div>
+              
               {newActivity.type === 'GAME' && (
-                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 space-y-4 animate-in fade-in zoom-in duration-300">
-                  <div><label className="block text-xs font-bold text-orange-800 uppercase mb-1">Adversário</label><input className="w-full border-orange-200 rounded-lg p-2 text-sm focus:ring-primary-500" value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} placeholder="Nome do time adversário" /></div>
+                <div className="bg-orange-50 p-6 rounded-2xl space-y-4 border border-orange-100">
+                  <div><label className="block text-[10px] font-black uppercase text-orange-800 mb-1">Adversário</label><input className="w-full border-0 rounded-xl p-3 text-sm font-bold focus:ring-2 focus:ring-orange-500" value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} placeholder="Nome do Clube/Escolinha" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-bold text-orange-800 uppercase mb-1">Apresentação</label><input type="time" className="w-full border-orange-200 rounded-lg p-2 text-sm" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
-                    <div><label className="block text-xs font-bold text-orange-800 uppercase mb-1">Taxa Jogo (R$)</label><input type="number" step="0.01" className="w-full border-orange-200 rounded-lg p-2 text-sm" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} /></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-orange-200/50">
-                    <div><label className="block text-[10px] font-bold text-orange-800 uppercase text-center">Nós</label><input type="number" className="w-full border-orange-200 rounded-lg p-2 text-center text-xl font-bold" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} /></div>
-                    <div><label className="block text-[10px] font-bold text-orange-800 uppercase text-center">Eles</label><input type="number" className="w-full border-orange-200 rounded-lg p-2 text-center text-xl font-bold" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-orange-800 mb-1">Apresentação</label><input type="time" className="w-full border-0 rounded-xl p-3 text-sm font-bold focus:ring-2 focus:ring-orange-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-orange-800 mb-1">Taxa por Atleta</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400 font-bold text-xs">R$</span><input type="number" step="0.01" className="w-full border-0 rounded-xl p-3 pl-8 text-sm font-bold focus:ring-2 focus:ring-orange-500" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} /></div></div>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div><label className="block text-sm font-medium mb-1">Data</label><input type="date" className="w-full border rounded-lg p-2" value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} /></div>
-                <div><label className="block text-sm font-medium mb-1">Início</label><input type="time" className="w-full border rounded-lg p-2" value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
-                <div><label className="block text-sm font-medium mb-1">Fim</label><input type="time" className="w-full border rounded-lg p-2" value={newActivity.endTime} onChange={e => setNewActivity({...newActivity, endTime: e.target.value})} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-xs font-black uppercase text-gray-400 mb-1">Data</label><input type="date" required className="w-full border-2 border-gray-100 rounded-xl p-3 text-sm font-bold" value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} /></div>
+                <div><label className="block text-xs font-black uppercase text-gray-400 mb-1">Horário Início</label><input type="time" required className="w-full border-2 border-gray-100 rounded-xl p-3 text-sm font-bold" value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
               </div>
 
-              <div><label className="block text-sm font-medium mb-1">Local</label><div className="relative"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input className="w-full pl-10 border rounded-lg p-2" value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} placeholder="Local da atividade" /></div></div>
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-400 mb-2">Convocação / Alvos</label>
+                <div className="bg-gray-50 p-4 rounded-2xl space-y-4">
+                   <div className="flex gap-2 p-1 bg-white rounded-xl border border-gray-100 shadow-sm">
+                      <button type="button" onClick={() => setTargetType('GROUP')} className={`flex-1 py-2 text-xs font-black uppercase rounded-lg transition-all ${targetType === 'GROUP' ? 'bg-primary-600 text-white' : 'text-gray-400'}`}>Por Grupo</button>
+                      <button type="button" onClick={() => setTargetType('INDIVIDUAL')} className={`flex-1 py-2 text-xs font-black uppercase rounded-lg transition-all ${targetType === 'INDIVIDUAL' ? 'bg-primary-600 text-white' : 'text-gray-400'}`}>Individual</button>
+                   </div>
+                   
+                   {targetType === 'GROUP' ? (
+                      <select className="w-full border-2 border-gray-100 rounded-xl p-3 bg-white text-sm font-bold" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}>
+                        <option value="">Escolher Grupo...</option>
+                        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                   ) : (
+                      <div className="space-y-2">
+                        <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" /><input type="text" placeholder="Filtrar atletas..." className="w-full pl-10 pr-4 py-2 text-xs border rounded-xl" value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
+                        <div className="max-h-40 overflow-y-auto border rounded-xl p-2 bg-white grid grid-cols-1 gap-1">
+                          {students.filter(s => s.name.toLowerCase().includes(studentSearch.toLowerCase())).map(s => (
+                            <button key={s.id} type="button" onClick={() => toggleStudentSelection(s.id)} className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold transition-all ${selectedStudentIds.has(s.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:bg-gray-50'}`}>
+                              {selectedStudentIds.has(s.id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />} {s.name}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-gray-400 text-right font-bold">{selectedStudentIds.size} atletas selecionados</p>
+                      </div>
+                   )}
+                </div>
+              </div>
 
               <div className="pt-6 border-t flex justify-end gap-3">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-6 py-2 border rounded-lg hover:bg-gray-50 font-medium text-gray-600 transition-colors">Cancelar</button>
-                <button type="submit" className="px-8 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 shadow-lg shadow-primary-200 font-bold transition-all">Salvar Agenda</button>
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-6 py-3 border-2 border-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-all">Cancelar</button>
+                <button type="submit" className="px-10 py-3 bg-primary-600 text-white rounded-xl font-black shadow-xl shadow-primary-500/20 hover:bg-primary-700 hover:scale-[1.02] active:scale-95 transition-all">Salvar Agendamento</button>
               </div>
             </form>
           </div>
@@ -298,21 +375,28 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       {/* Modal de Disparos Z-API */}
       {notifyModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 text-center">
-            <h3 className="text-lg font-bold mb-4 flex items-center justify-center gap-2 text-blue-600">
-              <Megaphone /> Notificando via Z-API
-            </h3>
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-48 overflow-y-auto text-xs font-mono text-left mb-6 shadow-inner">
-              {notifyLogs.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 text-center animate-in slide-in-from-bottom-4 duration-300">
+            <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+               <Megaphone className="w-10 h-10 text-blue-600" />
             </div>
-            <div className="flex justify-center gap-3">
+            <h3 className="text-xl font-black mb-2 text-gray-900">Comunicado WhatsApp</h3>
+            <p className="text-sm text-gray-500 mb-8 font-medium">Os responsáveis receberão os detalhes da convocação diretamente via Z-API.</p>
+            
+            <div className="bg-gray-900 text-green-400 p-4 rounded-2xl h-48 overflow-y-auto text-[10px] font-mono text-left mb-6 shadow-inner border border-gray-700">
+              {notifyLogs.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
+              {notifyIsRunning && <div className="animate-pulse">_</div>}
+            </div>
+            
+            <div className="flex flex-col gap-3">
               {!notifyIsRunning && notifyCurrentIndex < notifyQueue.length ? (
-                <button onClick={() => setNotifyIsRunning(true)} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all">Iniciar Disparos</button>
+                <button onClick={() => setNotifyIsRunning(true)} className="w-full py-4 bg-green-600 text-white rounded-2xl font-black shadow-lg shadow-green-200 hover:bg-green-700 transition-all">Começar Envio</button>
+              ) : notifyIsRunning ? (
+                <button onClick={() => setNotifyIsRunning(false)} className="w-full py-4 bg-red-100 text-red-700 rounded-2xl font-black hover:bg-red-200 transition-all">Pausar Disparos</button>
               ) : (
-                <button onClick={() => setNotifyIsRunning(false)} className="flex-1 py-3 bg-red-100 text-red-700 rounded-xl font-bold hover:bg-red-200 transition-all" disabled={notifyCurrentIndex >= notifyQueue.length}>Pausar</button>
+                <div className="py-4 bg-green-100 text-green-700 rounded-2xl font-black">Disparos Concluídos</div>
               )}
-              <button onClick={() => setNotifyModalOpen(false)} className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-all">Fechar</button>
+              <button onClick={() => setNotifyModalOpen(false)} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-2xl transition-all">Fechar Janela</button>
             </div>
           </div>
         </div>
