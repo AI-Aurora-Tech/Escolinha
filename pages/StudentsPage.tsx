@@ -640,7 +640,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
                     <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
                         <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 w-fit"><Wallet className="w-4 h-4" /> Histórico Financeiro</div>
-                        {!isGuardian && (<div className="flex gap-2"><button onClick={() => setShowChargeModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 text-sm font-medium"><PlusCircle className="w-4 h-4" /> Nova Cobrança</button><button onClick={() => sendBatchChargeMessage(studentTransactions)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"><MessageCircle className="w-4 h-4" /> Cobrar Tudo</button></div>)}
+                        <div className="flex gap-2">
+                            {isGuardian && selectedFinanceIds.size > 0 && (
+                                <button onClick={() => initiatePixPayment()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-bold animate-pulse shadow-lg">
+                                    <QrCode className="w-4 h-4" /> PAGAR SELECIONADOS (R$ {selectedTotal.toFixed(2)})
+                                </button>
+                            )}
+                            {!isGuardian && (
+                                <>
+                                    <button onClick={() => setShowChargeModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 text-sm font-medium"><PlusCircle className="w-4 h-4" /> Nova Cobrança</button>
+                                    <button onClick={() => sendBatchChargeMessage(studentTransactions)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"><MessageCircle className="w-4 h-4" /> Cobrar Tudo</button>
+                                </>
+                            )}
+                        </div>
                     </div>
                     <div className="space-y-3">
                          {studentTransactions.map(tx => {
@@ -656,11 +668,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                  </div>
                                  <div className="text-right">
                                      <p className="font-bold">R$ {tx.amount.toFixed(2)}</p>
-                                     {tx.status !== PaymentStatus.PAID && !isGuardian && (<div className="flex gap-1 mt-2 justify-end">
-                                         <button onClick={() => initiatePixPayment(tx.id)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100"><QrCode className="w-3 h-3" /></button>
-                                         <button onClick={() => sendChargeMessage(tx)} className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"><Send className="w-3 h-3" /></button>
-                                         <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-1.5 bg-gray-100 rounded hover:bg-gray-200"><CheckCircle className="w-3 h-3" /></button>
-                                     </div>)}
+                                     {tx.status !== PaymentStatus.PAID && (
+                                         <div className="flex gap-1 mt-2 justify-end">
+                                             <button onClick={() => initiatePixPayment(tx.id)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100" title="Gerar Código PIX"><QrCode className="w-3 h-3" /></button>
+                                             {!isGuardian && (
+                                                 <>
+                                                     <button onClick={() => sendChargeMessage(tx)} className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"><Send className="w-3 h-3" /></button>
+                                                     <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-1.5 bg-gray-100 rounded hover:bg-gray-200"><CheckCircle className="w-3 h-3" /></button>
+                                                 </>
+                                             )}
+                                         </div>
+                                     )}
                                  </div>
                              </div>);
                          })}
