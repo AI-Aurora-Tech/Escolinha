@@ -4,28 +4,28 @@ import { supabase } from '../lib/supabaseClient';
 export interface ZApiConfig {
   instanceId: string;
   token: string;
+  clientToken?: string;
 }
 
 export const getZApiConfig = async (): Promise<ZApiConfig | null> => {
   try {
-    const { data: instanceData } = await supabase
+    const { data: settings } = await supabase
       .from('app_settings')
-      .select('value')
-      .eq('key', 'zapi_instance_id')
-      .maybeSingle();
+      .select('key, value')
+      .in('key', ['zapi_instance_id', 'zapi_token', 'zapi_client_token']);
 
-    const { data: tokenData } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'zapi_token')
-      .maybeSingle();
+    if (!settings || settings.length < 2) return null;
 
-    if (!instanceData?.value || !tokenData?.value) return null;
+    const config: any = {};
+    settings.forEach(s => {
+      if (s.key === 'zapi_instance_id') config.instanceId = s.value;
+      if (s.key === 'zapi_token') config.token = s.value;
+      if (s.key === 'zapi_client_token') config.clientToken = s.value;
+    });
 
-    return {
-      instanceId: instanceData.value,
-      token: tokenData.value
-    };
+    if (!config.instanceId || !config.token) return null;
+
+    return config as ZApiConfig;
   } catch (err) {
     console.error("Erro ao ler config Z-API:", err);
     return null;
@@ -34,9 +34,17 @@ export const getZApiConfig = async (): Promise<ZApiConfig | null> => {
 
 export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
   try {
-    await supabase.from('app_settings').upsert({ key: 'zapi_instance_id', value: config.instanceId });
-    await supabase.from('app_settings').upsert({ key: 'zapi_token', value: config.token });
-    return true;
+    const upserts = [
+      { key: 'zapi_instance_id', value: config.instanceId },
+      { key: 'zapi_token', value: config.token }
+    ];
+    
+    if (config.clientToken !== undefined) {
+      upserts.push({ key: 'zapi_client_token', value: config.clientToken });
+    }
+
+    const { error } = await supabase.from('app_settings').upsert(upserts);
+    return !error;
   } catch (err) {
     return false;
   }
@@ -45,24 +53,28 @@ export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   const config = await getZApiConfig();
   
-  // Se não houver configuração, retorna false para o frontend abrir o WhatsApp manual
   if (!config) {
-    console.warn("Z-API não configurada nas definições do sistema.");
+    console.warn("Z-API não configurada completamente.");
     return false;
   }
 
   let cleanPhone = phone.replace(/\D/g, '');
-  // Remove zero à esquerda se houver (ex: 011...)
   if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
-  // Garante o código do país
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // CRITICAL: Algumas instâncias da Z-API exigem o Client-Token para permissão
+    if (config.clientToken) {
+      headers['client-token'] = config.clientToken;
+    }
+
     const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: headers,
       body: JSON.stringify({
         phone: targetPhone,
         message: message
@@ -70,30 +82,23 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
     });
 
     if (!response.ok) {
-        const errLog = await response.text();
-        console.error("Z-API erro na resposta:", errLog);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Z-API erro detalhado:", errorData);
         return false;
     }
 
     const result = await response.json();
     
-    // Diferentes versões da Z-API retornam campos diferentes de sucesso
-    const isSuccess = !!(
+    // Verificação robusta de sucesso
+    return !!(
       result.messageId || 
       result.id || 
       result.zaapId || 
       result.status === 'success' || 
-      result.status === 200 ||
       result.sent === true
     );
-
-    if (!isSuccess) {
-      console.warn("Z-API respondeu sem ID de sucesso:", result);
-    }
-
-    return isSuccess;
   } catch (error) {
-    console.error("Falha na comunicação com o proxy Z-API:", error);
+    console.error("Falha física na comunicação com Z-API (CORS ou Rede):", error);
     return false;
   }
 };

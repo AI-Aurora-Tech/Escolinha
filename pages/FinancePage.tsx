@@ -21,6 +21,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   const [mpToken, setMpToken] = useState('');
   const [zapiInstance, setZapiInstance] = useState('');
   const [zapiToken, setZapiToken] = useState('');
+  const [zapiClientToken, setZapiClientToken] = useState('');
   const [loadingToken, setLoadingToken] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,6 +57,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         if (zapi) {
             setZapiInstance(zapi.instanceId);
             setZapiToken(zapi.token);
+            setZapiClientToken(zapi.clientToken || '');
         }
     };
     loadTokens();
@@ -64,7 +66,11 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   const handleSaveSettings = async () => {
       setLoadingToken(true);
       const mpSuccess = await saveMPAccessToken(mpToken);
-      const zapiSuccess = await saveZApiConfig({ instanceId: zapiInstance, token: zapiToken });
+      const zapiSuccess = await saveZApiConfig({ 
+        instanceId: zapiInstance, 
+        token: zapiToken,
+        clientToken: zapiClientToken 
+      });
       
       if (mpSuccess && zapiSuccess) alert('Configurações salvas com sucesso!');
       else alert('Erro ao salvar algumas configurações.');
@@ -293,25 +299,37 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
                       <p className="text-sm text-gray-500 mt-1">Envio automático de cobranças e notificações.</p>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">ID da Instância</label>
-                          <input 
-                              type="text" 
-                              value={zapiInstance}
-                              onChange={(e) => setZapiInstance(e.target.value)}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                              placeholder="3C..."
-                          />
+                  <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">ID da Instância</label>
+                              <input 
+                                  type="text" 
+                                  value={zapiInstance}
+                                  onChange={(e) => setZapiInstance(e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="3C..."
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Token</label>
+                              <input 
+                                  type="password" 
+                                  value={zapiToken}
+                                  onChange={(e) => setZapiToken(e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="F1..."
+                              />
+                          </div>
                       </div>
                       <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Token</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Client Token (Opcional - Ver em Segurança na Z-API)</label>
                           <input 
                               type="password" 
-                              value={zapiToken}
-                              onChange={(e) => setZapiToken(e.target.value)}
+                              value={zapiClientToken}
+                              onChange={(e) => setZapiClientToken(e.target.value)}
                               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                              placeholder="F1..."
+                              placeholder="C-..."
                           />
                       </div>
                   </div>
