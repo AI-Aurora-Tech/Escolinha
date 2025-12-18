@@ -108,7 +108,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (somethingChanged) setMonitoredPayments(remainingMonitored);
     }, 3000); 
     return () => clearInterval(interval);
-  }, [monitoredPayments, pixData, transactions]); 
+  }, [monitoredPayments, pixData, transactions, onUpdateTransaction]); 
 
   const handleStartBulkSend = () => {
       const activeStudents = students.filter(s => s.active);
@@ -155,9 +155,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           if (phone) {
               const dueDate = formatDate(tx.date);
               const message = `Olá ${student.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\nA mensalidade de *${student.name}* (${dueDate}) já está disponível.\nValor: R$ ${tx.amount.toFixed(2)}\n\nLink para pagamento:\n${finalLink}\n\nObrigado!`;
+              
               const sent = await sendZApiMessage(phone, message);
               if (sent) setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
-              else setBulkLogs(prev => [`❌ Falha no disparo Z-API para ${student.name}`, ...prev]);
+              else setBulkLogs(prev => [`❌ Falha Z-API: ${student.name}`, ...prev]);
           } else setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
       } else setBulkLogs(prev => [`❌ Falha no link para ${student.name}`, ...prev]);
       nextBulkItem();
@@ -219,8 +220,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (!getStatus(d.school)) missingList.push("Declaração Escolar");
       if (missingList.length === 0) return;
       const message = `Olá ${student.guardian.name}, tudo bem? ⚽\nAqui é da Escolinha Garotos do Martinica.\nNotamos que a documentação do atleta *${student.name}* está pendente.\n\nItens faltantes:\n${missingList.map(item => `- ${item}`).join('\n')}\n\nPoderia nos enviar uma foto para regularizarmos o cadastro? Obrigado!`;
+      
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Solicitação de documentos enviada com sucesso!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
+      if (sent) alert("Solicitação enviada via Z-API!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
   };
 
   const handleRequestMedical = async (student: Student) => {
@@ -228,7 +230,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (!phone) { alert("Telefone do responsável não encontrado."); return; }
       const message = `Olá ${student.guardian.name}, tudo bem? ⚽\nAqui é da Escolinha Garotos do Martinica.\nO atestado médico do atleta *${student.name}* consta como vencido.\n\nPara a segurança dele, é fundamental a renovação. Por favor, providencie. Obrigado!`;
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Aviso de atestado enviado!"); else alert("Erro ao enviar via Z-API.");
+      if (sent) alert("Aviso enviado via Z-API!"); else alert("Erro ao enviar via Z-API.");
   };
 
   const sendChargeMessage = async (tx: Transaction) => {
@@ -236,7 +238,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (!phone || !tx.paymentLink) { alert("Telefone ou Link indisponível."); return; }
       const message = `Olá ${studentForm.guardian.name}, somos da Garotos do Martinica. ⚽\nConsta a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: R$ ${tx.amount.toFixed(2)}\n\nLink PIX:\n${tx.paymentLink}\n\nObrigado!`;
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Cobrança enviada!"); else alert("Erro Z-API.");
+      if (sent) alert("Cobrança enviada via Z-API!"); else alert("Erro Z-API.");
   };
 
   const checkStatus = async (tx: Transaction) => {
@@ -265,7 +267,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: pendingTxs.map(t => t.id) }]);
               const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\nIdentificamos débitos em aberto de *${studentForm.name}* (Total: R$ ${totalAmount.toFixed(2)}).\n\nCódigo PIX Copia e Cola:\n\n${mpResult.qrCode}\n\nO sistema confirmará automaticamente.`;
               await sendZApiMessage(phone, message);
-              alert("Cobrança unificada enviada!");
+              alert("Cobrança unificada enviada via Z-API!");
           } else alert("Erro ao gerar PIX.");
       } catch (e) { alert("Erro de comunicação."); } finally { setSendingPixId(null); }
   };
@@ -284,7 +286,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
               const message = `Referente a: *${tx.description}*\nValor: R$ ${tx.amount.toFixed(2)}\n\nCódigo PIX:\n\n${mpResult.qrCode}`;
               await sendZApiMessage(phone, message);
-              alert("Código PIX enviado!");
+              alert("Código PIX enviado via Z-API!");
           } else alert("Erro PIX.");
       } catch (e) { alert("Erro conexão."); } finally { setSendingPixId(null); }
   };
@@ -398,7 +400,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleExportExcel = () => {
     const data = filteredStudents.map(s => {
-        const check = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
         const groupNames = s.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ');
         return { 'Nome do Aluno': s.name, 'Data Nascimento': formatDate(s.birthDate), 'Idade': calculateAge(s.birthDate), 'RG': s.rg, 'CPF Aluno': s.cpf, 'Grupos': groupNames || 'N/A', 'Nome Responsável': s.guardian.name, 'CPF Responsável': s.guardian.cpf, 'Telefone': s.guardian.phone, 'Status': s.active ? 'Ativo' : 'Inativo', 'Atestado': isMedicalExpired(s.medicalCertificateExpiry) ? 'Vencido' : 'Válido' };
     });
@@ -466,7 +467,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const pres = curMonth.filter(a => a.attendance.includes(editingId!)).length;
       const rate = curMonth.length > 0 ? Math.round((pres / curMonth.length) * 100) : 0;
       const message = `Relatório de Frequência - *${studentForm.name}*\nPresenças: ${pres}/${curMonth.length}\nFrequência: ${rate}%`;
-      await sendZApiMessage(phone, message); alert("Relatório de frequência enviado!");
+      
+      await sendZApiMessage(phone, message); 
+      alert("Relatório de frequência enviado via Z-API!");
   };
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
