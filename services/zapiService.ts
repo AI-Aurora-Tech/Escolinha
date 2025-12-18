@@ -45,7 +45,6 @@ export const saveZApiConfig = async (config: ZApiConfig): Promise<boolean> => {
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   const config = await getZApiConfig();
   
-  // Se não houver configuração, retorna false para o frontend abrir o WhatsApp manual
   if (!config) {
     console.warn("Z-API não configurada nas definições do sistema.");
     return false;
@@ -74,7 +73,8 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
     }
 
     const result = await response.json();
-    return !!(result.messageId || result.id);
+    // Verifica por múltiplos campos de sucesso comuns em diferentes versões da Z-API
+    return !!(result.messageId || result.id || result.zaapId || result.status === 'success' || result.status === 200);
   } catch (error) {
     console.error("Falha na comunicação com o proxy Z-API:", error);
     return false;
