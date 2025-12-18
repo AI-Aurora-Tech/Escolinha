@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, MessageCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
+import { getZApiConfig, saveZApiConfig } from '../services/zapiService';
 
 interface FinancePageProps {
   transactions: Transaction[];
@@ -16,9 +17,15 @@ interface FinancePageProps {
 export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, onAddTransaction, onUpdateTransaction }) => {
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
   
-  // Settings State
+  // Settings State - Mercado Pago
   const [mpToken, setMpToken] = useState('');
-  const [loadingToken, setLoadingToken] = useState(false);
+  
+  // Settings State - Z-API
+  const [zApiInstanceId, setZApiInstanceId] = useState('');
+  const [zApiToken, setZApiToken] = useState('');
+  const [zApiClientToken, setZApiClientToken] = useState('');
+  
+  const [loadingSave, setLoadingSave] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
@@ -43,21 +50,42 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   const [installments, setInstallments] = useState(1);
   const [installmentDates, setInstallmentDates] = useState<string[]>([]);
 
-  // Load Token on Mount
+  // Load Configurations on Mount
   useEffect(() => {
-    const loadToken = async () => {
-        const token = await getMPAccessToken();
-        if (token) setMpToken(token);
+    const loadConfigs = async () => {
+        const mpTokenData = await getMPAccessToken();
+        if (mpTokenData) setMpToken(mpTokenData);
+
+        const zApiData = await getZApiConfig();
+        if (zApiData) {
+            setZApiInstanceId(zApiData.instanceId);
+            setZApiToken(zApiData.token);
+            setZApiClientToken(zApiData.clientToken);
+        }
     };
-    loadToken();
+    loadConfigs();
   }, []);
 
-  const handleSaveToken = async () => {
-      setLoadingToken(true);
-      const success = await saveMPAccessToken(mpToken);
-      if (success) alert('Token salvo com sucesso!');
-      else alert('Erro ao salvar token.');
-      setLoadingToken(false);
+  const handleSaveConfigs = async () => {
+      setLoadingSave(true);
+      
+      // Salva Mercado Pago
+      const successMP = await saveMPAccessToken(mpToken);
+      
+      // Salva Z-API
+      const successZApi = await saveZApiConfig({
+          instanceId: zApiInstanceId,
+          token: zApiToken,
+          clientToken: zApiClientToken
+      });
+
+      if (successMP && successZApi) {
+          alert('Todas as configurações foram salvas com sucesso!');
+      } else {
+          alert('Houve um erro ao salvar algumas configurações. Verifique o console.');
+      }
+      
+      setLoadingSave(false);
   };
 
   const totalIncome = transactions
@@ -196,7 +224,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         head: [['Data', 'Descrição', 'Tipo', 'Status', 'Valor']],
         body: tableRows,
         styles: { fontSize: 8 },
-        headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+        headStyles: { fillColor: [249, 115, 22] }, 
         didParseCell: (data) => {
             if (data.section === 'body' && data.column.index === 4) {
                 const row = exportData[data.row.index];
@@ -249,44 +277,103 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
       </div>
 
       {activeTab === 'SETTINGS' ? (
-          <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm max-w-2xl mx-auto">
-              <div className="mb-6 border-b border-gray-100 pb-4">
-                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                      <Settings className="w-6 h-6 text-primary-600" /> Configuração Mercado Pago
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">Configure sua integração para gerar links de pagamento automáticos.</p>
-              </div>
-              
-              <div className="space-y-4">
-                  <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (Produção)</label>
-                      <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <input 
-                              type="password" 
-                              value={mpToken}
-                              onChange={(e) => setMpToken(e.target.value)}
-                              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                              placeholder="APP_USR-0000000000000000-000000-00000000000000000000000000000000-000000000"
-                          />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                          Você encontra este token no painel de desenvolvedores do Mercado Pago. Certifique-se de usar a credencial de "Produção".
-                      </p>
+          <div className="max-w-4xl mx-auto space-y-6">
+              {/* Mercado Pago Section */}
+              <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="mb-6 border-b border-gray-100 pb-4">
+                      <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                          <img src="https://www.mercadopago.com/org-img/MP3/home/logomp3.gif" alt="MP" className="h-6" /> Mercado Pago
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">Configure o Access Token para automação de mensalidades via PIX.</p>
                   </div>
                   
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (Produção)</label>
+                          <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                              <input 
+                                  type="password" 
+                                  value={mpToken}
+                                  onChange={(e) => setMpToken(e.target.value)}
+                                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+                                  placeholder="APP_USR-..."
+                              />
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Z-API Section */}
+              <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="mb-6 border-b border-gray-100 pb-4">
+                      <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                          <MessageCircle className="w-6 h-6 text-green-600" /> WhatsApp (Z-API)
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">Configure sua instância Z-API para envio automático de comunicados e cobranças.</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">ID da Instância</label>
+                          <div className="relative">
+                              <Smartphone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                              <input 
+                                  type="text" 
+                                  value={zApiInstanceId}
+                                  onChange={(e) => setZApiInstanceId(e.target.value)}
+                                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="Ex: 3EB6A..."
+                              />
+                          </div>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Token da Instância</label>
+                          <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                              <input 
+                                  type="password" 
+                                  value={zApiToken}
+                                  onChange={(e) => setZApiToken(e.target.value)}
+                                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="F6853E..."
+                              />
+                          </div>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Client-Token</label>
+                          <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                              <input 
+                                  type="password" 
+                                  value={zApiClientToken}
+                                  onChange={(e) => setZApiClientToken(e.target.value)}
+                                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                  placeholder="F2234c..."
+                              />
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <div className="flex justify-center pt-4">
                   <button 
-                      onClick={handleSaveToken}
-                      disabled={loadingToken}
-                      className="flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-sm font-medium disabled:opacity-50"
+                      onClick={handleSaveConfigs}
+                      disabled={loadingSave}
+                      className="flex items-center gap-2 bg-primary-600 text-white px-12 py-4 rounded-xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/30 font-bold disabled:opacity-50 hover:scale-[1.02]"
                   >
-                      <Save className="w-4 h-4" />
-                      {loadingToken ? 'Salvando...' : 'Salvar Token'}
+                      {loadingSave ? (
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                          <Save className="w-5 h-5" />
+                      )}
+                      Salvar Todas as Configurações
                   </button>
               </div>
           </div>
       ) : (
       <>
+        {/* Total stats cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-4">
@@ -325,6 +412,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             </div>
         </div>
 
+        {/* Filter and search bar */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                 <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'ALL' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todas</button>
@@ -364,6 +452,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             </div>
         </div>
 
+        {/* Transactions Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[700px]">
@@ -487,6 +576,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
           </div>
       )}
 
+      {/* New Launch Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8">
