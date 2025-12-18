@@ -313,7 +313,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const filteredStudents = students.filter(s => {
     const ms = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.guardian.name.toLowerCase().includes(searchTerm.toLowerCase());
     const ma = ageFilter ? calculateAge(s.birthDate) === parseInt(ageFilter) : true;
-    let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${new Date().getFullYear() - birthYear}`); }
+    let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
     let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
     let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
     let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
@@ -396,6 +396,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
+  // Fix: navigator.clipboard.readText does not take arguments; changed to writeText for copying functionality
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código Copiado!"); } };
 
   const handleExportExcel = () => {
@@ -535,12 +536,25 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       <div className="flex items-center gap-3">
                         <img src={student.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
                         <div>
-                          <p className="font-medium text-gray-900 flex items-center gap-2">
+                          <div className="font-medium text-gray-900 flex items-center gap-2">
                               {student.name}
                               {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
                               {hasMissingDocs(student) && !isGuardian && (<button onClick={() => handleRequestDocuments(student)} className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
-                          </p>
-                          <div className="text-xs text-gray-500">Tel: {student.phone}</div>
+                          </div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1.5">
+                              <span>Tel: {student.phone}</span>
+                              {student.phone && (
+                                <a 
+                                  href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
+                                  title="Chamar Aluno no WhatsApp"
+                                >
+                                  <MessageCircle className="w-3 h-3" />
+                                </a>
+                              )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -550,7 +564,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
-                        <span className="text-xs text-gray-500">{student.guardian.phone}</span>
+                        <div className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <span>{student.guardian.phone}</span>
+                            {student.guardian.phone && (
+                                <a 
+                                  href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
+                                  title="Chamar Responsável no WhatsApp"
+                                >
+                                  <MessageCircle className="w-3 h-3" />
+                                </a>
+                            )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -631,7 +658,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">CPF Resp.</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} /></div>
                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Tel. Resp.</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} /></div>
                             <div><label className="block text-xs font-semibold text-gray-600 mb-1">Grupos</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{groups.map(g => (<label key={g.id} className="flex items-center gap-2 mb-1 text-sm"><input type="checkbox" disabled={isGuardian} checked={studentForm.groupIds?.includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded" /> {g.name}</label>))}</div></div>
-                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Plano</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 text-sm bg-white" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price}</option>)}</select></div>
+                            <div><label className="block text-sm font-semibold text-gray-600 mb-1">Plano</label><select required disabled={isGuardian} className="w-full border rounded-lg p-2 text-sm bg-white" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})}><option value="">Selecione...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price}</option>)}</select></div>
                             <div className="flex gap-4"><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: true})} className={`flex-1 p-2 rounded-lg border text-sm font-bold ${studentForm.active ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50'}`}>Ativo</button><button disabled={isGuardian} type="button" onClick={() => setStudentForm({...studentForm, active: false})} className={`flex-1 p-2 rounded-lg border text-sm font-bold ${!studentForm.active ? 'bg-red-50 border-red-500 text-red-700' : 'bg-gray-50'}`}>Inativo</button></div>
                         </div>
                     </form>
@@ -726,7 +753,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       {showPixModal && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in fade-in zoom-in duration-200">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-sm p-6 text-center animate-in fade-in zoom-in duration-200">
                   <div className="flex justify-between items-center mb-2"><h3 className="text-xl font-bold">Pagamento via PIX</h3><button onClick={() => setShowPixModal(false)} className="text-gray-400 hover:text-black"><X /></button></div>
                   {pixLoading ? (<div className="py-12 flex flex-col items-center gap-4"><Loader2 className="w-12 h-12 text-primary-600 animate-spin" /><p className="text-gray-500">Gerando QR Code...</p></div>) : pixData ? (
                       <div className="space-y-4">
