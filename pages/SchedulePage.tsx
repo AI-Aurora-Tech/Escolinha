@@ -102,7 +102,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.stopPropagation();
     setEditingId(act.id);
     setNewActivity(act);
-    setTargetType(act.participants && act.participants.length > 0 ? 'INDIVIDUAL' : 'GROUP');
+    const isIndividual = !!(act.participants && act.participants.length > 0);
+    setTargetType(isIndividual ? 'INDIVIDUAL' : 'GROUP');
     setSelectedStudentIds(new Set(act.participants || []));
     setShowAddModal(true);
   };
@@ -177,7 +178,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       if (!sent) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
     }
     setNotifyCurrentIndex(prev => prev + 1);
-    setNotifyCountdown(5); // 5 segundos entre disparos na Z-API é seguro
+    setNotifyCountdown(5);
   };
 
   return (
@@ -210,7 +211,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${act.type === 'GAME' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                       {act.type === 'GAME' ? 'Jogo' : 'Treino'}
                     </span>
-                    {/* Fixed: Wrapped Repeat icon in a span with title for tooltip support as lucide-react icons do not support 'title' prop */}
                     {act.recurrence === 'weekly' && <span title="Repete semanalmente"><Repeat className="w-3 h-3 text-gray-400" /></span>}
                   </div>
                   <h4 className="font-bold text-lg flex items-center gap-2 text-gray-900">
@@ -273,7 +273,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[9px] text-gray-400 font-medium">Resp: {s.guardian.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                       {selectedActivity.type === 'GAME' && selectedActivity.fee! > 0 && (
+                       {selectedActivity.type === 'GAME' && (selectedActivity.fee || 0) > 0 && (
                           <button 
                             onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)}
                             disabled={isGuardian}
@@ -326,6 +326,32 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-[10px] font-black uppercase text-orange-800 mb-1">Apresentação</label><input type="time" className="w-full border-0 rounded-xl p-3 text-sm font-bold focus:ring-2 focus:ring-orange-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
                     <div><label className="block text-[10px] font-black uppercase text-orange-800 mb-1">Taxa por Atleta</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400 font-bold text-xs">R$</span><input type="number" step="0.01" className="w-full border-0 rounded-xl p-3 pl-8 text-sm font-bold focus:ring-2 focus:ring-orange-500" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} /></div></div>
+                  </div>
+                  
+                  {/* Local para colocar o placar */}
+                  <div className="pt-2 border-t border-orange-200/50">
+                    <label className="block text-[10px] font-black uppercase text-orange-800 mb-2">Placar Final (Opcional)</label>
+                    <div className="flex items-center justify-center gap-4">
+                      <div className="flex-1 text-center">
+                        <span className="text-[9px] font-bold text-orange-600 uppercase block mb-1">Garotos</span>
+                        <input 
+                          type="number" 
+                          className="w-full border-0 rounded-xl p-3 text-center text-xl font-black bg-white focus:ring-2 focus:ring-orange-500 shadow-sm" 
+                          value={newActivity.homeScore ?? 0} 
+                          onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} 
+                        />
+                      </div>
+                      <div className="text-orange-300 font-black text-xl self-end mb-3">X</div>
+                      <div className="flex-1 text-center">
+                        <span className="text-[9px] font-bold text-orange-600 uppercase block mb-1">Eles</span>
+                        <input 
+                          type="number" 
+                          className="w-full border-0 rounded-xl p-3 text-center text-xl font-black bg-white focus:ring-2 focus:ring-orange-500 shadow-sm" 
+                          value={newActivity.awayScore ?? 0} 
+                          onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} 
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
