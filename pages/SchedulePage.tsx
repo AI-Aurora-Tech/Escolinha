@@ -90,7 +90,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // O valor da taxa é salvo se hasFee estiver ativado
       const activityData = { 
           ...newActivity, 
           fee: hasFee ? (newActivity.fee || 0) : 0, 
@@ -115,16 +114,28 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
 
   const generateTrainingReport = () => {
-      const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino.");
-      const doc = new jsPDF(); doc.text('Frequência de TREINOS', 14, 20);
+      const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino encontrado no período selecionado.");
+      const doc = new jsPDF(); 
+      doc.setFontSize(16);
+      doc.text('Relatório de Frequência de TREINOS', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
       const rows = students.filter(s => s.active).map(s => {
-          const rel = training.filter(a => s.groupIds?.includes(a.groupId || '') || a.participants?.includes(s.id));
-          if (!rel.length) return null;
-          const pres = rel.filter(a => a.attendance.includes(s.id)).length;
-          return [s.name, rel.length, pres, `${Math.round((pres/rel.length)*100)}%`];
+          const relevantActivities = training.filter(a => (a.groupId && s.groupIds?.includes(a.groupId)) || a.participants?.includes(s.id));
+          if (!relevantActivities.length) return null;
+          const presences = relevantActivities.filter(a => a.attendance.includes(s.id)).length;
+          return [s.name, relevantActivities.length, presences, `${Math.round((presences/relevantActivities.length)*100)}%`];
       }).filter(Boolean);
-      autoTable(doc, { startY: 30, head: [['Atleta', 'Previstos', 'Presenças', '%']], body: rows });
-      doc.save(`Frequencia_Treinos.pdf`);
+
+      autoTable(doc, { 
+          startY: 35, 
+          head: [['Atleta', 'Treinos Previstos', 'Presenças', '% Frequência']], 
+          body: rows as any[],
+          headStyles: { fillColor: [234, 88, 12] }
+      });
+
+      doc.save(`Frequencia_Treinos_${reportStartDate}_${reportEndDate}.pdf`);
   };
 
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
@@ -170,8 +181,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
-                <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm"><FileText className="w-4 h-4" />Relatórios</button>
-                <button onClick={handleOpenAdd} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm shadow-sm"><CalendarIcon className="w-4 h-4" />Agendar</button>
+                <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"><FileText className="w-4 h-4" />Relatórios</button>
+                <button onClick={handleOpenAdd} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm shadow-sm hover:bg-primary-700 transition-colors"><CalendarIcon className="w-4 h-4" />Agendar</button>
             </div>
         )}
       </div>
@@ -241,7 +252,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                                     {pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                                                 </button>
                                                 
-                                                {/* Botão de Taxa de Jogo (Restaurado) */}
+                                                {/* Botão de Taxa de Jogo */}
                                                 {selectedActivity.fee && selectedActivity.fee > 0 && (
                                                     <button 
                                                         onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} 
@@ -279,6 +290,70 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             )}
         </div>
       </div>
+
+      {/* MODAL DE RELATÓRIOS (CORREÇÃO: Implementado JSX que estava ausente) */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Gerar Relatórios</h3>
+              <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Início</label>
+                  <input type="date" className="w-full border rounded-lg p-2 text-sm" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fim</label>
+                  <input type="date" className="w-full border rounded-lg p-2 text-sm" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t">
+                <p className="text-sm text-gray-600 mb-4">Selecione o tipo de relatório que deseja exportar em PDF:</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <button 
+                    onClick={generateTrainingReport}
+                    className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all group text-left"
+                  >
+                    <div>
+                      <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência de Treinos</span>
+                      <span className="text-xs text-gray-500">Resumo de presenças vs faltas dos alunos ativos.</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                        const games = getFilteredActivitiesForReport('GAME');
+                        if (!games.length) return alert("Nenhum jogo no período.");
+                        const doc = new jsPDF();
+                        doc.text('Relatório de Jogos e Artilharia', 14, 20);
+                        const tableData = games.map(a => [formatDate(a.date), a.title, a.opponent || '-', `${a.homeScore} x ${a.awayScore}`]);
+                        autoTable(doc, { startY: 30, head: [['Data', 'Atividade', 'Adversário', 'Placar']], body: tableData, headStyles: { fillColor: [234, 88, 12] } });
+                        doc.save(`Jogos_${reportStartDate}_${reportEndDate}.pdf`);
+                    }}
+                    className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-yellow-50 border border-gray-100 hover:border-yellow-200 rounded-xl transition-all group text-left"
+                  >
+                    <div>
+                      <span className="font-bold text-gray-800 block group-hover:text-yellow-700">Resultados e Jogos</span>
+                      <span className="text-xs text-gray-500">Histórico de placares e adversários.</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-yellow-500" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end mt-8">
+              <button onClick={() => setShowReportModal(false)} className="px-6 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
