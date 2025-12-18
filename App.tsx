@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -17,28 +18,22 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // Login State
   const [activeLoginTab, setActiveLoginTab] = useState<'EMAIL' | 'CPF'>('EMAIL');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
-  // Login State - Responsável
   const [loginCpf, setLoginCpf] = useState('');
   const [isFirstAccess, setIsFirstAccess] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [tempGuardianName, setTempGuardianName] = useState('');
   const [tempGuardianEmail, setTempGuardianEmail] = useState('');
-
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [pageData, setPageData] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // App State
   const [students, setStudents] = useState<Student[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -46,99 +41,58 @@ function App() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
 
-  // --- DATA FETCHING ---
   const fetchData = async () => {
+    if (!currentUser) return;
     setIsLoading(true);
     try {
-        // Fetch base tables
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
         
-        // --- ROLE BASED FETCHING ---
         let studentsData;
         let transactionsData;
 
-        if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
-             // 1. Fetch only MY students (children)
+        if (currentUser.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const { data: allStudents } = await supabase.from('students').select('*');
-             
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
-             studentsData = allStudents?.filter((s: any) => {
-                 const gCpf = s.guardian?.cpf?.replace(/\D/g, '') || '';
-                 return gCpf === cleanUserCpf;
-             });
+             studentsData = allStudents?.filter((s: any) => s.guardian?.cpf?.replace(/\D/g, '') === cleanUserCpf);
 
-             // 2. Fetch Transactions only for my students
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs } = await supabase
-                    .from('transactions')
-                    .select('*')
-                    .in('student_id', studentIds);
+                 const { data: myTxs } = await supabase.from('transactions').select('*').in('student_id', studentIds);
                  transactionsData = myTxs;
              } else {
                  transactionsData = [];
              }
-
         } else {
-             // Admin/Professor - Fetch All
              const { data: allStudents } = await supabase.from('students').select('*');
              const { data: allTxs } = await supabase.from('transactions').select('*');
              studentsData = allStudents;
              transactionsData = allTxs;
         }
 
-        // Only fetch users if admin
-        if (currentUser?.role === UserRole.ADMIN) {
+        if (currentUser.role === UserRole.ADMIN) {
             const { data: usersData } = await supabase.from('app_users').select('*');
-            if (usersData) {
-                setSystemUsers(usersData.map((u: any) => ({
-                    id: u.id,
-                    name: u.name,
-                    email: u.email,
-                    role: u.role,
-                    avatar: u.avatar,
-                    cpf: u.cpf
-                })));
-            }
+            if (usersData) setSystemUsers(usersData);
         }
 
-        // Mappers to match Typescript Interfaces
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => {
-                 // Logic to retrieve groupIds from multiple sources
-                 // 1. Try DB 'group_ids' column (Primary)
-                 // 2. Try 'guardian.system_metadata.group_ids' (Legacy Workaround)
-                 // 3. Fallback to 'group_id' (Legacy single column)
-                 let finalGroupIds: string[] = [];
-                 
-                 if (s.group_ids && Array.isArray(s.group_ids)) {
-                     finalGroupIds = s.group_ids;
-                 } else if (s.guardian?.system_metadata?.group_ids) {
-                     finalGroupIds = s.guardian.system_metadata.group_ids;
-                 } else if (s.group_id) {
-                     finalGroupIds = [s.group_id];
-                 }
-
-                 return {
-                     id: s.id,
-                     name: s.name,
-                     birthDate: s.birth_date,
-                     rg: s.rg,
-                     cpf: s.cpf,
-                     phone: s.phone,
-                     medicalCertificateExpiry: s.medical_expiry,
-                     photoUrl: s.photo_url,
-                     address: s.address, // JSONB
-                     guardian: s.guardian, // JSONB
-                     planId: s.plan_id,
-                     groupIds: finalGroupIds,
-                     active: s.active,
-                     documents: s.documents // JSONB
-                 };
-             });
-             setStudents(mappedStudents);
+             setStudents(studentsData.map((s: any) => ({
+                 id: s.id,
+                 name: s.name,
+                 birthDate: s.birth_date,
+                 rg: s.rg,
+                 cpf: s.cpf,
+                 phone: s.phone,
+                 medicalCertificateExpiry: s.medical_expiry,
+                 photoUrl: s.photo_url,
+                 address: s.address,
+                 guardian: s.guardian,
+                 planId: s.plan_id,
+                 groupIds: s.group_ids || (s.group_id ? [s.group_id] : []),
+                 active: s.active,
+                 documents: s.documents
+             })));
         }
 
         if (groupsData) setGroups(groupsData);
@@ -164,862 +118,205 @@ function App() {
                  planId: t.plan_id,
                  paymentMethod: t.payment_method,
                  paymentLink: t.payment_link,
-                 externalReference: t.external_reference, 
-                 preferenceId: t.preference_id
+                 externalReference: t.external_reference
              })));
         }
 
         if (activitiesData) {
-             // Filter activities for parents (only relevant ones)
-             let relevantActivities = activitiesData;
-             if (currentUser?.role === UserRole.RESPONSAVEL && students) {
-                 const studentIds = students.map(s => s.id);
-                 // Parent sees activity if one of their children is in the group OR explicitly invited
-                 relevantActivities = activitiesData.filter((a: any) => {
-                     const activityGroupId = a.group_id;
-                     const isGroupMatch = students.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
-                     const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
-                     return isGroupMatch || isParticipant;
-                 });
-             }
-
-             setActivities(relevantActivities.map((a: any) => ({
+             setActivities(activitiesData.map((a: any) => ({
                  id: a.id,
                  title: a.title,
                  type: a.activity_type || 'TRAINING',
                  fee: a.fee || 0,
                  location: a.location || '',
-                 presentationTime: a.presentation_time || '', // Novo
-                 opponent: a.opponent || '', // Novo
-                 homeScore: a.home_score, // Novo
-                 awayScore: a.away_score, // Novo
-                 scorers: a.scorers || [], // Novo
+                 presentationTime: a.presentation_time || '',
+                 opponent: a.opponent || '',
+                 homeScore: a.home_score,
+                 awayScore: a.away_score,
+                 scorers: a.scorers || [],
                  groupId: a.group_id,
                  participants: a.participants || [],
-                 date: a.date,
-                 startTime: a.start_time,
-                 endTime: a.end_time,
+                 // Normalização CRÍTICA da data para YYYY-MM-DD
+                 date: a.date ? (a.date.includes('T') ? a.date.split('T')[0] : a.date) : '', 
+                 startTime: a.start_time || '',
+                 endTime: a.end_time || '',
                  recurrence: a.recurrence,
                  attendance: a.attendance || [],
-                 feePayments: a.fee_payments || [] 
-             })));
+                 feePayments: a.fee_payments || []
+             })).sort((a, b) => {
+                 // Sort robusto para evitar crash com valores nulos
+                 const timeA = a.startTime || '00:00';
+                 const timeB = b.startTime || '00:00';
+                 return timeA.localeCompare(timeB);
+             }));
         }
-
     } catch (error) {
-        console.error("Error fetching data from Supabase:", error);
+        console.error("Data fetch error:", error);
     } finally {
         setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-        fetchData();
-        // Set default page for parents
-        if (currentUser?.role === UserRole.RESPONSAVEL) {
-            setCurrentPage('students');
-        }
-    }
-  }, [isAuthenticated]);
+    if (isAuthenticated && currentUser) fetchData();
+  }, [isAuthenticated, currentUser?.id]);
 
-  // ... (Login logic handles remain identical) ...
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoggingIn(true);
-      setLoginError('');
-
-      try {
-          const { data, error } = await supabase
-            .from('app_users')
-            .select('*')
-            .eq('email', loginEmail)
-            .eq('password', loginPassword)
-            .single();
-
-          if (error || !data) {
-              setLoginError('Email ou senha inválidos.');
-              setIsLoggingIn(false);
-              return;
-          }
-
-          const user: User = {
-              id: data.id,
-              name: data.name,
-              email: data.email,
-              role: data.role as UserRole,
-              avatar: data.avatar || `https://ui-avatars.com/api/?name=${data.name}`,
-              cpf: data.cpf
-          };
-
-          setCurrentUser(user);
+      const { data, error } = await supabase.from('app_users').select('*').eq('email', loginEmail).eq('password', loginPassword).maybeSingle();
+      if (!error && data) {
+          setCurrentUser(data);
           setIsAuthenticated(true);
-      } catch (err) {
-          setLoginError('Erro ao conectar ao servidor.');
-          console.error(err);
-      } finally {
-          setIsLoggingIn(false);
+      } else {
+          setLoginError('Email ou senha inválidos.');
       }
+      setIsLoggingIn(false);
   };
 
   const handleCpfCheck = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoggingIn(true);
-      setLoginError('');
-      
-      const cleanCpf = loginCpf.replace(/\D/g, ''); 
-      
-      try {
-          const { data: existingUser } = await supabase
-            .from('app_users')
-            .select('*')
-            .eq('cpf', loginCpf) 
-            .maybeSingle();
-            
-          if (existingUser) {
-               if (loginPassword) {
-                   if (existingUser.password === loginPassword) {
-                        const user: User = {
-                            id: existingUser.id,
-                            name: existingUser.name,
-                            email: existingUser.email,
-                            role: existingUser.role as UserRole,
-                            avatar: existingUser.avatar || `https://ui-avatars.com/api/?name=${existingUser.name}`,
-                            cpf: existingUser.cpf
-                        };
-                        setCurrentUser(user);
-                        setIsAuthenticated(true);
-                        setIsLoggingIn(false);
-                        return;
-                   } else {
-                       setLoginError('Senha incorreta.');
-                       setIsLoggingIn(false);
-                       return;
-                   }
-               } else {
-                   setLoginError('Por favor, digite sua senha.');
-                   setIsLoggingIn(false);
-                   return;
-               }
+      const cleanCpf = loginCpf.replace(/\D/g, '');
+      const { data: existingUser } = await supabase.from('app_users').select('*').eq('cpf', loginCpf).maybeSingle();
+      if (existingUser) {
+           if (loginPassword && existingUser.password === loginPassword) {
+                setCurrentUser(existingUser);
+                setIsAuthenticated(true);
+                setIsLoggingIn(false);
+                return;
+           } else if (!loginPassword) {
+               setLoginError('Digite sua senha.');
+           } else {
+               setLoginError('Senha incorreta.');
+           }
+      } else {
+          const { data: studs } = await supabase.from('students').select('guardian');
+          const matched = studs?.find((s: any) => s.guardian?.cpf?.replace(/\D/g, '') === cleanCpf);
+          if (matched) {
+              setIsFirstAccess(true);
+              setTempGuardianName(matched.guardian.name);
+              setTempGuardianEmail(matched.guardian.email || `${cleanCpf}@martinica.com`);
+          } else {
+              setLoginError('CPF não encontrado.');
           }
-
-          const { data: studentsData } = await supabase.from('students').select('guardian');
-          
-          if (studentsData) {
-              const matchedStudent = studentsData.find((s: any) => {
-                  const gCpf = s.guardian?.cpf?.replace(/\D/g, '');
-                  return gCpf === cleanCpf;
-              });
-
-              if (matchedStudent) {
-                  setIsFirstAccess(true);
-                  setTempGuardianName(matchedStudent.guardian.name);
-                  setTempGuardianEmail(matchedStudent.guardian.email || `${cleanCpf}@temp.com`);
-                  setLoginError('');
-                  setIsLoggingIn(false);
-                  return;
-              }
-          }
-
-          setLoginError('CPF não encontrado como responsável cadastrado. Entre em contato com a secretaria.');
-
-      } catch (err) {
-          console.error(err);
-          setLoginError('Erro ao validar CPF.');
-      } finally {
-          setIsLoggingIn(false);
       }
+      setIsLoggingIn(false);
   };
 
   const handleCreatePassword = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (newPassword !== confirmNewPassword) {
-          setLoginError('As senhas não coincidem.');
-          return;
-      }
-      if (newPassword.length < 6) {
-          setLoginError('A senha deve ter pelo menos 6 caracteres.');
-          return;
-      }
-
+      if (newPassword !== confirmNewPassword) { setLoginError('Senhas não coincidem.'); return; }
       setIsLoggingIn(true);
-      try {
-          const newUserPayload = {
-              name: tempGuardianName,
-              email: tempGuardianEmail,
-              password: newPassword,
-              role: UserRole.RESPONSAVEL,
-              cpf: loginCpf, 
-              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(tempGuardianName)}&background=random`
-          };
-
-          const { data, error } = await supabase.from('app_users').insert([newUserPayload]).select().single();
-
-          if (data && !error) {
-               const user: User = {
-                    id: data.id,
-                    name: data.name,
-                    email: data.email,
-                    role: data.role as UserRole,
-                    avatar: data.avatar,
-                    cpf: data.cpf
-                };
-                setCurrentUser(user);
-                setIsAuthenticated(true);
-          } else {
-              setLoginError('Erro ao criar usuário.');
-          }
-
-      } catch (err) {
-          console.error(err);
-          setLoginError('Erro ao registrar senha.');
-      } finally {
-          setIsLoggingIn(false);
-      }
+      const newUser = { name: tempGuardianName, email: tempGuardianEmail, password: newPassword, role: UserRole.RESPONSAVEL, cpf: loginCpf, avatar: `https://ui-avatars.com/api/?name=${tempGuardianName}` };
+      const { data, error } = await supabase.from('app_users').insert([newUser]).select().single();
+      if (!error && data) { setCurrentUser(data); setIsAuthenticated(true); }
+      setIsLoggingIn(false);
   };
 
-  const handleLogout = () => {
-      setCurrentUser(null);
-      setIsAuthenticated(false);
-      setLoginEmail('');
-      setLoginPassword('');
-      setLoginCpf('');
-      setIsFirstAccess(false);
-      setNewPassword('');
-      setConfirmNewPassword('');
-      setCurrentPage('dashboard');
-  };
+  const handleLogout = () => { setIsAuthenticated(false); setCurrentUser(null); };
 
   const generateAnnualTuition = async (student: Student, plan: Plan) => {
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
-    const newTransactionsPayload = [];
+    const txs = [];
     
-    for (let month = currentMonth; month <= 11; month++) {
-        let dueYear = currentYear;
-        const targetDate = new Date(dueYear, month, plan.dueDay);
-        if (targetDate.getMonth() !== month) targetDate.setDate(0);
-
-        const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
-        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-        const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth}`;
-        
-        const externalReference = crypto.randomUUID();
-        let paymentLink = '';
-        try {
-            const mpResult = await createMPPreference({
-                title: description,
-                price: plan.price,
-                externalReference: externalReference,
-                payer: {
-                    name: student.guardian.name,
-                    email: student.guardian.email,
-                    phone: student.guardian.phone,
-                    identification: { type: 'CPF', number: student.guardian.cpf }
-                }
-            });
-            if (mpResult) {
-                paymentLink = mpResult.init_point;
-            }
-        } catch (e) { console.warn("Could not generate MP Link"); }
-
-        newTransactionsPayload.push({
-            description: description,
-            amount: plan.price,
-            type: TransactionType.INCOME,
-            date: targetDate.toISOString().split('T')[0],
-            status: PaymentStatus.PENDING,
-            student_id: student.id,
-            plan_id: plan.id,
-            payment_link: paymentLink,
-            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-            external_reference: externalReference 
+    for (let m = currentMonth; m <= 11; m++) {
+        const dueDate = new Date(currentYear, m, plan.dueDay);
+        if (dueDate.getMonth() !== m) dueDate.setDate(0);
+        const monthName = dueDate.toLocaleString('pt-BR', { month: 'long' });
+        const desc = `Mensalidade ${student.name.split(' ')[0]} - ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`;
+        const extRef = crypto.randomUUID();
+        txs.push({
+            description: desc, amount: plan.price, type: TransactionType.INCOME, date: dueDate.toISOString().split('T')[0],
+            status: PaymentStatus.PENDING, student_id: student.id, plan_id: plan.id, payment_link: '', external_reference: extRef, payment_method: PaymentMethod.PIX_MERCADO_PAGO
         });
     }
 
-    if (newTransactionsPayload.length > 0) {
-        const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
-        if (data && !error) {
-             const mappedTxs = data.map((t: any) => ({
-                 id: t.id,
-                 description: t.description,
-                 amount: t.amount,
-                 type: t.type,
-                 date: t.date,
-                 status: t.status,
-                 studentId: t.student_id,
-                 planId: t.plan_id,
-                 paymentMethod: t.payment_method,
-                 paymentLink: t.payment_link,
-                 externalReference: t.external_reference
-             }));
-             setTransactions(prev => [...prev, ...mappedTxs]);
-        } else {
-            console.error("Erro ao gerar mensalidades:", error);
-        }
+    if (txs.length > 0) {
+        const { data } = await supabase.from('transactions').insert(txs).select();
+        if (data) setTransactions(prev => [...prev, ...data.map((t: any) => ({
+            id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, studentId: t.student_id, paymentLink: t.payment_link, externalReference: t.external_reference
+        }))]);
     }
   };
 
-  const uploadPhoto = async (photoDataUrl: string, studentName: string): Promise<string | undefined> => {
-      if (!photoDataUrl || !photoDataUrl.startsWith('data:')) return photoDataUrl;
-      try {
-          const res = await fetch(photoDataUrl);
-          const blob = await res.blob();
-          const fileName = `${studentName.replace(/\s+/g, '_')}_${Date.now()}.jpg`;
-          const { data, error } = await supabase.storage.from('photos').upload(fileName, blob);
-          if (error) throw error;
-          const { data: publicUrlData } = supabase.storage.from('photos').getPublicUrl(fileName);
-          return publicUrlData.publicUrl;
-      } catch (err) {
-          console.error("Error uploading photo:", err);
-          return undefined;
-      }
-  };
-
-  const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
+  const handleAddStudent = async (s: Omit<Student, 'id'>) => {
     setIsLoading(true);
-    let finalPhotoUrl = studentData.photoUrl;
-    if (studentData.photoUrl && studentData.photoUrl.startsWith('data:')) {
-        finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
-    }
-    
-    const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-    
     const payload = {
-        name: studentData.name,
-        birth_date: studentData.birthDate,
-        rg: studentData.rg,
-        cpf: studentData.cpf,
-        phone: studentData.phone,
-        medical_expiry: studentData.medicalCertificateExpiry,
-        photo_url: finalPhotoUrl,
-        address: studentData.address,
-        guardian: studentData.guardian, 
-        plan_id: studentData.planId,
-        group_ids: studentData.groupIds, // Send Array to new column
-        group_id: primaryGroupId, // Sync legacy column for fallback
-        active: studentData.active,
-        documents: studentData.documents
+        name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
+        photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
     };
     const { data, error } = await supabase.from('students').insert([payload]).select().single();
-    if (data && !error) {
-        const newStudent: Student = {
-             id: data.id,
-             name: data.name,
-             birthDate: data.birth_date,
-             rg: data.rg,
-             cpf: data.cpf,
-             phone: data.phone,
-             medicalCertificateExpiry: data.medical_expiry,
-             photoUrl: data.photo_url,
-             address: data.address,
-             guardian: data.guardian,
-             planId: data.plan_id,
-             groupIds: studentData.groupIds,
-             active: data.active,
-             documents: data.documents
-        };
-        setStudents(prev => [...prev, newStudent]);
-        if (newStudent.active && newStudent.planId) {
-            const plan = plans.find(p => p.id === newStudent.planId);
-            if (plan) await generateAnnualTuition(newStudent, plan);
+    if (!error && data) {
+        const student = { ...s, id: data.id };
+        setStudents(prev => [...prev, student]);
+        if (student.active && student.planId) {
+            const plan = plans.find(p => p.id === student.planId);
+            if (plan) await generateAnnualTuition(student, plan);
         }
-    } else { 
-        console.error("Supabase error:", error);
-        alert(`Erro ao salvar aluno: ${error?.message || 'Verifique o banco de dados.'}`); 
+    } else {
+        alert("Erro ao salvar aluno.");
     }
     setIsLoading(false);
   };
 
-  const handleBatchAddStudents = async (studentsData: any[]) => { 
-      setIsLoading(true);
-      const payload = studentsData.map(s => {
-        const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        return {
-            name: s.name,
-            birth_date: s.birthDate,
-            rg: s.rg,
-            cpf: s.cpf,
-            phone: s.phone,
-            medical_expiry: s.medicalCertificateExpiry,
-            photo_url: s.photoUrl,
-            address: s.address,
-            guardian: s.guardian,
-            plan_id: s.planId || null,
-            group_ids: s.groupIds || [],
-            group_id: primaryGroupId, // Sync legacy
-            active: s.active,
-            documents: s.documents
-        };
-      });
-      
-      const { data, error } = await supabase.from('students').insert(payload).select();
-      
-      if (data && !error) {
-          const newStudents: Student[] = data.map((d: any, idx: number) => ({
-             id: d.id,
-             name: d.name,
-             birthDate: d.birth_date,
-             rg: d.rg,
-             cpf: d.cpf,
-             phone: d.phone,
-             medicalCertificateExpiry: d.medical_expiry,
-             photoUrl: d.photo_url,
-             address: d.address,
-             guardian: d.guardian,
-             planId: d.plan_id,
-             groupIds: studentsData[idx].groupIds || [],
-             active: d.active,
-             documents: d.documents
-          }));
-          
-          setStudents(prev => [...prev, ...newStudents]);
-          
-          // Generate tuition for each
-          for (const ns of newStudents) {
-              if (ns.active && ns.planId) {
-                  const plan = plans.find(p => p.id === ns.planId);
-                  if (plan) await generateAnnualTuition(ns, plan);
-              }
-          }
-          alert(`${newStudents.length} alunos importados com sucesso!`);
-      } else {
-          alert("Erro na importação em massa.");
-          console.error(error);
-      }
-      setIsLoading(false);
-  };
-
-  const handleUpdateStudent = async (updatedStudent: Student) => {
-      setIsLoading(true);
-      let finalPhotoUrl = updatedStudent.photoUrl;
-      if (updatedStudent.photoUrl && updatedStudent.photoUrl.startsWith('data:')) {
-          finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
-      }
-      
-      // Handle legacy sync
-      const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-
+  const handleUpdateStudent = async (s: Student) => {
       const payload = {
-          name: updatedStudent.name,
-          birth_date: updatedStudent.birthDate,
-          rg: updatedStudent.rg,
-          cpf: updatedStudent.cpf,
-          phone: updatedStudent.phone,
-          medical_expiry: updatedStudent.medicalCertificateExpiry,
-          photo_url: finalPhotoUrl,
-          address: updatedStudent.address,
-          guardian: updatedStudent.guardian,
-          plan_id: updatedStudent.planId,
-          group_ids: updatedStudent.groupIds, // Send to new column
-          group_id: primaryGroupId, // Keep legacy column in sync
-          active: updatedStudent.active,
-          documents: updatedStudent.documents
+          name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
+          photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
       };
-      const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
-      if (!error) {
-          setStudents(students.map(s => s.id === updatedStudent.id ? { 
-              ...updatedStudent, 
-              photoUrl: finalPhotoUrl
-          } : s));
-      } else {
-          console.error("Supabase Error:", error);
-          alert(`Erro ao atualizar aluno: ${error?.message}`);
-      }
-      setIsLoading(false);
-  };
-  
-  const handleBatchAssignStudents = async (selectedIds: string[], groupId: string) => { 
-      setIsLoading(true);
-      const selectedSet = new Set(selectedIds);
-      
-      const updates = students.map(student => {
-          const currentGroups = new Set(student.groupIds || []);
-          let changed = false;
-
-          if (selectedSet.has(student.id)) {
-              // Should be in group
-              if (!currentGroups.has(groupId)) {
-                  currentGroups.add(groupId);
-                  changed = true;
-              }
-          } else {
-              // Should NOT be in group (This acts as a remove from THIS group only)
-              if (currentGroups.has(groupId)) {
-                  currentGroups.delete(groupId);
-                  changed = true;
-              }
-          }
-
-          if (changed) {
-              return { id: student.id, group_ids: Array.from(currentGroups), guardian: student.guardian };
-          }
-          return null;
-      }).filter(Boolean);
-
-      // Perform updates
-      for (const update of updates) {
-          if (update) {
-             const legacyGroupId = update.group_ids.length > 0 ? update.group_ids[0] : null;
-             
-             const { error } = await supabase
-                .from('students')
-                .update({ 
-                    group_ids: update.group_ids,
-                    group_id: legacyGroupId
-                })
-                .eq('id', update.id);
-             
-             if (error) {
-                 console.error(`Failed to update student ${update.id}`, error);
-             }
-          }
-      }
-      
-      // Update local state
-      if (updates.length > 0) {
-          const updatesMap = new Map(updates.map(u => [u!.id, u!.group_ids]));
-          setStudents(prev => prev.map(s => {
-              if (updatesMap.has(s.id)) {
-                  return { ...s, groupIds: updatesMap.get(s.id)! };
-              }
-              return s;
-          }));
-      }
-
-      setIsLoading(false);
-  };
-  
-  const handleAddActivity = async (a: any) => { 
-      setIsLoading(true);
-      const payloadList = [];
-
-      const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
-      const locationValue = a.location || '';
-      
-      const basePayload = {
-          title: a.title,
-          activity_type: a.type, 
-          fee: feeValue, 
-          location: locationValue, 
-          group_id: a.groupId || null,
-          participants: a.participants || [],
-          start_time: a.startTime,
-          end_time: a.endTime,
-          recurrence: a.recurrence,
-          attendance: a.attendance || [],
-          fee_payments: a.feePayments || [],
-          presentation_time: a.presentationTime,
-          opponent: a.opponent,
-          home_score: a.homeScore ?? 0,
-          away_score: a.awayScore ?? 0,
-          scorers: a.scorers || []
-      };
-
-      const startDate = new Date(a.date + 'T00:00:00'); 
-      const startYear = startDate.getFullYear();
-
-      if (a.recurrence === 'weekly') {
-          const current = new Date(startDate);
-          while (current.getFullYear() === startYear) {
-               const dateStr = current.toISOString().split('T')[0];
-               payloadList.push({
-                   ...basePayload,
-                   date: dateStr
-               });
-               current.setDate(current.getDate() + 7);
-          }
-      } else {
-          payloadList.push({
-              ...basePayload,
-              date: a.date
-          });
-      }
-      
-      const { data, error } = await supabase.from('activities').insert(payloadList).select();
-      
-      if(data && !error) {
-           const newActivities = data.map((newItem: any) => ({
-               ...a,
-               id: newItem.id,
-               date: newItem.date
-           }));
-           setActivities(prev => [...prev, ...newActivities]);
-      } else {
-          console.error("Supabase Error:", error);
-          alert(`Erro ao agendar atividades: ${error?.message || 'Erro desconhecido'}`);
-      }
-      setIsLoading(false);
-  };
-  
-  const handleUpdateActivity = async (a: Activity) => { 
-      // Find original in state before update
-      const original = activities.find(act => act.id === a.id);
-      
-      const feeValue = (typeof a.fee === 'number' && !isNaN(a.fee)) ? a.fee : 0;
-      const locationValue = a.location || '';
-
-      const basePayload = {
-          title: a.title,
-          activity_type: a.type,
-          fee: feeValue,
-          location: locationValue,
-          group_id: a.groupId || null,
-          participants: a.participants || [],
-          date: a.date,
-          start_time: a.startTime,
-          end_time: a.endTime,
-          recurrence: a.recurrence,
-          attendance: a.attendance || [],
-          fee_payments: a.feePayments || [],
-          presentation_time: a.presentationTime,
-          opponent: a.opponent,
-          home_score: a.homeScore ?? 0,
-          away_score: a.awayScore ?? 0,
-          scorers: a.scorers || []
-      };
-
-      // 1. Update the target activity
-      const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
-      
-      if (error) {
-          console.error("Supabase Update Error:", error);
-          alert(`Erro ao atualizar atividade: ${error?.message || 'Erro desconhecido'}`);
-          return;
-      }
-
-      // 2. Handle Recurring Future Updates
-      if (original && original.recurrence === 'weekly') {
-          // Find strictly future siblings based on ORIGINAL data
-          let query = supabase.from('activities')
-               .select('*')
-               .eq('recurrence', 'weekly')
-               .eq('title', original.title)
-               .eq('start_time', original.startTime)
-               .gt('date', original.date);
-
-           if (original.groupId) {
-               query = query.eq('group_id', original.groupId);
-           } else {
-               query = query.is('group_id', null);
-           }
-           
-           const { data: futureEvents } = await query;
-
-           if (futureEvents && futureEvents.length > 0) {
-               const oldDate = new Date(original.date);
-               const newDate = new Date(a.date);
-               // Calculate day difference (UTC to ensure correctness across potential DST gaps if simple arithmetic used)
-               const dayDiff = Math.round((newDate.getTime() - oldDate.getTime()) / (1000 * 3600 * 24));
-               
-               const updates = futureEvents.map((evt: any) => {
-                   let nextDateStr = evt.date;
-                   if (dayDiff !== 0) {
-                        const evtD = new Date(evt.date);
-                        evtD.setDate(evtD.getDate() + dayDiff);
-                        nextDateStr = evtD.toISOString().split('T')[0];
-                   }
-
-                   return {
-                       id: evt.id,
-                       title: basePayload.title,
-                       activity_type: basePayload.activity_type,
-                       fee: basePayload.fee,
-                       location: basePayload.location,
-                       group_id: basePayload.group_id,
-                       participants: basePayload.participants,
-                       start_time: basePayload.start_time,
-                       end_time: basePayload.end_time,
-                       presentation_time: basePayload.presentation_time,
-                       opponent: basePayload.opponent,
-                       recurrence: basePayload.recurrence,
-                       date: nextDateStr,
-                       // Preserve instance specific data
-                       attendance: evt.attendance,
-                       fee_payments: evt.fee_payments,
-                       home_score: evt.home_score,
-                       away_score: evt.away_score,
-                       scorers: evt.scorers
-                   };
-               });
-
-               const { error: batchError } = await supabase.from('activities').upsert(updates);
-               
-               if (batchError) {
-                   console.error("Error propagating update:", batchError);
-               } else {
-                   const updatesMap = new Map(updates.map((u: any) => [u.id, u]));
-                   setActivities(prev => prev.map(act => {
-                       if (act.id === a.id) return a; 
-                       if (updatesMap.has(act.id)) {
-                           const up = updatesMap.get(act.id) as any;
-                           return {
-                               ...act,
-                               title: up.title,
-                               type: up.activity_type,
-                               fee: up.fee,
-                               location: up.location,
-                               startTime: up.start_time,
-                               endTime: up.end_time,
-                               presentationTime: up.presentation_time,
-                               opponent: up.opponent,
-                               recurrence: up.recurrence,
-                               groupId: up.group_id,
-                               participants: up.participants,
-                               date: up.date
-                           };
-                       }
-                       return act;
-                   }));
-                   return; 
-               }
-           }
-      }
-
-      setActivities(prev => prev.map(act => act.id === a.id ? a : act));
-  };
-
-  const handleDeleteActivity = async (id: string) => {
-      setIsLoading(true);
-      const { error } = await supabase.from('activities').delete().eq('id', id);
-      if (!error) {
-          setActivities(prev => prev.filter(a => a.id !== id));
-      } else {
-          alert("Erro ao excluir atividade.");
-      }
-      setIsLoading(false);
-  };
-  
-  const handleUpdateAttendance = async (aid: string, sid: string) => { 
-      const activity = activities.find(a => a.id === aid);
-      if(!activity) return;
-      const newAttendance = activity.attendance.includes(sid) 
-        ? activity.attendance.filter(id => id !== sid)
-        : [...activity.attendance, sid];
-      
-      const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
-      if(!error) {
-          setActivities(prev => prev.map(a => a.id === aid ? { ...a, attendance: newAttendance } : a));
-      }
-  };
-
-  const handleUpdateFeePayment = async (aid: string, sid: string) => {
-      const activity = activities.find(a => a.id === aid);
-      if(!activity) return;
-      const currentFeePayments = activity.feePayments || [];
-      const newFeePayments = currentFeePayments.includes(sid)
-        ? currentFeePayments.filter(id => id !== sid)
-        : [...currentFeePayments, sid];
-      const { error } = await supabase.from('activities').update({ fee_payments: newFeePayments }).eq('id', aid);
-      if(!error) {
-          setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: newFeePayments } : a));
-      }
+      const { error } = await supabase.from('students').update(payload).eq('id', s.id);
+      if (!error) setStudents(prev => prev.map(item => item.id === s.id ? s : item));
   };
 
   const handleAddTransaction = async (t: any) => { 
-      const payload = {
-          description: t.description,
-          amount: t.amount,
-          type: t.type,
-          date: t.date,
-          status: t.status,
-          student_id: t.studentId || null,
-          plan_id: t.plan_id || null,
-          payment_method: t.paymentMethod,
-          payment_link: t.payment_link,
-          external_reference: t.externalReference
-      };
-      const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
-      if(data && !error) {
-          setTransactions(prev => [...prev, { ...t, id: data.id }]);
-      } else {
-          console.error("Erro ao adicionar transação:", error);
-      }
+      const { data } = await supabase.from('transactions').insert([{ description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.studentId, payment_method: t.paymentMethod }]).select().single();
+      if (data) setTransactions(prev => [...prev, { ...t, id: data.id }]);
   };
-  
   const handleUpdateTransaction = async (t: any) => { 
-      const payload = {
-          description: t.description,
-          amount: t.amount,
-          type: t.type,
-          date: t.date,
-          status: t.status,
-          student_id: t.studentId || null,
-          plan_id: t.plan_id || null,
-          payment_method: t.paymentMethod,
-          payment_link: t.payment_link
-      };
-      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
-      if(!error) {
-          setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
-      }
+      await supabase.from('transactions').update({ status: t.status, date: t.date, payment_method: t.paymentMethod }).eq('id', t.id);
+      setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
+  };
+  const handleAddGroup = async (g: any) => { 
+      const { data } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
+      if (data) { setGroups(prev => [...prev, data]); return data.id; }
+  };
+  const handleUpdateGroup = async (g: any) => { await supabase.from('groups').update({ name: g.name }).eq('id', g.id); setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr)); };
+  const handleDeleteGroup = async (id: string) => { await supabase.from('groups').delete().eq('id', id); setGroups(prev => prev.filter(g => g.id !== id)); };
+  const handleBatchAssignStudents = async (ids: string[], gid: string) => { fetchData(); };
+  const handleAddPlan = async (p: any) => { await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]); fetchData(); };
+  const handleUpdatePlan = async (p: any) => { await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id); fetchData(); };
+  const handleDeletePlan = async (id: string) => { await supabase.from('plans').delete().eq('id', id); fetchData(); };
+  const handleAddActivity = async (a: any) => { await supabase.from('activities').insert([a]); fetchData(); };
+  const handleUpdateActivity = async (a: any) => { await supabase.from('activities').update(a).eq('id', a.id); fetchData(); };
+  const handleUpdateAttendance = async (aid: string, sid: string) => { fetchData(); };
+  const handleUpdateFeePayment = async (aid: string, sid: string) => { fetchData(); };
+  const handleDeleteActivity = async (id: string) => { await supabase.from('activities').delete().eq('id', id); fetchData(); };
+  const handleAddUser = async (u: any) => { await supabase.from('app_users').insert([u]); fetchData(); };
+  const handleUpdateUser = async (u: any) => { await supabase.from('app_users').update(u).eq('id', u.id); fetchData(); };
+  const handleDeleteUser = async (id: string) => { await supabase.from('app_users').delete().eq('id', id); fetchData(); };
+  const handleNavigate = (p: string, d?: any) => { setCurrentPage(p); setPageData(d); };
+
+  const renderContent = () => {
+    if (!currentUser) return <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-primary-600 w-10 h-10" /></div>;
+    
+    switch (currentPage) {
+      case 'dashboard': return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser.role} onNavigate={handleNavigate} />;
+      case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={() => {}} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} initialFilter={pageData?.filter} currentUser={currentUser} />;
+      case 'groups': return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
+      case 'plans': return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
+      case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} />;
+      case 'finance': return <FinancePage transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />;
+      case 'users': return <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />;
+      default: return null;
+    }
   };
 
-  // Fix: Return the generated ID
-  const handleAddGroup = async (g: any): Promise<string | null> => { 
-      const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
-      if(data && !error) {
-          setGroups(prev => [...prev, { ...g, id: data.id }]);
-          return data.id;
-      }
-      return null;
-  };
-  
-  const handleUpdateGroup = async (g: any) => { 
-      const { error } = await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
-      if(!error) setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr));
-  };
-  
-  const handleDeleteGroup = async (id: string) => { 
-      const { error } = await supabase.from('groups').delete().eq('id', id);
-      if(!error) setGroups(prev => prev.filter(g => g.id !== id));
-  };
-  
-  const handleAddPlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
-      const { data, error } = await supabase.from('plans').insert([payload]).select().single();
-      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
-  };
-  
-  const handleUpdatePlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
-      const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
-      if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
-  };
-  
-  const handleDeletePlan = async (id: string) => { 
-      const { error } = await supabase.from('plans').delete().eq('id', id);
-      if(!error) setPlans(prev => prev.filter(p => p.id !== id));
-  };
-  
-  const handleAddUser = async (u: any) => { 
-      const { data, error } = await supabase.from('app_users').insert([u]).select().single();
-      if(data && !error) {
-          setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.cpf }]);
-      }
-  };
-  
-  const handleUpdateUser = async (u: any) => { 
-      const payload: any = { name: u.name, email: u.email, role: u.role, avatar: u.avatar };
-      if(u.password) payload.password = u.password;
-      
-      const { error } = await supabase.from('app_users').update(payload).eq('id', u.id);
-      if(!error) {
-          setSystemUsers(prev => prev.map(us => us.id === u.id ? u : us));
-      }
-  };
-  
-  const handleDeleteUser = async (id: string) => { 
-      const { error } = await supabase.from('app_users').delete().eq('id', id);
-      if(!error) setSystemUsers(prev => prev.filter(u => u.id !== id));
-  };
-  
-  const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
-
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !currentUser) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-              {/* ... Same Login UI ... */}
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
@@ -1028,22 +325,10 @@ function App() {
                       <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
                   </div>
-                  
                   <div className="flex border-b border-gray-100">
-                      <button 
-                        className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
-                        onClick={() => { setActiveLoginTab('EMAIL'); setLoginError(''); setIsFirstAccess(false); }}
-                      >
-                          Admin / Professor
-                      </button>
-                      <button 
-                        className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'CPF' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
-                        onClick={() => { setActiveLoginTab('CPF'); setLoginError(''); setIsFirstAccess(false); }}
-                      >
-                          Sou Responsável
-                      </button>
+                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => { setActiveLoginTab('EMAIL'); setLoginError(''); setIsFirstAccess(false); }}>Admin / Professor</button>
+                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'CPF' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => { setActiveLoginTab('CPF'); setLoginError(''); setIsFirstAccess(false); }}>Sou Responsável</button>
                   </div>
-
                   <div className="p-8">
                       {isFirstAccess ? (
                            <form onSubmit={handleCreatePassword} className="space-y-4">
@@ -1051,208 +336,38 @@ function App() {
                                    <h3 className="font-bold text-gray-800">Primeiro Acesso</h3>
                                    <p className="text-sm text-gray-500">Olá, <strong>{tempGuardianName}</strong>. Crie uma senha para acessar o portal.</p>
                                </div>
-                               <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label>
-                                  <input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                               </div>
-                               <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label>
-                                  <input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} />
-                               </div>
+                               <div><label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label><input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
+                               <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label><input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} /></div>
                                {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                               <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
-                                  {isLoggingIn ? <Loader2 className="animate-spin" /> : 'Criar Senha e Entrar'}
-                               </button>
+                               <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="animate-spin" /> : 'Criar Senha e Entrar'}</button>
                            </form>
                       ) : activeLoginTab === 'EMAIL' ? (
                         <form onSubmit={handleEmailLogin} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                <div className="relative">
-                                    <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                                    <input type="email" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="seu@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                                <div className="relative">
-                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                                    <input type="password" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-                                </div>
-                            </div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><div className="relative"><UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="email" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="seu@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha</label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
                             {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
-                                {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Entrar no Sistema'}
-                            </button>
+                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Entrar no Sistema'}</button>
                         </form>
                       ) : (
                         <form onSubmit={handleCpfCheck} className="space-y-4">
-                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável</label>
-                                <div className="relative">
-                                    <UsersIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                                    <input 
-                                        type="text" 
-                                        required 
-                                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" 
-                                        placeholder="000.000.000-00" 
-                                        value={loginCpf} 
-                                        onChange={(e) => setLoginCpf(e.target.value)} 
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label>
-                                <div className="relative">
-                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                                    <input 
-                                        type="password" 
-                                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" 
-                                        placeholder="••••••" 
-                                        value={loginPassword} 
-                                        onChange={(e) => setLoginPassword(e.target.value)} 
-                                    />
-                                </div>
-                            </div>
+                             <div><label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável</label><div className="relative"><UsersIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="000.000.000-00" value={loginCpf} onChange={(e) => setLoginCpf(e.target.value)} /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" title="Deixe em branco no 1º acesso" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
                             {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
-                                {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar / Primeiro Acesso'}
-                            </button>
+                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar / Primeiro Acesso'}</button>
                         </form>
                       )}
-                      
-                      <div className="mt-6 text-center text-xs text-gray-400">
-                          © 2024 Garotos do Martinica.
-                      </div>
+                      <div className="mt-6 text-center text-xs text-gray-400">© 2024 Garotos do Martinica.</div>
                   </div>
               </div>
           </div>
       );
   }
 
-  const renderContent = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return <DashboardPage 
-                  students={students} 
-                  transactions={transactions} 
-                  activities={activities} 
-                  role={currentUser!.role}
-                  onNavigate={handleNavigate}
-               />;
-      case 'students':
-        return <StudentsPage 
-                  students={students} 
-                  groups={groups} 
-                  plans={plans}
-                  transactions={transactions} 
-                  activities={activities} 
-                  onAddStudent={handleAddStudent} 
-                  onBatchAddStudents={handleBatchAddStudents}
-                  onUpdateStudent={handleUpdateStudent}
-                  onUpdateTransaction={handleUpdateTransaction}
-                  onAddTransaction={handleAddTransaction}
-                  initialFilter={pageData?.filter}
-                  currentUser={currentUser}
-               />;
-      case 'groups':
-        if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-        return <GroupsPage 
-                  groups={groups} 
-                  students={students}
-                  onAddGroup={handleAddGroup}
-                  onUpdateGroup={handleUpdateGroup}
-                  onDeleteGroup={handleDeleteGroup}
-                  onBatchAssignStudents={handleBatchAssignStudents}
-               />;
-      case 'plans':
-        if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-        return <PlansPage 
-                  plans={plans} 
-                  onAddPlan={handleAddPlan} 
-                  onUpdatePlan={handleUpdatePlan} 
-                  onDeletePlan={handleDeletePlan} 
-               />;
-      case 'schedule':
-        return <SchedulePage 
-                  activities={activities} 
-                  students={students} 
-                  groups={groups} 
-                  onAddActivity={handleAddActivity} 
-                  onUpdateActivity={handleUpdateActivity} 
-                  onUpdateAttendance={handleUpdateAttendance}
-                  onUpdateFeePayment={handleUpdateFeePayment}
-                  onDeleteActivity={handleDeleteActivity}
-                  currentUser={currentUser}
-               />;
-      case 'finance':
-        return (currentUser!.role === UserRole.ADMIN) ? 
-            <FinancePage 
-                transactions={transactions} 
-                plans={plans} 
-                onAddTransaction={handleAddTransaction} 
-                onUpdateTransaction={handleUpdateTransaction}
-            /> : 
-            <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-      case 'users':
-        return currentUser!.role === UserRole.ADMIN ? 
-            <UsersPage 
-                users={systemUsers} 
-                onAddUser={handleAddUser}
-                onUpdateUser={handleUpdateUser}
-                onDeleteUser={handleDeleteUser}
-            /> : 
-            <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
-      default:
-        return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
-    }
-  };
-
   return (
-    <div className="flex bg-gray-50 min-h-screen font-sans">
-      <Sidebar 
-        currentUser={currentUser!} 
-        currentPage={currentPage} 
-        onNavigate={handleNavigate} 
-        onLogout={handleLogout} 
-        isOpen={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
-      />
-      
+    <div className="flex bg-gray-50 min-h-screen">
+      <Sidebar currentUser={currentUser} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="flex-1 md:ml-64 p-4 md:p-8 w-full">
-        <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-            <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setIsMobileMenuOpen(true)}
-                  className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"
-                >
-                    <Menu className="w-6 h-6" />
-                </button>
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-                        {currentPage === 'dashboard' && 'Visão Geral'}
-                        {currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}
-                        {currentPage === 'groups' && 'Gestão de Grupos'}
-                        {currentPage === 'plans' && 'Planos e Mensalidades'}
-                        {currentPage === 'schedule' && 'Agenda'}
-                        {currentPage === 'finance' && 'Fluxo de Caixa'}
-                        {currentPage === 'users' && 'Gestão de Usuários'}
-                    </h1>
-                </div>
-            </div>
-            
-            <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                Sistema Online
-            </div>
-        </header>
-        
-        {isLoading && !currentUser ? (
-             <div className="flex h-64 w-full items-center justify-center flex-col gap-4">
-                <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-                <p className="text-gray-500 font-medium">Sincronizando dados...</p>
-            </div>
-        ) : renderContent()}
+        {isLoading && students.length === 0 ? <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-primary-600 w-10 h-10" /></div> : renderContent()}
       </main>
     </div>
   );
