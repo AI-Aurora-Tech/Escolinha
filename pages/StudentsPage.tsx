@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers } from 'lucide-react';
@@ -6,7 +5,6 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { checkMPPaymentStatus, createPixPayment, getPaymentStatus, createMPPreference } from '../services/mercadoPago';
-import { sendZApiMessage } from '../services/zapiService';
 
 interface StudentsPageProps {
   students: Student[];
@@ -176,7 +174,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           return;
       }
 
-      if (confirm(`Encontradas ${queue.length} cobranças pendentes (próxima a vencer ou atrasada de cada aluno). Deseja iniciar o envio automático? (Intervalo de 10s)`)) {
+      if (confirm(`Encontradas ${queue.length} cobranças pendentes (próxima a vencer ou atrasada de cada aluno). Deseja iniciar o envio automático via WhatsApp? (Intervalo de 10s)`)) {
           setBulkQueue(queue);
           setBulkCurrentIndex(0);
           setBulkIsRunning(true);
@@ -267,20 +265,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   `Link para pagamento:\n${finalLink}\n\n` +
                   `Obrigado!`;
               
-              // Try Z-API First
-              const sent = await sendZApiMessage(phone, message);
-              if (sent) {
-                  setBulkLogs(prev => [`✅ Enviado (API) para ${student.name}`, ...prev]);
+              const encodedMessage = encodeURIComponent(message);
+              const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
+              
+              // Open window
+              const win = window.open(url, '_blank');
+              if (win) {
+                  setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
               } else {
-                  // Fallback to Manual WA Window
-                  const encodedMessage = encodeURIComponent(message);
-                  const url = `https://wa.me/55${phone}?text=${encodedMessage}`;
-                  const win = window.open(url, '_blank');
-                  if (win) {
-                      setBulkLogs(prev => [`✅ Aberto manual para ${student.name}`, ...prev]);
-                  } else {
-                      setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}.`, ...prev]);
-                  }
+                  setBulkLogs(prev => [`⚠️ Pop-up bloqueado para ${student.name}. Permita pop-ups!`, ...prev]);
               }
           } else {
               setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
@@ -386,7 +379,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return `https://wa.me/55${numbers}`;
   };
 
-  const handleRequestDocuments = async (student: Student) => {
+  const handleRequestDocuments = (student: Student) => {
       const phone = student.guardian.phone.replace(/\D/g, '');
       if (!phone) {
           alert("Telefone do responsável não encontrado.");
@@ -412,16 +405,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           `${missingList.map(item => `- ${item}`).join('\n')}\n\n` +
           `Poderia nos enviar uma foto ou trazer na próxima aula para regularizarmos o cadastro? Obrigado!`;
 
-      const sent = await sendZApiMessage(phone, message);
-      if (!sent) {
-          const encodedMessage = encodeURIComponent(message);
-          window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-      } else {
-          alert("Solicitação enviada com sucesso!");
-      }
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
 
-  const handleRequestMedical = async (student: Student) => {
+  const handleRequestMedical = (student: Student) => {
       const phone = student.guardian.phone.replace(/\D/g, '');
       if (!phone) {
           alert("Telefone do responsável não encontrado.");
@@ -434,16 +422,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           `Para a segurança da prática esportiva, é fundamental que ele esteja em dia.\n` +
           `Por favor, providencie a renovação o quanto antes. Obrigado!`;
 
-      const sent = await sendZApiMessage(phone, message);
-      if (!sent) {
-          const encodedMessage = encodeURIComponent(message);
-          window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-      } else {
-          alert("Aviso de atestado enviado com sucesso!");
-      }
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
 
-  const sendChargeMessage = async (tx: Transaction) => {
+  const sendChargeMessage = (tx: Transaction) => {
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
       if (!phone) {
           alert("Telefone do responsável não encontrado para envio da cobrança.");
@@ -464,13 +447,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           `${tx.paymentLink}\n\n` +
           `Caso já tenha efetuado o pagamento, por favor, desconsidere esta mensagem.`;
 
-      const sent = await sendZApiMessage(phone, message);
-      if (!sent) {
-          const encodedMessage = encodeURIComponent(message);
-          window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-      } else {
-          alert("Cobrança enviada com sucesso via API!");
-      }
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
 
   const checkStatus = async (tx: Transaction) => {
@@ -557,12 +535,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   `${mpResult.qrCode}\n\n` +
                   `Basta utilizar a opção "PIX Copia e Cola" no app do seu banco. O sistema confirmará automaticamente. Obrigado!`;
 
-              const sent = await sendZApiMessage(phone, message);
-              if (!sent) {
-                window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
-              } else {
-                  alert("Extrato e PIX único enviados com sucesso!");
-              }
+              window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
           } else {
               alert("Erro ao gerar o PIX unificado. Verifique se o CPF do responsável é válido.");
           }
@@ -615,13 +588,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   `${code}\n\n` +
                   `Ao efetuar o pagamento, o sistema identificará automaticamente.`;
 
-              const sent = await sendZApiMessage(phone, message);
-              if (!sent) {
-                  const encodedMessage = encodeURIComponent(message);
-                  window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-              } else {
-                  alert("Código PIX enviado com sucesso via API!");
-              }
+              const encodedMessage = encodeURIComponent(message);
+              window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
           } else {
               alert("Erro ao gerar o código PIX. Verifique se o CPF do responsável é válido.");
           }
@@ -1238,7 +1206,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const isPresent = a.attendance?.includes(editingId);
       
       return isGroupMatch || isParticipant || isPresent;
-  }).sort((a, b) => new Date(b.date + 'T' + a.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
+  }).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
 
   const attendanceStats = {
       total: studentActivities.length,
@@ -1302,7 +1270,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       doc.save(`Frequencia_${studentForm.name.replace(/\s+/g, '_')}.pdf`);
   };
 
-  const handleSendAttendanceToWhatsApp = async () => {
+  const handleSendAttendanceToWhatsApp = () => {
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
       if (!phone) {
           alert("Telefone do responsável não encontrado.");
@@ -1336,13 +1304,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           `📉 Frequência: ${rate}%\n\n` +
           `Agradecemos a parceria!`;
 
-      const sent = await sendZApiMessage(phone, message);
-      if (!sent) {
-          const encodedMessage = encodeURIComponent(message);
-          window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-      } else {
-          alert("Relatório enviado com sucesso!");
-      }
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
   };
 
   const updateDoc = (field: string, subField: 'delivered' | 'isDigital', value: boolean) => {
@@ -1383,7 +1346,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     title="Enviar cobrança da próxima mensalidade pendente para todos os alunos"
                 >
                     <Zap className="w-4 h-4" />
-                    Enviar Cobranças (Automático)
+                    Enviar Cobranças (1 a 1)
                 </button>
                 <input 
                     type="file" 
@@ -2232,7 +2195,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center gap-4">
                 <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
-                <p className="font-medium text-gray-700">Processando e enviando comunicado...</p>
+                <p className="font-medium text-gray-700">Gerando PIX e abrindo WhatsApp...</p>
             </div>
         </div>
       )}
@@ -2243,7 +2206,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-4">
                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                   <Zap className="w-5 h-5 text-purple-600" /> Envio Automático de Mensalidades
+                   <Zap className="w-5 h-5 text-purple-600" /> Envio em Massa (1 a 1)
                </h3>
                {!bulkIsRunning && <button onClick={() => setIsBulkModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>}
             </div>
@@ -2261,7 +2224,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div className="bg-purple-50 text-purple-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
                         Próximo envio em {bulkCountdown}s...
-                        <span className="text-xs font-normal text-gray-500">O sistema utiliza Z-API ou link manual.</span>
+                        <span className="text-xs font-normal text-gray-500">Mantenha esta janela aberta e permita pop-ups!</span>
                     </div>
                 ) : (
                     <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">
