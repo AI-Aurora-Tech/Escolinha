@@ -63,16 +63,20 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
+    // CRITICAL: Headers de permissão conforme solicitado pela equipe Z-API
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json'
     };
 
-    // CRITICAL: Algumas instâncias da Z-API exigem o Client-Token para permissão
     if (config.clientToken) {
+      // Alguns proxies exigem estritamente minúsculas
       headers['client-token'] = config.clientToken;
     }
 
-    const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
+    const url = `/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -82,23 +86,23 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Z-API erro detalhado:", errorData);
+        const errorText = await response.text();
+        console.error(`Z-API Falha (Status ${response.status}):`, errorText);
         return false;
     }
 
     const result = await response.json();
     
-    // Verificação robusta de sucesso
+    // Verificação de sucesso flexível para diferentes versões da API
     return !!(
       result.messageId || 
-      result.id || 
       result.zaapId || 
+      result.id ||
       result.status === 'success' || 
       result.sent === true
     );
   } catch (error) {
-    console.error("Falha física na comunicação com Z-API (CORS ou Rede):", error);
+    console.error("Erro de conexão com Z-API:", error);
     return false;
   }
 };

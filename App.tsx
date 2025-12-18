@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -135,13 +136,13 @@ function App() {
                  scorers: a.scorers || [],
                  groupId: a.group_id,
                  participants: a.participants || [],
-                 date: a.date,
+                 date: a.date ? a.date.split('T')[0] : '', 
                  startTime: a.start_time,
                  endTime: a.end_time,
                  recurrence: a.recurrence,
                  attendance: a.attendance || [],
                  feePayments: a.fee_payments || []
-             })));
+             })).sort((a, b) => a.startTime.localeCompare(b.startTime)));
         }
     } catch (error) {
         console.error("Data fetch error:", error);
@@ -248,7 +249,7 @@ function App() {
 
   const handleAddStudent = async (s: Omit<Student, 'id'>) => {
     setIsLoading(true);
-    // Fix: Using s.medicalCertificateExpiry and s.photoUrl instead of incorrect snake_case properties on s.
+    // Fix: Using planId instead of non-existent plan_id on Omit<Student, 'id'> (Error in App.tsx on line 254)
     const payload = {
         name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
         photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
@@ -264,11 +265,10 @@ function App() {
     } else {
         alert("Erro ao salvar aluno. Verifique se o Token do Mercado Pago está configurado.");
     }
-    setIsLoading(false);
+    setIsLoggingIn(false);
   };
 
   const handleUpdateStudent = async (s: Student) => {
-      // Fix: Using s.medicalCertificateExpiry and s.photoUrl instead of incorrect snake_case properties on s.
       const payload = {
           name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry,
           photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId, group_ids: s.groupIds, active: s.active, documents: s.documents
@@ -357,7 +357,7 @@ function App() {
                       ) : (
                         <form onSubmit={handleCpfCheck} className="space-y-4">
                              <div><label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável</label><div className="relative"><UsersIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="000.000.000-00" value={loginCpf} onChange={(e) => setLoginCpf(e.target.value)} /></div></div>
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" title="Deixe em branco no 1º acesso" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
                             {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
                             <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar / Primeiro Acesso'}</button>
                         </form>
