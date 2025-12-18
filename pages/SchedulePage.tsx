@@ -232,7 +232,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronLeft /></button>
               <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer overflow-hidden">
                   <CalendarIcon className="w-4 h-4 text-primary-600" />
-                  {/* Native Date Input Overlay - Permite abrir o calendário ao clicar na data exibida */}
                   <input 
                     type="date" 
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
@@ -266,7 +265,19 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 </div>)}
                                 <div className="flex gap-3 mt-3 text-sm text-gray-500"><span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span><span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Individual'}</span>{a.location && <span className="flex items-center gap-1 truncate max-w-[150px]"><MapPin className="w-3 h-3" />{a.location}</span>}</div>
                             </div>
-                            {!isGuardian && (<div className="flex gap-2"><button onClick={(e) => handleOpenNotify(e, a)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Megaphone className="w-4 h-4" /></button><button onClick={(e) => handleOpenEdit(e, a)} className="p-1.5 text-primary-600 hover:bg-gray-50 rounded-lg transition-colors"><Edit className="w-4 h-4" /></button><button onClick={(e) => handleDelete(e, a.id)} className="p-1.5 text-red-600 hover:bg-gray-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button></div>)}
+                            {!isGuardian && (
+                                <div className="flex gap-2">
+                                    <button onClick={(e) => handleOpenNotify(e, a)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Convocar via WhatsApp">
+                                        <Megaphone className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={(e) => handleOpenEdit(e, a)} className="p-1.5 text-primary-600 hover:bg-gray-50 rounded-lg transition-colors" title="Editar">
+                                        <Edit className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={(e) => handleDelete(e, a.id)} className="p-1.5 text-red-600 hover:bg-gray-50 rounded-lg transition-colors" title="Excluir">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>);
                 }) : (<div className="bg-white p-12 rounded-xl border border-dashed text-center flex flex-col items-center justify-center h-64 text-gray-400"><CalendarIcon className="w-12 h-12 mb-2 opacity-20" /><p>Nenhuma atividade para este dia.</p></div>)}

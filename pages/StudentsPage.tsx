@@ -550,7 +550,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                   className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
                                   title="Chamar Aluno no WhatsApp"
                                 >
-                                  <MessageCircle className="w-3 h-3" />
+                                  <MessageCircle className="w-3.5 h-3.5" />
                                 </a>
                               )}
                           </div>
@@ -573,7 +573,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                   className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
                                   title="Chamar Responsável no WhatsApp"
                                 >
-                                  <MessageCircle className="w-3 h-3" />
+                                  <MessageCircle className="w-3.5 h-3.5" />
                                 </a>
                             )}
                         </div>
@@ -634,6 +634,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             <div className="space-y-3">
                                 <div><label className="block text-xs font-semibold text-gray-600 mb-1">Nome Completo</label><input required disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} /></div>
                                 <div><label className="block text-xs font-semibold text-gray-600 mb-1">Nascimento</label><input required disabled={isGuardian} type="date" className="w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} /></div>
+                                <div><label className="block text-xs font-semibold text-gray-600 mb-1">Telefone do Aluno</label><input disabled={isGuardian} type="text" className="w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} /></div>
                             </div>
                         </div>
                         <div className="space-y-4">
