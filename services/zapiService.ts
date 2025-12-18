@@ -59,12 +59,15 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
   // Limpeza do telefone: remove tudo que não é número
   let cleanPhone = phone.replace(/\D/g, '');
   
+  // Remove o zero à esquerda do DDD se o usuário tiver digitado (ex: 011 -> 11)
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = cleanPhone.substring(1);
+  }
+
   // Z-API espera o formato 55 + DDD + Número
-  // Adiciona 55 se não houver
   const targetPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
   try {
-    // A chamada agora é feita para o próprio domínio (/api/zapi), que o servidor redireciona
     const response = await fetch(`/api/zapi/instances/${config.instanceId}/token/${config.token}/send-text`, {
       method: 'POST',
       headers: {
@@ -76,17 +79,16 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
       })
     });
 
-    const result = await response.json();
-    
-    if (result.messageId || result.id) {
-      console.log("Mensagem enviada via Z-API com sucesso.");
-      return true;
-    } else {
-      console.error("Z-API retornou erro:", result);
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Erro retornado pela Z-API:", errorData);
       return false;
     }
+
+    const result = await response.json();
+    return !!(result.messageId || result.id);
   } catch (error) {
-    console.error("Falha na comunicação com a Z-API:", error);
+    console.error("Falha de rede ao tentar comunicar com Z-API via Proxy:", error);
     return false;
   }
 };
