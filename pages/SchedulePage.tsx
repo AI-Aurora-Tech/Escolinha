@@ -71,7 +71,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
   };
 
-  const getAttendeesList = (activity: Activity) => {
+  const getAttendeesList = (activity: Partial<Activity>) => {
     if (activity.groupId) {
       return students.filter(s => s.groupIds?.includes(activity.groupId!) && s.active);
     }
@@ -172,7 +172,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       ...act,
       homeScore: act.homeScore ?? 0,
       awayScore: act.awayScore ?? 0,
-      fee: act.fee ?? 0
+      fee: act.fee ?? 0,
+      scorers: act.scorers || []
     });
     const isIndividual = !!(act.participants && act.participants.length > 0);
     setTargetType(isIndividual ? 'INDIVIDUAL' : 'GROUP');
@@ -453,7 +454,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                           type="number" 
                           className="w-full border-0 rounded-xl p-3 text-center text-xl font-black bg-white focus:ring-2 focus:ring-orange-500 shadow-sm" 
                           value={newActivity.homeScore ?? 0} 
-                          onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} 
+                          onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            setNewActivity({...newActivity, homeScore: val, scorers: (newActivity.scorers || []).slice(0, val)});
+                          }} 
                         />
                       </div>
                       <div className="text-orange-300 font-black text-xl self-end mb-3">X</div>
@@ -468,6 +472,34 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       </div>
                     </div>
                   </div>
+
+                  {/* Campo dinâmico para indicar quem fez os gols */}
+                  {newActivity.homeScore !== undefined && newActivity.homeScore > 0 && (
+                    <div className="mt-4 pt-4 border-t border-orange-200/50">
+                      <label className="block text-[10px] font-black uppercase text-orange-800 mb-2">Quem marcou os gols?</label>
+                      <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1">
+                        {Array.from({ length: newActivity.homeScore }).map((_, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-orange-400 w-12 shrink-0">Gol {idx + 1}:</span>
+                            <select 
+                              className="flex-1 border-0 rounded-xl p-2 text-xs font-bold bg-white focus:ring-2 focus:ring-orange-500 shadow-sm"
+                              value={newActivity.scorers?.[idx] || ''}
+                              onChange={(e) => {
+                                const newScorers = [...(newActivity.scorers || [])];
+                                newScorers[idx] = e.target.value;
+                                setNewActivity({...newActivity, scorers: newScorers});
+                              }}
+                            >
+                              <option value="">Selecione o artilheiro...</option>
+                              {getAttendeesList(newActivity).map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
