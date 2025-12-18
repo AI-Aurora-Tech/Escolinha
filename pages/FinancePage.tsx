@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
+import { supabase } from '../lib/supabaseClient';
 
 interface FinancePageProps {
   transactions: Transaction[];
@@ -18,11 +19,13 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   
   // Settings State
   const [mpToken, setMpToken] = useState('');
-  const [loadingToken, setLoadingToken] = useState(false);
+  const [zapiInstanceId, setZapiInstanceId] = useState('');
+  const [zapiToken, setZapiToken] = useState('');
+  const [zapiClientToken, setZapiClientToken] = useState('');
+  const [loadingSettings, setLoadingSettings] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-  
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [txToPay, setTxToPay] = useState<Transaction | null>(null);
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
@@ -32,42 +35,50 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   const [endDate, setEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
 
   const [newTx, setNewTx] = useState<Partial<Transaction>>({
-    description: '',
-    amount: 0,
-    type: TransactionType.EXPENSE,
-    date: new Date().toISOString().split('T')[0],
-    status: PaymentStatus.PAID,
-    paymentMethod: PaymentMethod.CASH
+    description: '', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH
   });
 
   const [installments, setInstallments] = useState(1);
   const [installmentDates, setInstallmentDates] = useState<string[]>([]);
 
-  // Load Token on Mount
+  // Load Settings on Mount
   useEffect(() => {
-    const loadToken = async () => {
-        const token = await getMPAccessToken();
-        if (token) setMpToken(token);
+    const loadSettings = async () => {
+        const { data } = await supabase.from('app_settings').select('*');
+        if (data) {
+            data.forEach(s => {
+                if (s.key === 'mp_access_token') setMpToken(s.value);
+                if (s.key === 'zapi_instance_id') setZapiInstanceId(s.value);
+                if (s.key === 'zapi_token') setZapiToken(s.value);
+                if (s.key === 'zapi_client_token') setZapiClientToken(s.value);
+            });
+        }
     };
-    loadToken();
+    loadSettings();
   }, []);
 
-  const handleSaveToken = async () => {
-      setLoadingToken(true);
-      const success = await saveMPAccessToken(mpToken);
-      if (success) alert('Token salvo com sucesso!');
-      else alert('Erro ao salvar token.');
-      setLoadingToken(false);
+  const handleSaveSettings = async () => {
+      setLoadingSettings(true);
+      try {
+          const settings = [
+              { key: 'mp_access_token', value: mpToken },
+              { key: 'zapi_instance_id', value: zapiInstanceId },
+              { key: 'zapi_token', value: zapiToken },
+              { key: 'zapi_client_token', value: zapiClientToken }
+          ];
+          const { error } = await supabase.from('app_settings').upsert(settings);
+          if (error) throw error;
+          alert('Configurações salvas com sucesso!');
+      } catch (e) {
+          console.error(e);
+          alert('Erro ao salvar configurações.');
+      } finally {
+          setLoadingSettings(false);
+      }
   };
 
-  const totalIncome = transactions
-    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
-  const totalExpense = transactions
-    .filter(t => t.type === TransactionType.EXPENSE)
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
+  const totalIncome = transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, curr) => acc + curr.amount, 0);
   const balance = totalIncome - totalExpense;
 
   const getFilteredTransactions = () => {
@@ -86,8 +97,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         const dates: string[] = [];
         const start = new Date(newTx.date);
         for (let i = 0; i < installments; i++) {
-            const d = new Date(start);
-            d.setMonth(start.getMonth() + i);
+            const d = new Date(start); d.setMonth(start.getMonth() + i);
             dates.push(d.toISOString().split('T')[0]);
         }
         setInstallmentDates(dates);
@@ -100,115 +110,43 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         if (newTx.type === TransactionType.EXPENSE && installments > 1) {
             const amountPerInstallment = newTx.amount / installments;
             installmentDates.forEach((date, index) => {
-                 onAddTransaction({
-                     ...newTx,
-                     description: `${newTx.description} (${index + 1}/${installments})`,
-                     amount: amountPerInstallment,
-                     date: date,
-                 } as Omit<Transaction, 'id'>);
+                 onAddTransaction({ ...newTx, description: `${newTx.description} (${index + 1}/${installments})`, amount: amountPerInstallment, date: date } as Omit<Transaction, 'id'>);
             });
-        } else {
-            onAddTransaction(newTx as Omit<Transaction, 'id'>);
-        }
-
+        } else onAddTransaction(newTx as Omit<Transaction, 'id'>);
         setIsModalOpen(false);
-        setNewTx({ 
-            description: '', 
-            amount: 0, 
-            type: TransactionType.EXPENSE, 
-            date: new Date().toISOString().split('T')[0], 
-            status: PaymentStatus.PAID,
-            paymentMethod: PaymentMethod.CASH
-        });
+        setNewTx({ description: '', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH });
         setInstallments(1);
     }
   };
 
   const handleOpenPayModal = (tx: Transaction) => {
-      setTxToPay(tx);
-      setPayDate(new Date().toISOString().split('T')[0]);
-      setPayMethod(tx.paymentMethod || PaymentMethod.CASH);
+      setTxToPay(tx); setPayDate(new Date().toISOString().split('T')[0]); setPayMethod(tx.paymentMethod || PaymentMethod.CASH);
       setPayModalOpen(true);
   };
 
   const handleConfirmPayment = () => {
       if (txToPay) {
-          onUpdateTransaction({
-              ...txToPay,
-              status: PaymentStatus.PAID,
-              date: payDate,
-              paymentMethod: payMethod
-          });
-          setPayModalOpen(false);
-          setTxToPay(null);
+          onUpdateTransaction({ ...txToPay, status: PaymentStatus.PAID, date: payDate, paymentMethod: payMethod });
+          setPayModalOpen(false); setTxToPay(null);
       }
   };
 
   const handleExportReport = () => {
     const doc = new jsPDF();
     const exportData = getFilteredTransactions();
-
-    const periodIncome = exportData
-        .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
-        .reduce((acc, curr) => acc + curr.amount, 0);
-    
-    const periodExpense = exportData
-        .filter(t => t.type === TransactionType.EXPENSE)
-        .reduce((acc, curr) => acc + curr.amount, 0);
-    
+    const periodIncome = exportData.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0);
+    const periodExpense = exportData.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, curr) => acc + curr.amount, 0);
     const periodBalance = periodIncome - periodExpense;
-
-    doc.setFontSize(18);
-    doc.text("Relatório Financeiro - Garotos do Martinica", 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`, 14, 28);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 34);
-
-    doc.setDrawColor(200, 200, 200);
-    doc.setFillColor(245, 245, 245);
-    doc.rect(14, 40, 180, 25, 'FD');
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Resumo do Período", 18, 48);
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(22, 163, 74); 
-    doc.text(`Receitas: R$ ${periodIncome.toFixed(2)}`, 18, 58);
-    
-    doc.setTextColor(220, 38, 38); 
-    doc.text(`Despesas: R$ ${periodExpense.toFixed(2)}`, 80, 58);
-    
-    doc.setTextColor(periodBalance >= 0 ? 37 : 220, periodBalance >= 0 ? 99 : 38, periodBalance >= 0 ? 235 : 38); 
-    doc.text(`Saldo: R$ ${periodBalance.toFixed(2)}`, 140, 58);
-
+    doc.setFontSize(18); doc.text("Relatório Financeiro - Garotos do Martinica", 14, 20);
+    doc.setFontSize(10); doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`, 14, 28);
+    doc.setFillColor(245, 245, 245); doc.rect(14, 40, 180, 25, 'FD');
+    doc.setFont("helvetica", "bold"); doc.text("Resumo do Período", 18, 48);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(22, 163, 74); doc.text(`Receitas: R$ ${periodIncome.toFixed(2)}`, 18, 58);
+    doc.setTextColor(220, 38, 38); doc.text(`Despesas: R$ ${periodExpense.toFixed(2)}`, 80, 58);
+    doc.setTextColor(periodBalance >= 0 ? 37 : 220, periodBalance >= 0 ? 99 : 38, periodBalance >= 0 ? 235 : 38); doc.text(`Saldo: R$ ${periodBalance.toFixed(2)}`, 140, 58);
     doc.setTextColor(0, 0, 0); 
-
-    const tableRows = exportData.map(t => [
-        new Date(t.date).toLocaleDateString('pt-BR'),
-        t.description,
-        t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
-        t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente',
-        `R$ ${t.amount.toFixed(2)}`
-    ]);
-
-    autoTable(doc, {
-        startY: 70,
-        head: [['Data', 'Descrição', 'Tipo', 'Status', 'Valor']],
-        body: tableRows,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [249, 115, 22] }, // Orange-500
-        didParseCell: (data) => {
-            if (data.section === 'body' && data.column.index === 4) {
-                const row = exportData[data.row.index];
-                if (row.type === TransactionType.INCOME) {
-                    data.cell.styles.textColor = [22, 163, 74];
-                } else {
-                    data.cell.styles.textColor = [220, 38, 38];
-                }
-            }
-        }
-    });
-
+    const tableRows = exportData.map(t => [new Date(t.date).toLocaleDateString('pt-BR'), t.description, t.type === TransactionType.INCOME ? 'Receita' : 'Despesa', t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente', `R$ ${t.amount.toFixed(2)}`]);
+    autoTable(doc, { startY: 70, head: [['Data', 'Descrição', 'Tipo', 'Status', 'Valor']], body: tableRows, headStyles: { fillColor: [249, 115, 22] } });
     doc.save(`Relatorio_Financeiro_${startDate}_${endDate}.pdf`);
   };
 
@@ -232,97 +170,48 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         <h2 className="text-2xl font-bold text-gray-800">Fluxo de Caixa</h2>
         <div className="flex gap-2 w-full md:w-auto">
              <div className="flex bg-gray-100 p-1 rounded-lg">
-                <button
-                    onClick={() => setActiveTab('TRANSACTIONS')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    Transações
-                </button>
-                <button
-                    onClick={() => setActiveTab('SETTINGS')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    <Settings className="w-4 h-4" /> Configurações
-                </button>
+                <button onClick={() => setActiveTab('TRANSACTIONS')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Transações</button>
+                <button onClick={() => setActiveTab('SETTINGS')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}><Settings className="w-4 h-4" /> Configurações</button>
              </div>
         </div>
       </div>
 
       {activeTab === 'SETTINGS' ? (
-          <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm max-w-2xl mx-auto">
-              <div className="mb-6 border-b border-gray-100 pb-4">
-                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                      <Settings className="w-6 h-6 text-primary-600" /> Configuração Mercado Pago
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">Configure sua integração para gerar links de pagamento automáticos.</p>
-              </div>
-              
-              <div className="space-y-4">
-                  <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (Produção)</label>
-                      <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <input 
-                              type="password" 
-                              value={mpToken}
-                              onChange={(e) => setMpToken(e.target.value)}
-                              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                              placeholder="APP_USR-0000000000000000-000000-00000000000000000000000000000000-000000000"
-                          />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                          Você encontra este token no painel de desenvolvedores do Mercado Pago. Certifique-se de usar a credencial de "Produção".
-                      </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
+              {/* Mercado Pago */}
+              <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="mb-6 border-b border-gray-100 pb-4">
+                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Smartphone className="w-5 h-5 text-primary-600" /> Mercado Pago</h3>
+                      <p className="text-xs text-gray-500 mt-1">Configuração para links de pagamento PIX automáticos.</p>
                   </div>
-                  
-                  <button 
-                      onClick={handleSaveToken}
-                      disabled={loadingToken}
-                      className="flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-sm font-medium disabled:opacity-50"
-                  >
-                      <Save className="w-4 h-4" />
-                      {loadingToken ? 'Salvando...' : 'Salvar Token'}
-                  </button>
+                  <div className="space-y-4">
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Access Token (Produção)</label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="password" value={mpToken} onChange={(e) => setMpToken(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="APP_USR-..." /></div></div>
+                  </div>
+              </div>
+
+              {/* Z-API */}
+              <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="mb-6 border-b border-gray-100 pb-4">
+                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-600" /> Z-API (WhatsApp)</h3>
+                      <p className="text-xs text-gray-500 mt-1">Integração para envios de comunicados e cobranças automáticas.</p>
+                  </div>
+                  <div className="space-y-4">
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">ID da Instância</label><input type="text" value={zapiInstanceId} onChange={(e) => setZapiInstanceId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="ID da sua instância" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Token da Instância</label><input type="password" value={zapiToken} onChange={(e) => setZapiToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Token da instância" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Client-Token</label><input type="password" value={zapiClientToken} onChange={(e) => setZapiClientToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Client-Token da Z-API" /></div>
+                  </div>
+              </div>
+
+              <div className="lg:col-span-2 flex justify-center pt-4">
+                  <button onClick={handleSaveSettings} disabled={loadingSettings} className="flex items-center gap-2 bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-lg font-bold disabled:opacity-50"><Save className="w-5 h-5" />{loadingSettings ? 'Salvando...' : 'Salvar Todas as Configurações'}</button>
               </div>
           </div>
       ) : (
       <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-green-100 rounded-full text-green-600">
-                        <ArrowUpCircle className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Total Recebido (Geral)</p>
-                        <h3 className="text-2xl font-bold text-gray-900">R$ {totalIncome.toFixed(2)}</h3>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-red-100 rounded-full text-red-600">
-                        <ArrowDownCircle className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Total Despesas (Geral)</p>
-                        <h3 className="text-2xl font-bold text-gray-900">R$ {totalExpense.toFixed(2)}</h3>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-full ${balance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
-                        <Filter className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Saldo Atual (Geral)</p>
-                        <h3 className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                            R$ {balance.toFixed(2)}
-                        </h3>
-                    </div>
-                </div>
-            </div>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-4"><div className="p-3 bg-green-100 rounded-full text-green-600"><ArrowUpCircle className="w-6 h-6" /></div><div><p className="text-sm text-gray-500">Total Recebido</p><h3 className="text-2xl font-bold text-gray-900">R$ {totalIncome.toFixed(2)}</h3></div></div></div>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-4"><div className="p-3 bg-red-100 rounded-full text-red-600"><ArrowDownCircle className="w-6 h-6" /></div><div><p className="text-sm text-gray-500">Total Despesas</p><h3 className="text-2xl font-bold text-gray-900">R$ {totalExpense.toFixed(2)}</h3></div></div></div>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${balance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-6 h-6" /></div><div><p className="text-sm text-gray-500">Saldo Atual</p><h3 className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {balance.toFixed(2)}</h3></div></div></div>
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 justify-between items-center">
@@ -331,36 +220,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
                 <button onClick={() => setFilter('INCOME')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'INCOME' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Receitas</button>
                 <button onClick={() => setFilter('EXPENSE')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Despesas</button>
             </div>
-
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    <input 
-                        type="date" 
-                        className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                    />
-                    <span className="text-gray-400">-</span>
-                    <input 
-                        type="date" 
-                        className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                    />
-                </div>
-                <button 
-                    onClick={handleExportReport}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"
-                >
-                    <FileText className="w-4 h-4" /> Exportar Relatório
-                </button>
-                <button 
-                    onClick={() => setIsModalOpen(true)} 
-                    className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"
-                >
-                    <Plus className="w-4 h-4" /> Novo Lançamento
-                </button>
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+                <button onClick={handleExportReport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><FileText className="w-4 h-4" /> Exportar</button>
+                <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
             </div>
         </div>
 
@@ -368,15 +231,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[700px]">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
-                        <tr>
-                            <th className="px-6 py-3">Data</th>
-                            <th className="px-6 py-3">Descrição</th>
-                            <th className="px-6 py-3">Tipo</th>
-                            <th className="px-6 py-3">Pagamento</th>
-                            <th className="px-6 py-3">Status</th>
-                            <th className="px-6 py-3 text-right">Valor</th>
-                            <th className="px-6 py-3 text-right">Ações</th>
-                        </tr>
+                        <tr><th className="px-6 py-3">Data</th><th className="px-6 py-3">Descrição</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3">Pagamento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Valor</th><th className="px-6 py-3 text-right">Ações</th></tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {filteredTransactions.length > 0 ? (
@@ -384,51 +239,14 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
                             <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
                                 <td className="px-6 py-4 font-medium text-gray-900">{t.description}</td>
-                                <td className="px-6 py-4">
-                                    {t.type === TransactionType.INCOME ? (
-                                        <span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100">
-                                            <ArrowUpCircle className="w-3 h-3 mr-1" /> Receita
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100">
-                                            <ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa
-                                        </span>
-                                    )}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-600">
-                                    {getPaymentMethodLabel(t.paymentMethod)}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <span className={`text-xs font-medium px-2 py-1 rounded ${
-                                        t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-600'
-                                    }`}>
-                                        {t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}
-                                    </span>
-                                </td>
-                                <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
-                                    {t.type === TransactionType.EXPENSE && '- '}
-                                    R$ {t.amount.toFixed(2)}
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                    {t.status === PaymentStatus.PENDING && (
-                                        <button 
-                                            onClick={() => handleOpenPayModal(t)}
-                                            className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors"
-                                            title="Dar Baixa (Marcar como Pago)"
-                                        >
-                                            <CheckCircle className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </td>
+                                <td className="px-6 py-4">{t.type === TransactionType.INCOME ? (<span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100"><ArrowUpCircle className="w-3 h-3 mr-1" /> Receita</span>) : (<span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100"><ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa</span>)}</td>
+                                <td className="px-6 py-4 text-sm text-gray-600">{getPaymentMethodLabel(t.paymentMethod)}</td>
+                                <td className="px-6 py-4"><span className={`text-xs font-medium px-2 py-1 rounded ${t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-600'}`}>{t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}</span></td>
+                                <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-right">{t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-5 h-5" /></button>)}</td>
                             </tr>
                             ))
-                        ) : (
-                            <tr>
-                                <td colSpan={7} className="p-8 text-center text-gray-500">
-                                    Nenhuma transação encontrada no período selecionado.
-                                </td>
-                            </tr>
-                        )}
+                        ) : (<tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação no período.</td></tr>)}
                     </tbody>
                 </table>
             </div>
@@ -440,48 +258,13 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
       {payModalOpen && txToPay && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold text-gray-900">Confirmar Baixa</h3>
-                      <button onClick={() => setPayModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-                  </div>
+                  <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-900">Confirmar Baixa</h3><button onClick={() => setPayModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button></div>
                   <div className="space-y-4">
-                      <p className="text-sm text-gray-600">
-                          Confirmar pagamento de: <strong>{txToPay.description}</strong>
-                      </p>
-                      <p className="text-lg font-bold text-center py-2 bg-gray-50 rounded-lg">
-                          R$ {txToPay.amount.toFixed(2)}
-                      </p>
-                      <div>
-                          <label className="block text-sm font-medium mb-1">Data do Pagamento</label>
-                          <input 
-                              type="date" 
-                              className="w-full border rounded-lg p-2"
-                              value={payDate}
-                              onChange={(e) => setPayDate(e.target.value)}
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium mb-1">Forma de Pagamento</label>
-                          <select 
-                              className="w-full border rounded-lg p-2 bg-white"
-                              value={payMethod}
-                              onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}
-                          >
-                                 <option value={PaymentMethod.CASH}>Dinheiro</option>
-                                 <option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option>
-                                 <option value={PaymentMethod.CREDIT_CARD}>Cartão de Crédito</option>
-                                 <option value={PaymentMethod.DEBIT_CARD}>Cartão de Débito</option>
-                                 <option value={PaymentMethod.BOLETO}>Boleto</option>
-                                 <option value={PaymentMethod.TRANSFER}>Transferência (TED/DOC)</option>
-                                 <option value={PaymentMethod.OTHER}>Outro</option>
-                          </select>
-                      </div>
-                      <button 
-                          onClick={handleConfirmPayment}
-                          className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-                      >
-                          Confirmar Pagamento
-                      </button>
+                      <p className="text-sm text-gray-600">Confirmar pagamento de: <strong>{txToPay.description}</strong></p>
+                      <p className="text-lg font-bold text-center py-2 bg-gray-50 rounded-lg">R$ {txToPay.amount.toFixed(2)}</p>
+                      <div><label className="block text-sm font-medium mb-1">Data do Pagamento</label><input type="date" className="w-full border rounded-lg p-2" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
+                      <div><label className="block text-sm font-medium mb-1">Forma de Pagamento</label><select className="w-full border rounded-lg p-2 bg-white" value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}><option value={PaymentMethod.CASH}>Dinheiro</option><option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option><option value={PaymentMethod.CREDIT_CARD}>Cartão de Crédito</option><option value={PaymentMethod.DEBIT_CARD}>Cartão de Débito</option><option value={PaymentMethod.BOLETO}>Boleto</option><option value={PaymentMethod.TRANSFER}>Transferência</option><option value={PaymentMethod.OTHER}>Outro</option></select></div>
+                      <button onClick={handleConfirmPayment} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Confirmar Pagamento</button>
                   </div>
               </div>
           </div>
@@ -491,138 +274,25 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8">
                 <h3 className="text-lg font-bold mb-4">Novo Lançamento</h3>
-                
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
-                        <button
-                            type="button"
-                            onClick={() => { setNewTx({...newTx, type: TransactionType.INCOME}); setInstallments(1); }}
-                            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                                newTx.type === TransactionType.INCOME 
-                                ? 'bg-white text-green-700 shadow-sm ring-1 ring-gray-200' 
-                                : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                        >
-                            <ArrowUpCircle className="w-4 h-4" /> Receita
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setNewTx({...newTx, type: TransactionType.EXPENSE})}
-                            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                                newTx.type === TransactionType.EXPENSE 
-                                ? 'bg-white text-red-700 shadow-sm ring-1 ring-gray-200' 
-                                : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                        >
-                            <ArrowDownCircle className="w-4 h-4" /> Despesa
-                        </button>
+                        <button type="button" onClick={() => { setNewTx({...newTx, type: TransactionType.INCOME}); setInstallments(1); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${newTx.type === TransactionType.INCOME ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> Receita</button>
+                        <button type="button" onClick={() => setNewTx({...newTx, type: TransactionType.EXPENSE})} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${newTx.type === TransactionType.EXPENSE ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> Despesa</button>
                     </div>
-
-                    <div>
-                        <label className="block text-sm font-medium mb-1">Descrição</label>
-                        <input className="w-full border rounded-lg p-2" type="text" placeholder={newTx.type === TransactionType.INCOME ? "Ex: Patrocínio, Venda de Uniforme..." : "Ex: Conta de Luz, Material..."}
-                            required value={newTx.description} onChange={e => setNewTx({...newTx, description: e.target.value})} />
-                    </div>
-                    
+                    <div><label className="block text-sm font-medium mb-1">Descrição</label><input className="w-full border rounded-lg p-2" type="text" placeholder="Descrição..." required value={newTx.description} onChange={e => setNewTx({...newTx, description: e.target.value})} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor Total (R$)</label>
-                            <input className="w-full border rounded-lg p-2" type="number" step="0.01" min="0"
-                                required value={newTx.amount} onChange={e => setNewTx({...newTx, amount: parseFloat(e.target.value)})} />
-                        </div>
-                        <div>
-                             <label className="block text-sm font-medium mb-1">Forma de Pagamento</label>
-                             <select className="w-full border rounded-lg p-2 bg-white" 
-                                value={newTx.paymentMethod} 
-                                onChange={e => setNewTx({...newTx, paymentMethod: e.target.value as PaymentMethod})}>
-                                 <option value={PaymentMethod.CASH}>Dinheiro</option>
-                                 <option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option>
-                                 <option value={PaymentMethod.CREDIT_CARD}>Cartão de Crédito</option>
-                                 <option value={PaymentMethod.DEBIT_CARD}>Cartão de Débito</option>
-                                 <option value={PaymentMethod.BOLETO}>Boleto</option>
-                                 <option value={PaymentMethod.TRANSFER}>Transferência (TED/DOC)</option>
-                                 <option value={PaymentMethod.OTHER}>Outro</option>
-                             </select>
-                        </div>
+                        <div><label className="block text-sm font-medium mb-1">Valor Total (R$)</label><input className="w-full border rounded-lg p-2" type="number" step="0.01" min="0" required value={newTx.amount} onChange={e => setNewTx({...newTx, amount: parseFloat(e.target.value)})} /></div>
+                        <div><label className="block text-sm font-medium mb-1">Pagamento</label><select className="w-full border rounded-lg p-2 bg-white" value={newTx.paymentMethod} onChange={e => setNewTx({...newTx, paymentMethod: e.target.value as PaymentMethod})}><option value={PaymentMethod.CASH}>Dinheiro</option><option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option><option value={PaymentMethod.CREDIT_CARD}>Cartão</option><option value={PaymentMethod.DEBIT_CARD}>Débito</option></select></div>
                     </div>
-
                     <div className="space-y-4">
                          <div className="flex gap-4">
-                             <div className="flex-1">
-                                <label className="block text-sm font-medium mb-1">
-                                    {installments > 1 ? 'Vencimento (1ª Parcela)' : 'Data de Vencimento/Pagamento'}
-                                </label>
-                                <input className="w-full border rounded-lg p-2" type="date" 
-                                    required value={newTx.date} onChange={e => setNewTx({...newTx, date: e.target.value})} />
-                             </div>
-                             
-                             {newTx.type === TransactionType.EXPENSE && (
-                                <div className="w-1/3">
-                                    <label className="block text-sm font-medium mb-1">Parcelas</label>
-                                    <input className="w-full border rounded-lg p-2" type="number" min="1" max="60"
-                                        value={installments} onChange={e => setInstallments(parseInt(e.target.value) || 1)} />
-                                </div>
-                             )}
+                             <div className="flex-1"><label className="block text-sm font-medium mb-1">{installments > 1 ? 'Vencimento (1ª)' : 'Data'}</label><input className="w-full border rounded-lg p-2" type="date" required value={newTx.date} onChange={e => setNewTx({...newTx, date: e.target.value})} /></div>
+                             {newTx.type === TransactionType.EXPENSE && (<div className="w-1/3"><label className="block text-sm font-medium mb-1">Parcelas</label><input className="w-full border rounded-lg p-2" type="number" min="1" max="60" value={installments} onChange={e => setInstallments(parseInt(e.target.value) || 1)} /></div>)}
                          </div>
-
-                        <div className="flex items-center gap-2">
-                             <label className="text-sm font-medium mr-2">Status:</label>
-                             <div className="flex gap-2">
-                                <button type="button" 
-                                    onClick={() => setNewTx({...newTx, status: PaymentStatus.PAID})}
-                                    className={`px-3 py-1 rounded-md text-sm border ${newTx.status === PaymentStatus.PAID ? 'bg-green-50 border-green-200 text-green-700 font-semibold' : 'bg-white border-gray-200 text-gray-500'}`}
-                                >
-                                    Pago
-                                </button>
-                                <button type="button" 
-                                    onClick={() => setNewTx({...newTx, status: PaymentStatus.PENDING})}
-                                    className={`px-3 py-1 rounded-md text-sm border ${newTx.status === PaymentStatus.PENDING ? 'bg-yellow-50 border-yellow-200 text-yellow-700 font-semibold' : 'bg-white border-gray-200 text-gray-500'}`}
-                                >
-                                    Pendente
-                                </button>
-                             </div>
-                        </div>
-
-                         {newTx.type === TransactionType.EXPENSE && installments > 1 && (
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-40 overflow-y-auto">
-                                 <p className="text-xs font-bold text-gray-500 mb-2 uppercase">Detalhamento das Parcelas</p>
-                                 <div className="space-y-2">
-                                     {installmentDates.map((date, idx) => (
-                                         <div key={idx} className="flex items-center gap-2 text-sm">
-                                             <span className="w-8 font-medium text-gray-400">{idx + 1}x</span>
-                                             <input 
-                                                type="date" 
-                                                className="border rounded px-2 py-1 text-xs bg-white"
-                                                value={date}
-                                                onChange={(e) => {
-                                                    const newDates = [...installmentDates];
-                                                    newDates[idx] = e.target.value;
-                                                    setInstallmentDates(newDates);
-                                                }}
-                                             />
-                                             <span className="text-gray-600">
-                                                 R$ {(newTx.amount! / installments).toFixed(2)}
-                                             </span>
-                                         </div>
-                                     ))}
-                                 </div>
-                             </div>
-                         )}
+                        <div className="flex items-center gap-2"><label className="text-sm font-medium mr-2">Status:</label><div className="flex gap-2"><button type="button" onClick={() => setNewTx({...newTx, status: PaymentStatus.PAID})} className={`px-3 py-1 rounded-md text-sm border ${newTx.status === PaymentStatus.PAID ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white'}`}>Pago</button><button type="button" onClick={() => setNewTx({...newTx, status: PaymentStatus.PENDING})} className={`px-3 py-1 rounded-md text-sm border ${newTx.status === PaymentStatus.PENDING ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-white'}`}>Pendente</button></div></div>
+                         {newTx.type === TransactionType.EXPENSE && installments > 1 && (<div className="bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-40 overflow-y-auto"><p className="text-xs font-bold text-gray-500 mb-2 uppercase">Parcelas</p><div className="space-y-2">{installmentDates.map((date, idx) => (<div key={idx} className="flex items-center gap-2 text-sm"><span className="w-8 font-medium text-gray-400">{idx + 1}x</span><input type="date" className="border rounded px-2 py-1 text-xs bg-white" value={date} onChange={(e) => { const newDates = [...installmentDates]; newDates[idx] = e.target.value; setInstallmentDates(newDates); }} /><span className="text-gray-600">R$ {(newTx.amount! / installments).toFixed(2)}</span></div>))}</div></div>)}
                     </div>
-                    
-                    <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                        <button 
-                            type="submit" 
-                            className={`px-4 py-2 text-white rounded-lg transition-colors ${
-                                newTx.type === TransactionType.INCOME 
-                                ? 'bg-green-600 hover:bg-green-700' 
-                                : 'bg-red-600 hover:bg-red-700'
-                            }`}
-                        >
-                            {newTx.type === TransactionType.INCOME ? 'Lançar Receita' : 'Lançar Despesa'}
-                        </button>
-                    </div>
+                    <div className="flex justify-end gap-2 pt-4 border-t border-gray-100"><button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button><button type="submit" className={`px-4 py-2 text-white rounded-lg ${newTx.type === TransactionType.INCOME ? 'bg-green-600' : 'bg-red-600'}`}>{newTx.type === TransactionType.INCOME ? 'Lançar Receita' : 'Lançar Despesa'}</button></div>
                 </form>
             </div>
         </div>
