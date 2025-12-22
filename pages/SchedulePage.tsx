@@ -230,16 +230,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 w-full sm:w-auto">
               <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronLeft /></button>
-              <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer overflow-hidden">
-                  <CalendarIcon className="w-4 h-4 text-primary-600" />
+              <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer overflow-hidden transition-colors hover:bg-gray-100">
+                  <CalendarIcon className="w-4 h-4 text-primary-600 pointer-events-none" />
+                  <span className="text-gray-800 font-bold text-sm pointer-events-none">{formatDate(selectedDate)}</span>
+                  <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none" />
                   <input 
                     type="date" 
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
                     value={selectedDate} 
+                    title="Mudar Data"
                     onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} 
                   />
-                  <span className="text-gray-800 font-bold text-sm relative z-0">{formatDate(selectedDate)}</span>
-                  <ChevronDown className="w-3 h-3 text-gray-400 relative z-0" />
               </div>
               <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronRight /></button>
           </div>
