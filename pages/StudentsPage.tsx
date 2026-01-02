@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,11 +19,12 @@ interface StudentsPageProps {
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Transaction) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
+  onGenerateTuitions: () => Promise<void>;
   initialFilter?: string;
   currentUser?: User | null;
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, initialFilter, currentUser }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onGenerateTuitions, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -45,6 +46,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   
   const [sendingPixId, setSendingPixId] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [monitoredPayments, setMonitoredPayments] = useState<{ mpId: number, txIds: string[] }[]>([]);
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
   const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7)); 
@@ -122,6 +124,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (queue.length === 0) { alert("Não há mensalidades pendentes para enviar."); return; }
       if (confirm(`Encontradas ${queue.length} cobranças pendentes. Deseja iniciar o envio automático via Z-API?`)) {
           setBulkQueue(queue); setBulkCurrentIndex(0); setBulkIsRunning(true); setIsBulkModalOpen(true); setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]); setBulkCountdown(1); 
+      }
+  };
+
+  const handleManualTuitionGen = async () => {
+      if (confirm("Deseja gerar as mensalidades pendentes para todos os alunos ativos? (Respeitando a regra de 10 dias antes do vencimento)")) {
+          setIsGenerating(true);
+          try {
+              await onGenerateTuitions();
+              alert("Processamento concluído!");
+          } catch (e) {
+              alert("Erro ao processar mensalidades.");
+          } finally {
+              setIsGenerating(false);
+          }
       }
   };
 
@@ -486,6 +502,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         {!isGuardian && (
             <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-sm disabled:opacity-50">
+                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
+                    Gerar Mensalidades
+                </button>
                 <button onClick={handleStartBulkSend} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"><Zap className="w-4 h-4" />Enviar Cobranças</button>
                 <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"><Upload className="w-4 h-4" />Importar</button>
