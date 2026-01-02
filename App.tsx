@@ -315,18 +315,27 @@ function App() {
       const activeStudents = students.filter(s => s.active && s.planId);
       const today = new Date();
       const currentYear = today.getFullYear();
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
       const newTransactionsPayload = [];
 
       for (const student of activeStudents) {
           const plan = plans.find(p => p.id === student.planId);
           if (!plan) continue;
 
-          const startMonth = (currentDay + 10 > plan.dueDay) ? currentMonth + 1 : currentMonth;
+          // Regra dos 10 dias: só gera para o mês se houver pelo menos 10 dias de antecedência
+          const currentMonth = today.getMonth();
+          const targetDay = plan.dueDay;
+          
+          // Verifica se o vencimento deste mês já passou ou está a menos de 10 dias
+          const thisMonthDueDate = new Date(currentYear, currentMonth, targetDay);
+          if (thisMonthDueDate.getMonth() !== currentMonth) thisMonthDueDate.setDate(0);
+          
+          const diffInMs = thisMonthDueDate.getTime() - today.getTime();
+          const diffInDays = diffInMs / (1000 * 3600 * 24);
+
+          const startMonth = diffInDays >= 10 ? currentMonth : currentMonth + 1;
 
           for (let month = startMonth; month <= 11; month++) {
-              const targetDate = new Date(currentYear, month, plan.dueDay);
+              const targetDate = new Date(currentYear, month, targetDay);
               if (targetDate.getMonth() !== month) targetDate.setDate(0);
               const dateStr = targetDate.toISOString().split('T')[0];
 
@@ -402,7 +411,7 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        return { name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry, photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId || null, group_ids: s.groupIds || [], group_id: primaryGroupId, active: s.active, documents: s.documents };
+        return { name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medical_expiry, photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId || null, group_ids: s.groupIds || [], group_id: primaryGroupId, active: s.active, documents: s.documents };
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
