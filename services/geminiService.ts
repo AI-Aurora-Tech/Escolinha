@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 // Guideline: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
@@ -44,7 +45,8 @@ export const analyzeFinancials = async (income: number, expense: number, latePay
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-        const model = 'gemini-3-flash-preview';
+        // Fix: Use gemini-3-pro-preview for complex reasoning and math tasks like financial analysis.
+        const model = 'gemini-3-pro-preview';
         const prompt = `
           Analise a saúde financeira da escolinha de futebol "Garotos do Martinica".
           Dados do mês atual:

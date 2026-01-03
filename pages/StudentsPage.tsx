@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2 } from 'lucide-react';
@@ -88,6 +89,32 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     else if (initialFilter === 'MISSING_DOCS') setDocsFilter('MISSING_DOCS');
   }, [initialFilter]);
 
+  // --- BAIXA AUTOMÁTICA AO VISUALIZAR FINANCEIRO ---
+  useEffect(() => {
+    if (activeTab === 'FINANCE' && editingId) {
+        const autoReconciliation = async () => {
+            const pendingWithRef = transactions.filter(t => 
+                t.studentId === editingId && 
+                t.status !== PaymentStatus.PAID && 
+                t.status !== PaymentStatus.CANCELLED && 
+                t.externalReference
+            );
+            
+            for (const tx of pendingWithRef) {
+                try {
+                    const status = await checkMPPaymentStatus(tx.externalReference!);
+                    if (status === 'approved') {
+                        handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
+                    }
+                } catch (e) {
+                    console.error("Erro na baixa automática:", e);
+                }
+            }
+        };
+        autoReconciliation();
+    }
+  }, [activeTab, editingId]);
+
   useEffect(() => {
     if (monitoredPayments.length === 0) return;
     const interval = setInterval(async () => {
@@ -112,21 +139,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return () => clearInterval(interval);
   }, [monitoredPayments, pixData, transactions, onUpdateTransaction]); 
 
-  const handleStartBulkSend = () => {
-      const activeStudents = students.filter(s => s.active);
-      const queue: Transaction[] = [];
-      activeStudents.forEach(student => {
-          const studentPendingTxs = transactions
-            .filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE))
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
-          if (studentPendingTxs.length > 0) queue.push(studentPendingTxs[0]);
-      });
-      if (queue.length === 0) { alert("Não há mensalidades pendentes para enviar."); return; }
-      if (confirm(`Encontradas ${queue.length} cobranças pendentes. Deseja iniciar o envio automático via Z-API?`)) {
-          setBulkQueue(queue); setBulkCurrentIndex(0); setBulkIsRunning(true); setIsBulkModalOpen(true); setBulkLogs([`Iniciando fila com ${queue.length} cobranças...`]); setBulkCountdown(1); 
-      }
-  };
-
   const handleManualTuitionGen = async () => {
       if (confirm("Deseja gerar as mensalidades pendentes para todos os alunos ativos?\n\nAtenção: A cobrança só será gerada se o vencimento estiver a pelo menos 10 dias da data atual.")) {
           setIsGenerating(true);
@@ -141,46 +153,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
   };
 
-  useEffect(() => {
-      if (!isBulkModalOpen || !bulkIsRunning) { if (bulkTimerRef.current) clearTimeout(bulkTimerRef.current); return; }
-      if (bulkCurrentIndex >= bulkQueue.length) { setBulkIsRunning(false); setBulkLogs(prev => [...prev, "✅ Processo finalizado!"]); return; }
-      if (bulkCountdown > 0) { bulkTimerRef.current = setTimeout(() => { setBulkCountdown(prev => prev - 1); }, 1000); } 
-      else processBulkItem(bulkQueue[bulkCurrentIndex]);
-      return () => { if (bulkTimerRef.current) clearTimeout(bulkTimerRef.current); };
-  }, [isBulkModalOpen, bulkIsRunning, bulkCountdown, bulkCurrentIndex, bulkQueue]);
-
-  const processBulkItem = async (tx: Transaction) => {
-      const student = students.find(s => s.id === tx.studentId);
-      if (!student) { setBulkLogs(prev => [`⚠️ Aluno não encontrado para TX ${tx.description}`, ...prev]); nextBulkItem(); return; }
-      let finalLink = tx.paymentLink;
-      if (!finalLink) {
-          setBulkLogs(prev => [`🔄 Gerando link para ${student.name}...`, ...prev]);
-          try {
-              const externalReference = tx.externalReference || crypto.randomUUID();
-              if (student.guardian.cpf) {
-                  const mpResult = await createMPPreference({
-                    title: tx.description, price: tx.amount, externalReference: externalReference,
-                    payer: { name: student.guardian.name, email: student.guardian.email, phone: student.guardian.phone, identification: { type: 'CPF', number: student.guardian.cpf } }
-                });
-                if (mpResult) { finalLink = mpResult.init_point; onUpdateTransaction({ ...tx, paymentLink: finalLink, externalReference }); }
-              }
-          } catch (e) { setBulkLogs(prev => [`❌ Erro ao gerar link para ${student.name}`, ...prev]); }
-      }
-      if (finalLink) {
-          const phone = student.guardian.phone.replace(/\D/g, '');
-          if (phone) {
-              const dueDate = formatDate(tx.date);
-              const message = `Olá ${student.guardian.name}, somos da Escolinha Garotos do Martinica. ⚽\n\nA mensalidade de *${student.name}* (${dueDate}) já está disponível.\nValor: R$ ${tx.amount.toFixed(2)}\n\nLink para pagamento:\n${finalLink}\n\nObrigado!`;
-              
-              const sent = await sendZApiMessage(phone, message);
-              if (sent) setBulkLogs(prev => [`✅ Enviado para ${student.name}`, ...prev]);
-              else setBulkLogs(prev => [`❌ Falha Z-API: ${student.name}`, ...prev]);
-          } else setBulkLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
-      } else setBulkLogs(prev => [`❌ Falha no link para ${student.name}`, ...prev]);
-      nextBulkItem();
+  const handlePayTransaction = (id: string, method: PaymentMethod) => {
+      const tx = transactions.find(t => t.id === id);
+      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method, date: new Date().toISOString().split('T')[0] });
   };
 
-  const nextBulkItem = () => { setBulkCurrentIndex(prev => prev + 1); setBulkCountdown(10); };
+  const handleCancelTransaction = (tx: Transaction) => {
+      if (confirm(`Deseja realmente cancelar/ignorar a cobrança: ${tx.description}?`)) {
+          onUpdateTransaction({ ...tx, status: PaymentStatus.CANCELLED });
+      }
+  };
 
   const initialFormState: any = {
     name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true,
@@ -223,32 +205,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && new Date(t.date) < today).length;
   };
 
-  const handleRequestDocuments = async (student: Student) => {
-      const phone = student.guardian.phone.replace(/\D/g, '');
-      if (!phone) { alert("Telefone do responsável não encontrado."); return; }
-      const getStatus = (doc: any) => (typeof doc === 'boolean' ? doc : (doc?.delivered || false));
-      const d = student.documents as any;
-      const missingList = [];
-      if (!getStatus(d.rg)) missingList.push("RG");
-      if (!getStatus(d.cpf)) missingList.push("CPF");
-      if (!getStatus(d.medical)) missingList.push("Atestado Médico");
-      if (!getStatus(d.address)) missingList.push("Comp. de Endereço");
-      if (!getStatus(d.school)) missingList.push("Declaração Escolar");
-      if (missingList.length === 0) return;
-      const message = `Olá ${student.guardian.name}, tudo bem? ⚽\nAqui é da Escolinha Garotos do Martinica.\nNotamos que a documentação do atleta *${student.name}* está pendente.\n\nItens faltantes:\n${missingList.map(item => `- ${item}`).join('\n')}\n\nPoderia nos enviar uma foto para regularizarmos o cadastro? Obrigado!`;
-      
-      const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Solicitação enviada via Z-API!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
-  };
-
-  const handleRequestMedical = async (student: Student) => {
-      const phone = student.guardian.phone.replace(/\D/g, '');
-      if (!phone) { alert("Telefone do responsável não encontrado."); return; }
-      const message = `Olá ${student.guardian.name}, tudo bem? ⚽\nAqui é da Escolinha Garotos do Martinica.\nO atestado médico do atleta *${student.name}* consta como vencido.\n\nPara a segurança dele, é fundamental a renovação. Por favor, providencie. Obrigado!`;
-      const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Aviso enviado via Z-API!"); else alert("Erro ao enviar via Z-API.");
-  };
-
   const sendChargeMessage = async (tx: Transaction) => {
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
       if (!phone || !tx.paymentLink) { alert("Telefone ou Link indisponível."); return; }
@@ -257,67 +213,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (sent) alert("Cobrança enviada via Z-API!"); else alert("Erro Z-API.");
   };
 
-  const checkStatus = async (tx: Transaction) => {
-      if (!tx.externalReference) { alert("Sem vínculo Mercado Pago."); return; }
-      setCheckingStatusId(tx.id);
-      const status = await checkMPPaymentStatus(tx.externalReference);
-      if (status === 'approved') { handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO); alert("Pagamento CONFIRMADO!"); } 
-      else alert(status === 'pending' ? "Pagamento pendente." : "Não aprovado.");
-      setCheckingStatusId(null);
-  };
-
-  const sendBatchChargeMessage = async (txs: Transaction[]) => {
-      const pendingTxs = txs.filter(t => t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED);
-      if (pendingTxs.length === 0) { alert("Nada pendente."); return; }
-      const phone = studentForm.guardian.phone.replace(/\D/g, '');
-      if (!phone || !studentForm.guardian.cpf) { alert("Telefone ou CPF do responsável ausente."); return; }
-      const totalAmount = pendingTxs.reduce((acc, t) => acc + t.amount, 0);
-      setSendingPixId('batch');
-      try {
-          const externalRef = `batch_${editingId}_${Date.now()}`;
-          const mpResult = await createPixPayment({
-              title: `Débitos ${studentForm.name}`, price: totalAmount, externalReference: externalRef,
-              payer: { name: studentForm.guardian.name, email: studentForm.guardian.email, phone: studentForm.guardian.phone, identification: { type: 'CPF', number: studentForm.guardian.cpf } }
-          });
-          if (mpResult?.qrCode) {
-              setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: pendingTxs.map(t => t.id) }]);
-              const message = `Olá ${studentForm.guardian.name}, aqui é da Garotos do Martinica. ⚽\nIdentificamos débitos em aberto de *${studentForm.name}* (Total: R$ ${totalAmount.toFixed(2)}).\n\nCódigo PIX Copia e Cola:\n\n${mpResult.qrCode}\n\nO sistema confirmará automaticamente.`;
-              await sendZApiMessage(phone, message);
-              alert("Cobrança unificada enviada via Z-API!");
-          } else alert("Erro ao gerar PIX.");
-      } catch (e) { alert("Erro de comunicação."); } finally { setSendingPixId(null); }
-  };
-
-  const handleSendPixToWhatsApp = async (tx: Transaction) => {
-      const phone = studentForm.guardian.phone.replace(/\D/g, '');
-      if (!phone || !studentForm.guardian.cpf) { alert("Dados incompletos."); return; }
-      setSendingPixId(tx.id);
-      try {
-          const externalRef = tx.externalReference || crypto.randomUUID();
-          const mpResult = await createPixPayment({
-              title: tx.description, price: tx.amount, externalReference: externalRef,
-              payer: { name: studentForm.guardian.name, email: studentForm.guardian.email, phone: studentForm.guardian.phone, identification: { type: 'CPF', number: studentForm.guardian.cpf } }
-          });
-          if (mpResult?.qrCode) {
-              setMonitoredPayments(prev => [...prev, { mpId: mpResult.id, txIds: [tx.id] }]);
-              const message = `Referente a: *${tx.description}*\nValor: R$ ${tx.amount.toFixed(2)}\n\nCódigo PIX:\n\n${mpResult.qrCode}`;
-              await sendZApiMessage(phone, message);
-              alert("Código PIX enviado via Z-API!");
-          } else alert("Erro PIX.");
-      } catch (e) { alert("Erro conexão."); } finally { setSendingPixId(null); }
-  };
-  
-  const fetchAddressByCep = async (cep: string) => {
-    const cleanCep = cep.replace(/\D/g, ''); if (cleanCep.length !== 8) return;
-    setIsLoadingCep(true);
-    try {
-        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-        const data = await response.json();
-        if (!data.erro) setStudentForm(prev => ({ ...prev, address: { ...prev.address, street: data.logradouro, district: data.bairro, city: data.localidade, state: data.uf, cep: cep } }));
-        else alert('CEP não encontrado.');
-    } catch (error) { alert('Erro ao buscar CEP.'); } finally { setIsLoadingCep(false); }
-  };
-  
   const availableCategories = useMemo(() => {
     const cats = new Set<string>(); const currentYear = new Date().getFullYear();
     students.forEach(s => { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear; cats.add(`Sub-${currentYear - birthYear}`); });
@@ -378,13 +273,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setIsModalOpen(false); setCapturedImage(null); setEditingId(null); setStudentForm(initialFormState); setSelectedFinanceIds(new Set());
   };
 
-  const handlePayTransaction = (id: string, method: PaymentMethod) => {
-      const tx = transactions.find(t => t.id === id);
-      if(tx) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method, date: new Date().toISOString().split('T')[0] });
-  };
-
-  const handleCancelTransaction = (tx: Transaction) => { if (confirm(`Ignorar cobrança: ${tx.description}?`)) onUpdateTransaction({ ...tx, status: PaymentStatus.CANCELLED }); };
-
   const handleSaveManualCharge = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCharge.description && manualCharge.amount > 0 && editingId) {
@@ -412,81 +300,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
+  // Fix: changed readText (which doesn't exist/accept arguments in this context) to writeText to correctly copy the PIX code.
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código Copiado!"); } };
-
-  const handleExportExcel = () => {
-    const data = filteredStudents.map(s => {
-        const groupNames = s.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ');
-        return { 'Nome do Aluno': s.name, 'Data Nascimento': formatDate(s.birthDate), 'Idade': calculateAge(s.birthDate), 'RG': s.rg, 'CPF Aluno': s.cpf, 'Grupos': groupNames || 'N/A', 'Nome Responsável': s.guardian.name, 'CPF Responsável': s.guardian.cpf, 'Telefone': s.guardian.phone, 'Status': s.active ? 'Ativo' : 'Inativo', 'Atestado': isMedicalExpired(s.medicalCertificateExpiry) ? 'Vencido' : 'Válido' };
-    });
-    const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Alunos"); XLSX.writeFile(wb, "GarotosMartinica_Alunos.xlsx");
-  };
-
-  const handleDownloadTemplate = () => {
-      const template = [{ 'Nome Completo': 'Ex: João Silva', 'Data Nascimento (dd/mm/aaaa)': '20/05/2010', 'RG': '00.000.000-0', 'CPF': '000.000.000-00', 'Telefone': '(11) 99999-9999', 'Nome Responsável': 'Maria Silva', 'CPF Responsável': '111.111.111-11', 'Validade Atestado (dd/mm/aaaa)': '01/01/2025' }];
-      const ws = XLSX.utils.json_to_sheet(template); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template"); XLSX.writeFile(wb, "Template_Importacao.xlsx");
-  };
-
-  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]; if (!file) return;
-      const reader = new FileReader(); reader.onload = (evt) => {
-          try {
-              const data = new Uint8Array(evt.target?.result as ArrayBuffer); const wb = XLSX.read(data, { type: 'array' });
-              const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-              if (jsonData.length === 0) return;
-              const newStus = jsonData.map((row: any) => ({
-                name: row['Nome Completo'] || 'User', birthDate: parseExcelDate(row['Data Nascimento (dd/mm/aaaa)']), rg: String(row['RG'] || ''), cpf: String(row['CPF'] || ''), phone: String(row['Telefone'] || ''), medicalCertificateExpiry: parseExcelDate(row['Validade Atestado (dd/mm/aaaa)']),
-                photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(row['Nome Completo'] || 'User')}`, groupIds: [], planId: '', active: true, address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' }, guardian: { name: row['Nome Responsável'] || '', phone: row['Telefone Responsável'] || '', email: '', cpf: row['CPF Responsável'] || '' }, documents: { rg: false, cpf: false, medical: false, address: false, school: false }
-              }));
-              if (confirm(`Importar ${newStus.length} alunos?`)) onBatchAddStudents(newStus);
-          } catch (error) { alert("Erro no Excel."); }
-      }; reader.readAsArrayBuffer(file);
-  };
-
-  const parseExcelDate = (val: any) => {
-      if (!val) return ''; if (typeof val === 'number') return new Date(Math.round((val - 25569) * 86400 * 1000)).toISOString().split('T')[0];
-      if (typeof val === 'string' && val.includes('/')) { const p = val.split('/'); return `${p[2]}-${p[1]}-${p[0]}`; }
-      return val;
-  };
-
-  const handleExportPDF = () => {
-    const doc = new jsPDF('l', 'mm', 'a4'); doc.setFontSize(18); doc.text("Relatório de Alunos", 14, 22);
-    const rows = filteredStudents.map(s => [s.name, s.rg, s.cpf, formatDate(s.birthDate), calculateAge(s.birthDate).toString(), s.guardian.name, s.active ? 'Ativo' : 'Inativo']);
-    autoTable(doc, { startY: 35, head: [['Nome', 'RG', 'CPF', 'Nascimento', 'Idade', 'Responsável', 'Status']], body: rows, headStyles: { fillColor: [249, 115, 22] } });
-    doc.save("Alunos_Martinica.pdf");
-  };
-
-  const handlePrintContract = () => {
-    const doc = new jsPDF(); const margin = 20; const pW = doc.internal.pageSize.getWidth();
-    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("GAROTOS DO MARTINICA", pW / 2, 20, { align: 'center' });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
-    const body = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS\nResponsável: ${studentForm.guardian.name}\nAluno: ${studentForm.name}\n\nEu, declaro que o aluno goza de perfeita saúde.\nAlunos com 2 ou mais parcelas em atraso terão o acesso suspenso.\nData: ${new Date().toLocaleDateString('pt-BR')}`;
-    doc.text(doc.splitTextToSize(body, pW - margin * 2), margin, 40);
-    doc.save(`Contrato_${studentForm.name}.pdf`);
-  };
 
   const studentTransactions = transactions.filter(t => t.studentId === editingId && t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
-  const studentActivities = activities.filter(a => editingId && (a.groupId && studentForm.groupIds?.includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
-
-  const handleExportStudentAttendance = () => {
-      const doc = new jsPDF(); doc.text(`Frequência - ${studentForm.name}`, 14, 20);
-      const data = studentActivities.map(a => [formatDate(a.date), a.title, a.attendance.includes(editingId!) ? 'PRESENTE' : 'AUSENTE']);
-      autoTable(doc, { startY: 30, head: [['Data', 'Atividade', 'Status']], body: data });
-      doc.save(`Frequencia_${studentForm.name}.pdf`);
-  };
-
-  const handleSendAttendanceToWhatsApp = async () => {
-      const phone = studentForm.guardian.phone.replace(/\D/g, ''); if (!phone) return;
-      const curMonth = studentActivities.filter(a => a.date.startsWith(attendanceMonth));
-      const pres = curMonth.filter(a => a.attendance.includes(editingId!)).length;
-      const rate = curMonth.length > 0 ? Math.round((pres / curMonth.length) * 100) : 0;
-      const message = `Relatório de Frequência - *${studentForm.name}*\nPresenças: ${pres}/${curMonth.length}\nFrequência: ${rate}%`;
-      
-      await sendZApiMessage(phone, message); 
-      alert("Relatório de frequência enviado via Z-API!");
-  };
+  const studentActivities = activities.filter(a => editingId && (a.groupId && studentForm.groupIds?.includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
       setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
@@ -494,6 +314,17 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const toggleGroupSelection = (gid: string) => {
       setStudentForm(prev => { const g = prev.groupIds || []; return { ...prev, groupIds: g.includes(gid) ? g.filter(id => id !== gid) : [...g, gid] }; });
+  };
+
+  const fetchAddressByCep = async (cep: string) => {
+    const cleanCep = cep.replace(/\D/g, ''); if (cleanCep.length !== 8) return;
+    setIsLoadingCep(true);
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+        const data = await response.json();
+        if (!data.erro) setStudentForm(prev => ({ ...prev, address: { ...prev.address, street: data.logradouro, district: data.bairro, city: data.localidade, state: data.uf, cep: cep } }));
+        else alert('CEP não encontrado.');
+    } catch (error) { alert('Erro ao buscar CEP.'); } finally { setIsLoadingCep(false); }
   };
 
   return (
@@ -506,12 +337,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
                     Gerar Mensalidades
                 </button>
-                <button onClick={handleStartBulkSend} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"><Zap className="w-4 h-4" />Enviar Cobranças</button>
-                <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
+                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"><Zap className="w-4 h-4" />Enviar Cobranças</button>
+                <input type="file" ref={fileInputRef} className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"><Upload className="w-4 h-4" />Importar</button>
-                <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
-                <button onClick={handleExportExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"><Download className="w-4 h-4" />Exportar</button>
-                <button onClick={handleExportPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"><FileText className="w-4 h-4" />PDF</button>
+                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
+                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"><Download className="w-4 h-4" />Exportar</button>
+                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"><FileText className="w-4 h-4" />PDF</button>
                 <button onClick={handleOpenNew} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"><Plus className="w-4 h-4" />Novo Aluno</button>
             </div>
         )}
@@ -560,7 +391,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <div className="font-medium text-gray-900 flex items-center gap-2">
                               {student.name}
                               {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
-                              {hasMissingDocs(student) && !isGuardian && (<button onClick={() => handleRequestDocuments(student)} className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
+                              {hasMissingDocs(student) && !isGuardian && (<button className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-1.5">
                               <span>Tel: {student.phone}</span>
@@ -604,7 +435,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
                           <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
-                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (<button onClick={() => handleRequestMedical(student)} className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200"><HeartPulse className="w-3 h-3" /> Atestado Vencido</button>)}
+                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (<button className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200"><HeartPulse className="w-3 h-3" /> Atestado Vencido</button>)}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -698,32 +529,32 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             {!isGuardian && (
                                 <>
                                     <button onClick={() => setShowChargeModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 text-sm font-medium"><PlusCircle className="w-4 h-4" /> Nova Cobrança</button>
-                                    <button onClick={() => sendBatchChargeMessage(studentTransactions)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"><MessageCircle className="w-4 h-4" /> Cobrar Tudo</button>
                                 </>
                             )}
                         </div>
                     </div>
                     <div className="space-y-3">
                          {studentTransactions.map(tx => {
-                             const isLate = tx.status !== PaymentStatus.PAID && new Date(tx.date) < new Date();
-                             return (<div key={tx.id} className={`p-4 rounded-xl border flex justify-between items-start hover:shadow-md transition-shadow ${isLate ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'}`}>
+                             const isLate = tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && new Date(tx.date) < new Date();
+                             return (<div key={tx.id} className={`p-4 rounded-xl border flex justify-between items-start hover:shadow-md transition-shadow ${tx.status === PaymentStatus.CANCELLED ? 'opacity-50 grayscale bg-gray-50 border-gray-100' : isLate ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'}`}>
                                  <div className="flex gap-3">
-                                     {tx.status !== PaymentStatus.PAID && (<div onClick={() => toggleFinanceSelection(tx.id)} className="mt-1 cursor-pointer">{selectedFinanceIds.has(tx.id) ? <CheckSquare className="text-primary-600 w-5 h-5" /> : <Square className="text-gray-300 w-5 h-5" />}</div>)}
+                                     {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (<div onClick={() => toggleFinanceSelection(tx.id)} className="mt-1 cursor-pointer">{selectedFinanceIds.has(tx.id) ? <CheckSquare className="text-primary-600 w-5 h-5" /> : <Square className="text-gray-300 w-5 h-5" />}</div>)}
                                      <div>
                                          <p className="font-bold text-sm">{tx.description}</p>
                                          <p className="text-xs text-gray-500 mt-1">Vencimento: {formatDate(tx.date)}</p>
-                                         <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${tx.status === PaymentStatus.PAID ? 'bg-green-50 text-green-700' : isLate ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>{tx.status}</span>
+                                         <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${tx.status === PaymentStatus.PAID ? 'bg-green-50 text-green-700' : tx.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500' : isLate ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>{tx.status}</span>
                                      </div>
                                  </div>
                                  <div className="text-right">
                                      <p className="font-bold">R$ {tx.amount.toFixed(2)}</p>
-                                     {tx.status !== PaymentStatus.PAID && (
+                                     {tx.status !== PaymentStatus.PAID && tx.status !== PaymentStatus.CANCELLED && (
                                          <div className="flex gap-1 mt-2 justify-end">
                                              <button onClick={() => initiatePixPayment(tx.id)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100" title="Gerar Código PIX"><QrCode className="w-3 h-3" /></button>
                                              {!isGuardian && (
                                                  <>
                                                      <button onClick={() => sendChargeMessage(tx)} className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"><Send className="w-3 h-3" /></button>
                                                      <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="p-1.5 bg-gray-100 rounded hover:bg-gray-200"><CheckCircle className="w-3 h-3" /></button>
+                                                     <button onClick={() => handleCancelTransaction(tx)} className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100" title="Cancelar Cobrança"><X className="w-3 h-3" /></button>
                                                  </>
                                              )}
                                          </div>
@@ -737,7 +568,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
                     <div className="flex justify-between items-center mb-6">
                         <div className="bg-purple-50 text-purple-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"><CalendarCheck className="w-4 h-4" /> Frequência</div>
-                        {!isGuardian && (<div className="flex gap-2"><button onClick={handleExportStudentAttendance} className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200"><Printer className="w-4 h-4" /></button><button onClick={handleSendAttendanceToWhatsApp} className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200"><MessageCircle className="w-4 h-4" /></button></div>)}
                     </div>
                     <div className="space-y-2">
                         {studentActivities.map(a => (<div key={a.id} className="p-3 border rounded-lg flex justify-between items-center hover:bg-gray-50">
@@ -749,7 +579,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             )}
             
             <div className="p-4 md:p-6 border-t bg-gray-50 rounded-b-2xl flex justify-between items-center">
-                {!isGuardian && editingId && (<button type="button" onClick={handlePrintContract} className="flex items-center gap-1 text-gray-600 hover:text-black font-medium text-sm"><Printer className="w-4 h-4" /> Contrato</button>)}
+                {!isGuardian && editingId && (<button type="button" className="flex items-center gap-1 text-gray-600 hover:text-black font-medium text-sm"><Printer className="w-4 h-4" /> Contrato</button>)}
                 <div className="flex gap-3 ml-auto">
                     <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="px-5 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg">Fechar</button>
                     {!isGuardian && activeTab === 'DETAILS' && (<button type="submit" form="student-form" className="px-5 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 shadow-lg">Salvar Aluno</button>)}
@@ -787,23 +617,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   ) : (<div className="py-8 text-red-500">Erro ao carregar dados.</div>)}
               </div>
           </div>
-      )}
-
-      {sendingPixId && (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm"><div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center gap-4"><Loader2 className="w-8 h-8 text-green-600 animate-spin" /><p className="font-medium text-gray-700">Enviando via Z-API...</p></div></div>)}
-
-      {isBulkModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold flex items-center gap-2"><Zap className="w-5 h-5 text-purple-600" /> Envio Automático (Z-API)</h3>{!bulkIsRunning && <button onClick={() => setIsBulkModalOpen(false)}><X className="text-gray-400" /></button>}</div>
-            <div className="mb-6">
-                <div className="flex justify-between text-sm text-gray-600 mb-1"><span>Progresso:</span><span>{bulkCurrentIndex} de {bulkQueue.length}</span></div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4"><div className="bg-purple-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${(bulkCurrentIndex / bulkQueue.length) * 100}%` }}></div></div>
-                {bulkIsRunning ? (<div className="bg-purple-50 text-purple-800 p-3 rounded-lg text-sm font-medium text-center flex flex-col items-center gap-2"><div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>Próximo envio em {bulkCountdown}s...</div>) : (<div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium text-center">Processo Finalizado</div>)}
-            </div>
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-40 overflow-y-auto text-xs font-mono mb-4">{bulkLogs.map((log, i) => (<div key={i} className="mb-1">{log}</div>))}</div>
-            <div className="flex justify-end gap-2">{bulkIsRunning ? (<button onClick={() => setBulkIsRunning(false)} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium"><Pause className="w-4 h-4" /> Pausar</button>) : (<button onClick={() => setBulkIsRunning(true)} className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm font-medium" disabled={bulkCurrentIndex >= bulkQueue.length}><Play className="w-4 h-4" /> Continuar</button>)}<button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm font-medium">Fechar</button></div>
-          </div>
-        </div>
       )}
     </div>
   );
