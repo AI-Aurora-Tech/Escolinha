@@ -123,7 +123,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 } else {
                     remainingMonitored.push(payment);
                 }
-            } catch (e) { remainingMonitored.push(payment); }
+            } catch (error) { remainingMonitored.push(payment); }
         }
         if (somethingChanged) setMonitoredPayments(remainingMonitored);
     }, 3000); 
@@ -168,7 +168,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           try {
               await onGenerateTuitions();
               alert("Processamento de mensalidades concluído!");
-          } catch (e) {
+          } catch (error) {
               alert("Erro ao processar mensalidades.");
           } finally {
               setIsGenerating(false);
@@ -237,6 +237,25 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Template_Importacao");
       XLSX.writeFile(wb, "Modelo_Importacao_Alunos.xlsx");
+  };
+
+  const sendDocReminder = async (student: Student) => {
+    const phone = student.guardian.phone.replace(/\D/g, '');
+    if (!phone) return alert("Responsável sem telefone cadastrado.");
+    const msg = `Olá *${student.guardian.name}*, aqui é da escolinha *Garotos do Martinica*! ⚽\n\nNotamos que o(a) atleta *${student.name}* está com pendências na entrega da documentação obrigatória (RG, CPF, Comprovante de Endereço ou Escolar).\n\nPor favor, entregue o quanto antes na secretaria para regularizar a inscrição. Obrigado!`;
+    const sent = await sendZApiMessage(phone, msg);
+    if (sent) alert(`Lembrete de documentos enviado para ${student.guardian.name}!`);
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
+  };
+
+  const sendMedicalReminder = async (student: Student) => {
+    const phone = student.guardian.phone.replace(/\D/g, '');
+    if (!phone) return alert("Responsável sem telefone cadastrado.");
+    const date = formatDate(student.medicalCertificateExpiry);
+    const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
+    const sent = await sendZApiMessage(phone, msg);
+    if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
@@ -444,7 +463,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <div className="font-medium text-gray-900 flex items-center gap-2">
                               {student.name}
                               {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
-                              {hasMissingDocs(student) && !isGuardian && (<button onClick={() => handleOpenEdit(student)} className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
+                              {hasMissingDocs(student) && !isGuardian && (
+                                <button 
+                                  onClick={() => sendDocReminder(student)}
+                                  className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200 transition-colors flex items-center gap-1"
+                                >
+                                  <FileWarning className="w-3 h-3" /> DOC
+                                </button>
+                              )}
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-1.5">
                               <span>Tel: {student.phone}</span>
@@ -488,7 +514,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
                           <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
-                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (<button onClick={() => handleOpenEdit(student)} className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200"><HeartPulse className="w-3 h-3" /> Atestado Vencido</button>)}
+                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
+                            <button 
+                              onClick={() => sendMedicalReminder(student)}
+                              className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200 transition-colors"
+                            >
+                              <HeartPulse className="w-3 h-3" /> Atestado Vencido
+                            </button>
+                          )}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">

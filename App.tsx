@@ -430,11 +430,11 @@ function App() {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
         return { 
             name: s.name, 
-            birth_date: s.birthDate, 
+            birth_date: s.birth_date, 
             rg: s.rg, 
             cpf: s.cpf, 
             phone: s.phone, 
-            medical_expiry: s.medicalCertificateExpiry, 
+            medical_expiry: s.medical_expiry, 
             photo_url: s.photoUrl, 
             address: s.address, 
             guardian: s.guardian, 
@@ -494,6 +494,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
+      // Fix property access error by changing a.presentation_time to a.presentationTime
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -514,6 +515,7 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
+      // Fix property access error by changing a.presentation_time to a.presentationTime
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
