@@ -159,13 +159,15 @@ function App() {
 
         if (activitiesData) {
              let relevantActivities = activitiesData;
+             // FILTRO DE AGENDA PARA RESPONSÁVEL: Vê apenas atividades dos seus filhos
              if (currentUser?.role === UserRole.RESPONSAVEL) {
                  const studentIds = mappedStudents.map(s => s.id);
                  relevantActivities = activitiesData.filter((a: any) => {
                      const activityGroupId = a.group_id;
                      const isGroupMatch = mappedStudents.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
                      const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
-                     return isGroupMatch || isParticipant;
+                     const isInAttendance = a.attendance && a.attendance.some((p: string) => studentIds.includes(p));
+                     return isGroupMatch || isParticipant || isInAttendance;
                  });
              }
 
@@ -585,8 +587,8 @@ function App() {
       if (!t.id) return;
       
       const payload: any = {};
-      // Somente incluímos no payload se a propriedade existir no objeto 't' de entrada.
-      // Se não existir, o Supabase não alterará a coluna correspondente.
+      // SEGURANÇA: Só inclui no payload o que foi explicitamente passado no objeto de atualização.
+      // Isso impede que campos como student_id sejam sobrescritos por null acidentalmente.
       if (t.description !== undefined) payload.description = t.description;
       if (t.amount !== undefined) payload.amount = t.amount;
       if (t.type !== undefined) payload.type = t.type;
@@ -601,8 +603,7 @@ function App() {
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
-      // Atualização de estado local via merge, mantendo os dados anteriores (como studentId)
-      // se não estiverem presentes no objeto parcial 't'.
+      // Atualização de estado local via merge, preservando os dados anteriores
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
   };
 
