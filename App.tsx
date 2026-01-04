@@ -316,25 +316,25 @@ function App() {
       const today = new Date();
       const currentYear = today.getFullYear();
       const currentMonth = today.getMonth(); // 0-11
+      const monthPrefix = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`;
       const newTransactionsPayload = [];
 
       for (const student of activeStudents) {
           const plan = plans.find(p => p.id === student.planId);
           if (!plan) continue;
 
-          // Verifica se já existe transação para este aluno neste mês e ano corrente
-          const monthNum = (currentMonth + 1).toString().padStart(2, '0');
+          // Verifica se já existe transação INCOME para este aluno neste mês/ano corrente
           const alreadyExists = transactions.some(t => 
               t.studentId === student.id && 
               t.type === TransactionType.INCOME && 
-              t.date.startsWith(`${currentYear}-${monthNum}`)
+              t.date.startsWith(monthPrefix)
           );
 
           if (!alreadyExists) {
               const targetDay = plan.dueDay;
               const targetDate = new Date(currentYear, currentMonth, targetDay);
               
-              // Ajuste para o último dia do mês se o dia configurado não existir no mês atual (ex: dia 31 em Abril)
+              // Se o dia não existe no mês (ex: 31 de Abril), ajusta para o último dia disponível
               if (targetDate.getMonth() !== currentMonth) {
                   targetDate.setDate(0);
               }

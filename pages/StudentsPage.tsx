@@ -63,14 +63,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
 
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [bulkQueue, setBulkQueue] = useState<Transaction[]>([]);
-  const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0);
-  const [bulkIsRunning, setBulkIsRunning] = useState(false);
-  const [bulkCountdown, setBulkCountdown] = useState(10);
-  const [bulkLogs, setBulkLogs] = useState<string[]>([]);
-  const bulkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   useEffect(() => {
@@ -138,40 +130,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return () => clearInterval(interval);
   }, [monitoredPayments, pixData, transactions, onUpdateTransaction]); 
 
-  const handleManualTuitionGen = async () => {
-      if (confirm("Deseja gerar as mensalidades ainda não lançadas do mês atual para todos os alunos ativos?")) {
-          setIsGenerating(true);
-          try {
-              await onGenerateTuitions();
-              alert("Processamento de mensalidades concluído!");
-          } catch (e) {
-              alert("Erro ao processar mensalidades.");
-          } finally {
-              setIsGenerating(false);
-          }
-      }
-  };
-
-  const handlePayTransaction = (id: string, method: PaymentMethod) => {
-      const tx = transactions.find(t => t.id === id);
-      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method, date: new Date().toISOString().split('T')[0] });
-  };
-
-  const handleCancelTransaction = (tx: Transaction) => {
-      if (confirm(`Deseja realmente cancelar/ignorar a cobrança: ${tx.description}?`)) {
-          onUpdateTransaction({ ...tx, status: PaymentStatus.CANCELLED });
-      }
-  };
-
-  const initialFormState: any = {
-    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true,
-    address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
-    guardian: { name: '', phone: '', email: '', cpf: '' },
-    documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
-  };
-
-  const [studentForm, setStudentForm] = useState(initialFormState);
-
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
     const today = new Date(); const birthDate = new Date(birthDateString);
@@ -203,6 +161,103 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const today = new Date();
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && new Date(t.date) < today).length;
   };
+
+  const handleManualTuitionGen = async () => {
+      if (confirm("Deseja gerar as mensalidades ainda não lançadas deste mês para todos os alunos ativos?")) {
+          setIsGenerating(true);
+          try {
+              await onGenerateTuitions();
+              alert("Processamento de mensalidades concluído!");
+          } catch (e) {
+              alert("Erro ao processar mensalidades.");
+          } finally {
+              setIsGenerating(false);
+          }
+      }
+  };
+
+  const handleExportExcel = () => {
+      const data = filteredStudents.map(s => ({
+          'Nome do Aluno': s.name,
+          'Idade': calculateAge(s.birthDate),
+          'Nascimento': formatDate(s.birthDate),
+          'Responsável': s.guardian.name,
+          'Telefone Resp.': s.guardian.phone,
+          'Status': s.active ? 'Ativo' : 'Inativo',
+          'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
+          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A'
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Alunos");
+      XLSX.writeFile(wb, `Alunos_Martinica_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleExportPDF = () => {
+      const doc = new jsPDF();
+      doc.setFontSize(18);
+      doc.text("Relatório de Alunos - Garotos do Martinica", 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
+      
+      const body = filteredStudents.map(s => [
+          s.name,
+          calculateAge(s.birthDate),
+          s.guardian.name,
+          s.guardian.phone,
+          s.active ? 'Ativo' : 'Inativo'
+      ]);
+
+      autoTable(doc, {
+          startY: 35,
+          head: [['Nome', 'Idade', 'Responsável', 'Telefone', 'Status']],
+          body: body,
+          headStyles: { fillColor: [249, 115, 22] }
+      });
+      doc.save("Relatorio_Alunos_Martinica.pdf");
+  };
+
+  const handleDownloadTemplate = () => {
+      const templateData = [{
+          nome: "João Exemplo Silva",
+          nascimento: "2012-05-20",
+          rg: "00000000",
+          cpf: "00000000000",
+          telefone_aluno: "11988887777",
+          atestado_vencimento: "2024-12-31",
+          responsavel_nome: "Maria Responsavel",
+          responsavel_cpf: "00000000000",
+          responsavel_telefone: "11977776666",
+          responsavel_email: "maria@email.com",
+          cep: "00000-000",
+          rua: "Rua Exemplo",
+          bairro: "Bairro Exemplo"
+      }];
+      const ws = XLSX.utils.json_to_sheet(templateData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template_Importacao");
+      XLSX.writeFile(wb, "Modelo_Importacao_Alunos.xlsx");
+  };
+
+  const handlePayTransaction = (id: string, method: PaymentMethod) => {
+      const tx = transactions.find(t => t.id === id);
+      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method, date: new Date().toISOString().split('T')[0] });
+  };
+
+  const handleCancelTransaction = (tx: Transaction) => {
+      if (confirm(`Deseja realmente cancelar/ignorar a cobrança: ${tx.description}?`)) {
+          onUpdateTransaction({ ...tx, status: PaymentStatus.CANCELLED });
+      }
+  };
+
+  const initialFormState: any = {
+    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true,
+    address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
+    guardian: { name: '', phone: '', email: '', cpf: '' },
+    documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
+  };
+
+  const [studentForm, setStudentForm] = useState(initialFormState);
 
   const sendChargeMessage = async (tx: Transaction) => {
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
@@ -338,9 +393,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"><Zap className="w-4 h-4" />Enviar Cobranças</button>
                 <input type="file" ref={fileInputRef} className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"><Upload className="w-4 h-4" />Importar</button>
-                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
-                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"><Download className="w-4 h-4" />Exportar</button>
-                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"><FileText className="w-4 h-4" />PDF</button>
+                <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
+                <button onClick={handleExportExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"><Download className="w-4 h-4" />Exportar</button>
+                <button onClick={handleExportPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"><FileText className="w-4 h-4" />PDF</button>
                 <button onClick={handleOpenNew} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"><Plus className="w-4 h-4" />Novo Aluno</button>
             </div>
         )}
@@ -389,7 +444,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <div className="font-medium text-gray-900 flex items-center gap-2">
                               {student.name}
                               {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
-                              {hasMissingDocs(student) && !isGuardian && (<button className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
+                              {hasMissingDocs(student) && !isGuardian && (<button onClick={() => handleOpenEdit(student)} className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200"><FileWarning className="w-3 h-3 inline mr-0.5" /> DOC</button>)}
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-1.5">
                               <span>Tel: {student.phone}</span>
@@ -433,7 +488,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
                           <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
-                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (<button className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200"><HeartPulse className="w-3 h-3" /> Atestado Vencido</button>)}
+                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (<button onClick={() => handleOpenEdit(student)} className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200"><HeartPulse className="w-3 h-3" /> Atestado Vencido</button>)}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
