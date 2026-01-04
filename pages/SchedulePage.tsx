@@ -29,6 +29,21 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
 
+  // --- AUTO FOCUS ON NEXT ACTIVITY FOR GUARDIANS ---
+  useEffect(() => {
+    if (currentUser?.role === UserRole.RESPONSAVEL && activities.length > 0) {
+        const now = new Date();
+        const futureActivities = activities
+            .filter(a => new Date(a.date + 'T' + a.startTime) >= now)
+            .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
+        
+        if (futureActivities.length > 0) {
+            setSelectedDate(futureActivities[0].date);
+            setSelectedActivityId(futureActivities[0].id);
+        }
+    }
+  }, [activities.length, currentUser?.role]);
+
   // --- REPORT STATE ---
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);

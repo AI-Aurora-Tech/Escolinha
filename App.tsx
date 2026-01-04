@@ -159,7 +159,6 @@ function App() {
 
         if (activitiesData) {
              let relevantActivities = activitiesData;
-             // FILTRO DE AGENDA PARA RESPONSÁVEL: Vê apenas atividades dos seus filhos
              if (currentUser?.role === UserRole.RESPONSAVEL) {
                  const studentIds = mappedStudents.map(s => s.id);
                  relevantActivities = activitiesData.filter((a: any) => {
@@ -587,15 +586,15 @@ function App() {
       if (!t.id) return;
       
       const payload: any = {};
-      // SEGURANÇA: Só inclui no payload o que foi explicitamente passado no objeto de atualização.
-      // Isso impede que campos como student_id sejam sobrescritos por null acidentalmente.
+      // SEGURANÇA: Só inclui no payload campos que foram explicitamente passados e não são vazios.
+      // Isso impede que o student_id ou o id sejam sobrescritos por null no banco.
       if (t.description !== undefined) payload.description = t.description;
       if (t.amount !== undefined) payload.amount = t.amount;
       if (t.type !== undefined) payload.type = t.type;
       if (t.date !== undefined) payload.date = t.date;
       if (t.status !== undefined) payload.status = t.status;
-      if (t.studentId !== undefined) payload.student_id = t.studentId;
-      if (t.planId !== undefined) payload.plan_id = t.planId;
+      if (t.studentId) payload.student_id = t.studentId; 
+      if (t.planId) payload.plan_id = t.planId;
       if (t.paymentMethod !== undefined) payload.payment_method = t.paymentMethod;
       if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
       if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
