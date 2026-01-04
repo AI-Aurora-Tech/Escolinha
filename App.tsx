@@ -494,7 +494,6 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      // Fix property access error by changing a.presentation_time to a.presentationTime
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -515,7 +514,6 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      // Fix property access error by changing a.presentation_time to a.presentationTime
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -569,13 +567,36 @@ function App() {
   };
 
   const handleAddTransaction = async (t: any) => { 
-      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.studentId || null, plan_id: t.plan_id || null, payment_method: t.paymentMethod, payment_link: t.payment_link, external_reference: t.external_reference };
+      const payload = { 
+          description: t.description, 
+          amount: t.amount, 
+          type: t.type, 
+          date: t.date, 
+          status: t.status, 
+          student_id: t.studentId || null, 
+          plan_id: t.planId || null, 
+          payment_method: t.paymentMethod || null, 
+          payment_link: t.paymentLink || null, 
+          external_reference: t.externalReference || null 
+      };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
       if(data && !error) setTransactions(prev => [...prev, { ...t, id: data.id }]);
   };
   
   const handleUpdateTransaction = async (t: any) => { 
-      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.student_id || null, plan_id: t.plan_id || null, payment_method: t.payment_method, payment_link: t.payment_link };
+      const payload = { 
+          description: t.description, 
+          amount: t.amount, 
+          type: t.type, 
+          date: t.date, 
+          status: t.status, 
+          student_id: t.studentId || null, 
+          plan_id: t.planId || null, 
+          payment_method: t.paymentMethod || null, 
+          payment_link: t.paymentLink || null,
+          external_reference: t.externalReference || null,
+          preference_id: t.preferenceId || null
+      };
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
   };

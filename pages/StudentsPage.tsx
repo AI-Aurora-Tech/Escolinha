@@ -103,14 +103,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 } catch (e) {
                     console.error("Erro na baixa automática:", e);
                 } finally {
-                    // Pequeno delay para evitar overload de rede e erros de ReadableStream
-                    setTimeout(() => checkingRefs.current.delete(ref), 2000);
+                    // Delay para evitar hammer de rede e garantir estabilidade do estado
+                    setTimeout(() => checkingRefs.current.delete(ref), 5000);
                 }
             }
         };
         autoReconciliation();
     }
-  }, [activeTab, editingId, transactions]);
+  }, [activeTab, editingId, transactions.length]); 
 
   useEffect(() => {
     if (monitoredPayments.length === 0) return;
@@ -134,7 +134,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (somethingChanged) setMonitoredPayments(remainingMonitored);
     }, 5000); 
     return () => clearInterval(interval);
-  }, [monitoredPayments, pixData, transactions]); 
+  }, [monitoredPayments, pixData]); 
 
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
@@ -267,7 +267,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
       const tx = transactions.find(t => t.id === id);
-      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method, date: new Date().toISOString().split('T')[0] });
+      // MANTÉM NO HISTÓRICO: Não alteramos a 'date' original (que é o mês de referência)
+      // apenas trocamos o status para PAID. Assim ela não some do mês correto no relatório.
+      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method });
   };
 
   const handleCancelTransaction = (tx: Transaction) => {
@@ -552,7 +554,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col animate-in zoom-in duration-200">
              <div className="p-4 md:p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
-                  <h3 className="text-lg md:text-xl font-bold">{isGuardian ? 'Ficha do Aluno' : (editingId ? 'Editar Aluno' : 'Novo Aluno')}</h3>
+                  <h3 className="text-lg md:text-xl font-bold">{isGuardian ? 'Ficha do Atleta' : (editingId ? 'Editar Aluno' : 'Novo Aluno')}</h3>
                   {editingId && (
                       <div className="flex gap-4 mt-4">
                           <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>

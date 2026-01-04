@@ -126,7 +126,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
 
   const handleConfirmPayment = () => {
       if (txToPay) {
-          onUpdateTransaction({ ...txToPay, status: PaymentStatus.PAID, date: payDate, paymentMethod: payMethod });
+          // MANTÉM HISTÓRICO: Não sobrescrevemos 'date' com a data do pagamento para não tirar a mensalidade do mês de referência original
+          onUpdateTransaction({ ...txToPay, status: PaymentStatus.PAID, paymentMethod: payMethod });
           setPayModalOpen(false); setTxToPay(null);
       }
   };

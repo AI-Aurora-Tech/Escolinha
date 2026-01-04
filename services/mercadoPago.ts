@@ -192,15 +192,27 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
         const response = await fetch(`/api/mp/v1/payments/${paymentId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
             }
         });
         
         if (!response.ok) return null;
-        const text = await response.text();
-        if (!text) return null;
-        const result = JSON.parse(text);
-        return result.status;
+
+        const rawText = await response.text();
+        const trimmed = rawText.trim();
+        if (!trimmed) return null;
+
+        try {
+            const result = JSON.parse(trimmed);
+            return result.status;
+        } catch (e) {
+            // Caso receba apenas a string de status sem ser um objeto JSON
+            if (['approved', 'pending', 'rejected', 'cancelled'].includes(trimmed.toLowerCase())) {
+                return trimmed.toLowerCase() as any;
+            }
+            return null;
+        }
     } catch (error) {
         console.error("Error getting status:", error);
         return null;
@@ -223,20 +235,18 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
       if (!response.ok) return null;
       
       const rawText = await response.text();
-      if (!rawText || rawText.trim() === "") return 'pending';
+      const trimmed = rawText.trim();
+      if (!trimmed) return 'pending';
 
-      // Robust JSON parsing to avoid "Unexpected character" errors
-      let result;
       try {
-          result = JSON.parse(rawText.trim());
+          const result = JSON.parse(trimmed);
+          if (result && result.results && result.results.length > 0) {
+            const lastPayment = result.results[result.results.length - 1];
+            return lastPayment.status; 
+          }
       } catch (parseError) {
-          console.error("Malformed JSON response from MP search", rawText);
+          console.error("Malformed JSON response from MP search", trimmed);
           return 'pending';
-      }
-      
-      if (result && result.results && result.results.length > 0) {
-        const lastPayment = result.results[result.results.length - 1];
-        return lastPayment.status; 
       }
       
       return 'pending';
