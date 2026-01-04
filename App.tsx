@@ -445,7 +445,7 @@ function App() {
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
-          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, plan_id: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
+          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, planId: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
       }
@@ -459,7 +459,6 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      // Fix property name: changed medical_expiry to medicalCertificateExpiry when accessing the updatedStudent object.
       const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); }
@@ -493,6 +492,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
+      // FIX: Changed a.presentation_time to a.presentationTime to match local state property name.
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -513,7 +513,8 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentation_time, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      // FIX: Changed a.presentation_time to a.presentationTime to match local state property name.
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
       if (original && original.recurrence === 'weekly') {
@@ -599,7 +600,7 @@ function App() {
       if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
-      // FIX: Merge local para não perder o studentId se o chamador não enviar
+      
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
   };
 
@@ -622,7 +623,8 @@ function App() {
   const handleAddPlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
-      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
+      if(data && !error) setTransactions(prev => [...prev]); // trigger refresh
+      fetchData(); // reload plans
   };
   
   const handleUpdatePlan = async (p: any) => { 
@@ -638,7 +640,7 @@ function App() {
   
   const handleAddUser = async (u: any) => { 
       const { data, error } = await supabase.from('app_users').insert([u]).select().single();
-      if(data && !error) setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.id }]);
+      if(data && !error) setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.cpf }]);
   };
   
   const handleUpdateUser = async (u: any) => { 

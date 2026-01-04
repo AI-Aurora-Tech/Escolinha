@@ -17,7 +17,7 @@ interface StudentsPageProps {
   onAddStudent: (s: Omit<Student, 'id'>) => void;
   onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
   onUpdateStudent: (s: Student) => void;
-  onUpdateTransaction: (t: Transaction) => void;
+  onUpdateTransaction: (t: Partial<Transaction>) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onGenerateTuitions: () => Promise<void>;
   initialFilter?: string;
@@ -84,6 +84,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   useEffect(() => {
     if (activeTab === 'FINANCE' && editingId) {
         const autoReconciliation = async () => {
+            // Buscamos as transações do aluno filtrando as pendentes que têm referência externa
             const pendingWithRef = transactions.filter(t => 
                 t.studentId === editingId && 
                 t.status !== PaymentStatus.PAID && 
@@ -98,19 +99,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 try {
                     const status = await checkMPPaymentStatus(ref);
                     if (status === 'approved') {
-                        handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
+                        // Enviamos apenas o necessário para não correr risco de passar campos nulos e limpar o banco
+                        onUpdateTransaction({ id: tx.id, status: PaymentStatus.PAID, paymentMethod: PaymentMethod.PIX_MERCADO_PAGO });
                     }
                 } catch (e) {
                     console.error("Erro na baixa automática:", e);
                 } finally {
-                    // Delay para evitar hammer de rede e garantir estabilidade do estado
                     setTimeout(() => checkingRefs.current.delete(ref), 5000);
                 }
             }
         };
         autoReconciliation();
     }
-  }, [activeTab, editingId, transactions.length]); 
+    // Incluímos transactions na dependência para garantir que se o estado mudar (ex: após um fetch), ele verifique novamente
+  }, [activeTab, editingId, transactions]); 
 
   useEffect(() => {
     if (monitoredPayments.length === 0) return;
@@ -122,7 +124,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 const status = await getPaymentStatus(payment.mpId);
                 if (status === 'approved') {
                     somethingChanged = true;
-                    payment.txIds.forEach(id => { handlePayTransaction(id, PaymentMethod.PIX_MERCADO_PAGO); });
+                    // Atualiza as transações vinculadas àquele pagamento via PIX
+                    payment.txIds.forEach(id => { 
+                        onUpdateTransaction({ id, status: PaymentStatus.PAID, paymentMethod: PaymentMethod.PIX_MERCADO_PAGO });
+                    });
                     if (pixData && pixData.id === payment.mpId) confirmPixPaymentSuccess();
                 } else if (status === 'rejected' || status === 'cancelled') {
                     somethingChanged = true;
@@ -134,7 +139,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         if (somethingChanged) setMonitoredPayments(remainingMonitored);
     }, 5000); 
     return () => clearInterval(interval);
-  }, [monitoredPayments, pixData]); 
+  }, [monitoredPayments, pixData, onUpdateTransaction]); 
 
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
@@ -266,15 +271,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
-      const tx = transactions.find(t => t.id === id);
-      // MANTÉM NO HISTÓRICO: Não alteramos a 'date' original (que é o mês de referência)
-      // apenas trocamos o status para PAID. Assim ela não some do mês correto no relatório.
-      if(tx && tx.status !== PaymentStatus.PAID) onUpdateTransaction({ ...tx, status: PaymentStatus.PAID, paymentMethod: method });
+      // Enviamos apenas o necessário para preservar outros campos no banco de dados (evitar que studentId vire null)
+      onUpdateTransaction({ id, status: PaymentStatus.PAID, paymentMethod: method });
   };
 
   const handleCancelTransaction = (tx: Transaction) => {
       if (confirm(`Deseja realmente cancelar/ignorar a cobrança: ${tx.description}?`)) {
-          onUpdateTransaction({ ...tx, status: PaymentStatus.CANCELLED });
+          // Passamos apenas ID e STATUS para ser seguro contra perda de vínculos
+          onUpdateTransaction({ id: tx.id, status: PaymentStatus.CANCELLED });
       }
   };
 
@@ -439,9 +443,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 {isCategoryDropdownOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100"><div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>{availableCategories.map(cat => (<label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors"><input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" /><span>{cat}</span></label>))}{selectedCategories.length > 0 && (<button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>)}</div>)}
             </div>
             <div className="md:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
-            <div className="md:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
-            <div className="md:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
-            <div className="md:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
+            <div className="md:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
+            <div className="md:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
+            <div className="md:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
         </div>
       )}
 
