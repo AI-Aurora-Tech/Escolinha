@@ -97,8 +97,9 @@ function App() {
             }
         }
 
+        let mappedStudents: Student[] = [];
         if (studentsData) {
-             const mappedStudents: Student[] = studentsData.map((s: any) => {
+             mappedStudents = studentsData.map((s: any) => {
                  let finalGroupIds: string[] = [];
                  if (s.group_ids && Array.isArray(s.group_ids)) {
                      finalGroupIds = s.group_ids;
@@ -158,11 +159,11 @@ function App() {
 
         if (activitiesData) {
              let relevantActivities = activitiesData;
-             if (currentUser?.role === UserRole.RESPONSAVEL && students) {
-                 const studentIds = students.map(s => s.id);
+             if (currentUser?.role === UserRole.RESPONSAVEL) {
+                 const studentIds = mappedStudents.map(s => s.id);
                  relevantActivities = activitiesData.filter((a: any) => {
                      const activityGroupId = a.group_id;
-                     const isGroupMatch = students.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
+                     const isGroupMatch = mappedStudents.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
                      const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
                      return isGroupMatch || isParticipant;
                  });
@@ -332,15 +333,10 @@ function App() {
 
           if (!alreadyExists) {
               const targetDay = plan.dueDay;
-              const targetDate = new Date(currentYear, currentMonth, targetDay);
+              // FIX: Evitar bug de timezone gerando data via string
+              const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
               
-              // Se o dia não existe no mês (ex: 31 de Abril), ajusta para o último dia disponível
-              if (targetDate.getMonth() !== currentMonth) {
-                  targetDate.setDate(0);
-              }
-              
-              const dateStr = targetDate.toISOString().split('T')[0];
-              const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
+              const monthName = new Date(currentYear, currentMonth, 1).toLocaleString('pt-BR', { month: 'long' });
               const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
               const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
 
@@ -372,7 +368,9 @@ function App() {
                   studentId: t.student_id, 
                   planId: t.plan_id, 
                   paymentMethod: t.payment_method, 
-                  externalReference: t.external_reference
+                  externalReference: t.external_reference,
+                  paymentLink: t.payment_link,
+                  preferenceId: t.preference_id
               }));
               setTransactions(prev => [...prev, ...mapped]);
           }
@@ -583,22 +581,25 @@ function App() {
       if(data && !error) setTransactions(prev => [...prev, { ...t, id: data.id }]);
   };
   
-  const handleUpdateTransaction = async (t: any) => { 
-      const payload = { 
-          description: t.description, 
-          amount: t.amount, 
-          type: t.type, 
-          date: t.date, 
-          status: t.status, 
-          student_id: t.studentId || null, 
-          plan_id: t.planId || null, 
-          payment_method: t.paymentMethod || null, 
-          payment_link: t.paymentLink || null,
-          external_reference: t.externalReference || null,
-          preference_id: t.preferenceId || null
-      };
+  const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
+      if (!t.id) return;
+      
+      const payload: any = {};
+      if (t.description !== undefined) payload.description = t.description;
+      if (t.amount !== undefined) payload.amount = t.amount;
+      if (t.type !== undefined) payload.type = t.type;
+      if (t.date !== undefined) payload.date = t.date;
+      if (t.status !== undefined) payload.status = t.status;
+      if (t.studentId !== undefined) payload.student_id = t.studentId;
+      if (t.planId !== undefined) payload.plan_id = t.planId;
+      if (t.paymentMethod !== undefined) payload.payment_method = t.paymentMethod;
+      if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
+      if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
+      if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
+
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
-      if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
+      // FIX: Merge local para não perder o studentId se o chamador não enviar
+      if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
   };
 
   const handleAddGroup = async (g: any): Promise<string | null> => { 
