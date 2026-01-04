@@ -25,11 +25,12 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
 
     // Verifica se as credenciais mínimas existem
     if (!instanceId || !instanceToken) {
-      console.warn('Configurações da Z-API incompletas.');
+      console.warn('Configurações da Z-API incompletas no sistema.');
       return false;
     }
 
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/send-text`;
+    // Utiliza o proxy configurado em vite.config.ts / vercel.json
+    const url = `/api/zapi/instances/${instanceId}/token/${instanceToken}/send-text`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -38,19 +39,15 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
         'client-token': clientToken || ''
       },
       body: JSON.stringify({
-        phone: `55${phone.replace(/\D/g, '')}`, // Garante o DDI 55
+        phone: `55${phone.replace(/\D/g, '')}`, // Garante o DDI 55 (Brasil)
         message: message
       })
     });
 
     const result = await response.json();
     
-    if (response.ok) {
-      return true;
-    } else {
-      console.error('Erro Z-API:', result);
-      return false;
-    }
+    // Z-API costuma retornar o ID da mensagem em caso de sucesso
+    return response.ok;
   } catch (err) {
     console.error('Erro de conexão Z-API:', err);
     return false;

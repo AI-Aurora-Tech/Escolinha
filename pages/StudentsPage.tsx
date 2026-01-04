@@ -97,8 +97,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     if (status === 'approved') {
                         handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
                     }
-                } catch (e) {
-                    console.error("Erro na baixa automática:", e);
+                } catch (error) {
+                    console.error("Erro na baixa automática:", error);
                 }
             }
         };
@@ -245,7 +245,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const msg = `Olá *${student.guardian.name}*, aqui é da escolinha *Garotos do Martinica*! ⚽\n\nNotamos que o(a) atleta *${student.name}* está com pendências na entrega da documentação obrigatória (RG, CPF, Comprovante de Endereço ou Escolar).\n\nPor favor, entregue o quanto antes na secretaria para regularizar a inscrição. Obrigado!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Lembrete de documentos enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
   };
 
   const sendMedicalReminder = async (student: Student) => {
@@ -255,7 +255,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
@@ -309,7 +309,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const startCamera = async () => {
     setIsCameraOpen(true);
     try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if (videoRef.current) videoRef.current.srcObject = stream; } 
-    catch (err) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
+    catch (error) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
   };
 
   const stopCamera = () => { if (videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop()); setIsCameraOpen(false); };
@@ -369,7 +369,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const result = await createPixPayment({ title: description, price: amount, externalReference: externalRef, payer: { name: studentForm.guardian.name, email: studentForm.guardian.email, phone: studentForm.guardian.phone, identification: { type: 'CPF', number: studentForm.guardian.cpf } } });
           if (result) { setPixData(result); setMonitoredPayments(prev => [...prev, { mpId: result.id, txIds: idsToPay }]); } 
           else { alert("Erro QR Code."); setShowPixModal(false); }
-      } catch (e) { alert("Erro MP."); setShowPixModal(false); } finally { setPixLoading(false); }
+      } catch (error) { alert("Erro MP."); setShowPixModal(false); } finally { setPixLoading(false); }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
@@ -465,7 +465,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                               {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
                               {hasMissingDocs(student) && !isGuardian && (
                                 <button 
-                                  onClick={() => sendDocReminder(student)}
+                                  onClick={(e) => { e.stopPropagation(); sendDocReminder(student); }}
                                   className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200 transition-colors flex items-center gap-1"
                                 >
                                   <FileWarning className="w-3 h-3" /> DOC
@@ -516,7 +516,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
                           {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
                             <button 
-                              onClick={() => sendMedicalReminder(student)}
+                              onClick={(e) => { e.stopPropagation(); sendMedicalReminder(student); }}
                               className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200 transition-colors"
                             >
                               <HeartPulse className="w-3 h-3" /> Atestado Vencido
