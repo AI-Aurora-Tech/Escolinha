@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone } from 'lucide-react';
+import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMPAccessToken, saveMPAccessToken } from '../services/mercadoPago';
@@ -10,11 +10,12 @@ import { supabase } from '../lib/supabaseClient';
 interface FinancePageProps {
   transactions: Transaction[];
   plans: Plan[];
+  students: Student[];
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (t: Transaction) => void;
 }
 
-export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, onAddTransaction, onUpdateTransaction }) => {
+export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, onAddTransaction, onUpdateTransaction }) => {
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
   
   // Settings State
@@ -26,6 +27,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | PaymentStatus>('ALL');
+  const [studentSearchFilter, setStudentSearchFilter] = useState('');
+
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [txToPay, setTxToPay] = useState<Transaction | null>(null);
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
@@ -85,8 +89,20 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
       return transactions.filter(t => {
           const txDate = t.date;
           const matchesType = filter === 'ALL' || t.type === filter;
+          const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
           const matchesDate = txDate >= startDate && txDate <= endDate;
-          return matchesType && matchesDate;
+          
+          let matchesStudent = true;
+          if (studentSearchFilter.trim()) {
+              if (t.studentId) {
+                  const student = students.find(s => s.id === t.studentId);
+                  matchesStudent = student?.name.toLowerCase().includes(studentSearchFilter.toLowerCase()) || false;
+              } else {
+                  matchesStudent = false;
+              }
+          }
+
+          return matchesType && matchesStatus && matchesDate && matchesStudent;
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
@@ -126,7 +142,6 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
 
   const handleConfirmPayment = () => {
       if (txToPay) {
-          // MANTÉM HISTÓRICO: Não sobrescrevemos 'date' com a data do pagamento para não tirar a mensalidade do mês de referência original
           onUpdateTransaction({ ...txToPay, status: PaymentStatus.PAID, paymentMethod: payMethod });
           setPayModalOpen(false); setTxToPay(null);
       }
@@ -146,7 +161,17 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
     doc.setTextColor(220, 38, 38); doc.text(`Despesas: R$ ${periodExpense.toFixed(2)}`, 80, 58);
     doc.setTextColor(periodBalance >= 0 ? 37 : 220, periodBalance >= 0 ? 99 : 38, periodBalance >= 0 ? 235 : 38); doc.text(`Saldo: R$ ${periodBalance.toFixed(2)}`, 140, 58);
     doc.setTextColor(0, 0, 0); 
-    const tableRows = exportData.map(t => [new Date(t.date).toLocaleDateString('pt-BR'), t.description, t.type === TransactionType.INCOME ? 'Receita' : 'Despesa', t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente', `R$ ${t.amount.toFixed(2)}`]);
+    const tableRows = exportData.map(t => {
+        const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+        const description = student ? `${t.description} [${student.name}]` : t.description;
+        return [
+            new Date(t.date).toLocaleDateString('pt-BR'), 
+            description, 
+            t.type === TransactionType.INCOME ? 'Receita' : 'Despesa', 
+            t.status === PaymentStatus.PAID ? 'Pago' : (t.status === PaymentStatus.CANCELLED ? 'Cancelado' : 'Pendente'), 
+            `R$ ${t.amount.toFixed(2)}`
+        ];
+    });
     autoTable(doc, { startY: 70, head: [['Data', 'Descrição', 'Tipo', 'Status', 'Valor']], body: tableRows, headStyles: { fillColor: [249, 115, 22] } });
     doc.save(`Relatorio_Financeiro_${startDate}_${endDate}.pdf`);
   };
@@ -215,16 +240,45 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${balance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-6 h-6" /></div><div><p className="text-sm text-gray-500">Saldo Atual</p><h3 className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {balance.toFixed(2)}</h3></div></div></div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 justify-between items-center">
-            <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'ALL' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todas</button>
-                <button onClick={() => setFilter('INCOME')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'INCOME' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Receitas</button>
-                <button onClick={() => setFilter('EXPENSE')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Despesas</button>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col space-y-4">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+                <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                    <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'ALL' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todas</button>
+                    <button onClick={() => setFilter('INCOME')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'INCOME' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Receitas</button>
+                    <button onClick={() => setFilter('EXPENSE')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Despesas</button>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+                    <button onClick={handleExportReport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><FileText className="w-4 h-4" /> Exportar</button>
+                    <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-                <button onClick={handleExportReport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><FileText className="w-4 h-4" /> Exportar</button>
-                <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input 
+                        type="text" 
+                        placeholder="Buscar por nome do aluno..." 
+                        className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        value={studentSearchFilter}
+                        onChange={(e) => setStudentSearchFilter(e.target.value)}
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                    <Filter className="text-gray-400 w-4 h-4" />
+                    <select 
+                        className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value as any)}
+                    >
+                        <option value="ALL">Todos os Status</option>
+                        <option value={PaymentStatus.PAID}>Pago</option>
+                        <option value={PaymentStatus.PENDING}>Pendente</option>
+                        <option value={PaymentStatus.CANCELLED}>Cancelado</option>
+                        <option value={PaymentStatus.LATE}>Atrasado</option>
+                    </select>
+                </div>
             </div>
         </div>
 
@@ -232,22 +286,39 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, o
             <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[700px]">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
-                        <tr><th className="px-6 py-3">Data</th><th className="px-6 py-3">Descrição</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3">Pagamento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Valor</th><th className="px-6 py-3 text-right">Ações</th></tr>
+                        <tr><th className="px-6 py-3">Data</th><th className="px-6 py-3">Descrição / Atleta</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3">Pagamento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Valor</th><th className="px-6 py-3 text-right">Ações</th></tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {filteredTransactions.length > 0 ? (
-                            filteredTransactions.map(t => (
-                            <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
-                                <td className="px-6 py-4 font-medium text-gray-900">{t.description}</td>
-                                <td className="px-6 py-4">{t.type === TransactionType.INCOME ? (<span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100"><ArrowUpCircle className="w-3 h-3 mr-1" /> Receita</span>) : (<span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100"><ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa</span>)}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">{getPaymentMethodLabel(t.paymentMethod)}</td>
-                                <td className="px-6 py-4"><span className={`text-xs font-medium px-2 py-1 rounded ${t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-600'}`}>{t.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}</span></td>
-                                <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
-                                <td className="px-6 py-4 text-right">{t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-5 h-5" /></button>)}</td>
-                            </tr>
-                            ))
-                        ) : (<tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação no período.</td></tr>)}
+                            filteredTransactions.map(t => {
+                                const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+                                return (
+                                <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="font-medium text-gray-900">{t.description}</div>
+                                        {student && (
+                                            <div className="text-xs text-primary-600 font-semibold flex items-center gap-1 mt-0.5">
+                                                <Users className="w-3 h-3" /> {student.name}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4">{t.type === TransactionType.INCOME ? (<span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100"><ArrowUpCircle className="w-3 h-3 mr-1" /> Receita</span>) : (<span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100"><ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa</span>)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">{getPaymentMethodLabel(t.paymentMethod)}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                            t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                            t.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500' :
+                                            'bg-yellow-50 text-yellow-600'
+                                        }`}>
+                                            {t.status === PaymentStatus.PAID ? 'Pago' : (t.status === PaymentStatus.CANCELLED ? 'Cancelado' : 'Pendente')}
+                                        </span>
+                                    </td>
+                                    <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right">{t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-5 h-5" /></button>)}</td>
+                                </tr>
+                                )})
+                        ) : (<tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação encontrada.</td></tr>)}
                     </tbody>
                 </table>
             </div>

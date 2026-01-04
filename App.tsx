@@ -445,7 +445,7 @@ function App() {
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
-          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, planId: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
+          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, plan_id: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
       }
@@ -459,6 +459,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
+      // Fix property name: changed medical_expiry to medicalCertificateExpiry when accessing the updatedStudent object.
       const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); }
@@ -512,7 +513,7 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentation_time, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
       if (original && original.recurrence === 'weekly') {
@@ -637,7 +638,7 @@ function App() {
   
   const handleAddUser = async (u: any) => { 
       const { data, error } = await supabase.from('app_users').insert([u]).select().single();
-      if(data && !error) setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.cpf }]);
+      if(data && !error) setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.id }]);
   };
   
   const handleUpdateUser = async (u: any) => { 
@@ -707,7 +708,7 @@ function App() {
       case 'groups': if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
       case 'plans': if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
       case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} />;
-      case 'finance': return (currentUser!.role === UserRole.ADMIN) ? <FinancePage transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
+      case 'finance': return (currentUser!.role === UserRole.ADMIN) ? <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
       case 'users': return currentUser!.role === UserRole.ADMIN ? <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
       default: return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
     }
