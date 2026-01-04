@@ -315,55 +315,45 @@ function App() {
       const activeStudents = students.filter(s => s.active && s.planId);
       const today = new Date();
       const currentYear = today.getFullYear();
+      const currentMonth = today.getMonth(); // 0-11
       const newTransactionsPayload = [];
 
       for (const student of activeStudents) {
           const plan = plans.find(p => p.id === student.planId);
           if (!plan) continue;
 
-          // Regra dos 10 dias: só gera para o mês se houver pelo menos 10 dias de antecedência
-          const currentMonth = today.getMonth();
           const targetDay = plan.dueDay;
           
-          // Verifica se o vencimento deste mês já passou ou está a menos de 10 dias
-          const thisMonthDueDate = new Date(currentYear, currentMonth, targetDay);
-          if (thisMonthDueDate.getMonth() !== currentMonth) thisMonthDueDate.setDate(0);
+          // Data de vencimento no mês corrente
+          const targetDate = new Date(currentYear, currentMonth, targetDay);
+          // Ajuste para último dia do mês caso o dia do plano exceda (ex: 31 de Abril)
+          if (targetDate.getMonth() !== currentMonth) targetDate.setDate(0);
           
-          const diffInMs = thisMonthDueDate.getTime() - today.getTime();
-          const diffInDays = diffInMs / (1000 * 3600 * 24);
+          const dateStr = targetDate.toISOString().split('T')[0];
+          const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
+          const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+          const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
 
-          // Se faltarem menos de 10 dias, pula o mês atual e começa no próximo
-          const startMonth = diffInDays >= 10 ? currentMonth : currentMonth + 1;
+          // Verifica se já existe transação para este aluno neste mês específico
+          const alreadyExists = transactions.some(t => 
+              t.studentId === student.id && 
+              t.type === TransactionType.INCOME && 
+              t.date.startsWith(`${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`)
+          );
 
-          for (let month = startMonth; month <= 11; month++) {
-              const targetDate = new Date(currentYear, month, targetDay);
-              if (targetDate.getMonth() !== month) targetDate.setDate(0);
-              const dateStr = targetDate.toISOString().split('T')[0];
-
-              const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
-              const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-              const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
-
-              const alreadyExists = transactions.some(t => 
-                  t.studentId === student.id && 
-                  t.type === TransactionType.INCOME && 
-                  t.date.startsWith(`${currentYear}-${(month + 1).toString().padStart(2, '0')}`)
-              );
-
-              if (!alreadyExists) {
-                  const externalReference = crypto.randomUUID();
-                  newTransactionsPayload.push({
-                      description: description,
-                      amount: plan.price,
-                      type: TransactionType.INCOME,
-                      date: dateStr,
-                      status: PaymentStatus.PENDING,
-                      student_id: student.id,
-                      plan_id: plan.id,
-                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                      external_reference: externalReference
-                  });
-              }
+          if (!alreadyExists) {
+              const externalReference = crypto.randomUUID();
+              newTransactionsPayload.push({
+                  description: description,
+                  amount: plan.price,
+                  type: TransactionType.INCOME,
+                  date: dateStr,
+                  status: PaymentStatus.PENDING,
+                  student_id: student.id,
+                  plan_id: plan.id,
+                  payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                  external_reference: externalReference
+              });
           }
       }
 
@@ -398,6 +388,7 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
+    // Fix: Using studentData.medicalCertificateExpiry instead of studentData.medical_expiry
     const payload = { name: studentData.name, birth_date: studentData.birthDate, rg: studentData.rg, cpf: studentData.cpf, phone: studentData.phone, medical_expiry: studentData.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: studentData.address, guardian: studentData.guardian, plan_id: studentData.planId, group_ids: studentData.groupIds, group_id: primaryGroupId, active: studentData.active, documents: studentData.documents };
     const { data, error } = await supabase.from('students').insert([payload]).select().single();
     if (data && !error) {
@@ -412,7 +403,8 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        return { name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medical_expiry, photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId || null, group_ids: s.groupIds || [], group_id: primaryGroupId, active: s.active, documents: s.documents };
+        // Fix: Using s.medicalCertificateExpiry instead of s.medical_expiry
+        return { name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry, photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId || null, group_ids: s.groupIds || [], group_id: primaryGroupId, active: s.active, documents: s.documents };
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
@@ -463,6 +455,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
+      // Fix: Using a.feePayments instead of a.fee_payments
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -483,6 +476,7 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
+      // Fix: Using a.feePayments instead of a.fee_payments
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -564,13 +558,13 @@ function App() {
   };
   
   const handleAddPlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
       if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
   };
   
   const handleUpdatePlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
       if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };
@@ -602,7 +596,7 @@ function App() {
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
                           <img src="/logo.svg" alt="Logo" className="w-16 h-16" />
