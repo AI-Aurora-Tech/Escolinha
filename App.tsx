@@ -322,26 +322,28 @@ function App() {
           const plan = plans.find(p => p.id === student.planId);
           if (!plan) continue;
 
-          const targetDay = plan.dueDay;
-          
-          // Data de vencimento no mês corrente
-          const targetDate = new Date(currentYear, currentMonth, targetDay);
-          // Ajuste para último dia do mês caso o dia do plano exceda (ex: 31 de Abril)
-          if (targetDate.getMonth() !== currentMonth) targetDate.setDate(0);
-          
-          const dateStr = targetDate.toISOString().split('T')[0];
-          const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
-          const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-          const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
-
-          // Verifica se já existe transação para este aluno neste mês específico
+          // Verifica se já existe transação para este aluno neste mês e ano corrente
+          const monthNum = (currentMonth + 1).toString().padStart(2, '0');
           const alreadyExists = transactions.some(t => 
               t.studentId === student.id && 
               t.type === TransactionType.INCOME && 
-              t.date.startsWith(`${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`)
+              t.date.startsWith(`${currentYear}-${monthNum}`)
           );
 
           if (!alreadyExists) {
+              const targetDay = plan.dueDay;
+              const targetDate = new Date(currentYear, currentMonth, targetDay);
+              
+              // Ajuste para o último dia do mês se o dia configurado não existir no mês atual (ex: dia 31 em Abril)
+              if (targetDate.getMonth() !== currentMonth) {
+                  targetDate.setDate(0);
+              }
+              
+              const dateStr = targetDate.toISOString().split('T')[0];
+              const monthName = targetDate.toLocaleString('pt-BR', { month: 'long' });
+              const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+              const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+
               const externalReference = crypto.randomUUID();
               newTransactionsPayload.push({
                   description: description,
@@ -361,7 +363,16 @@ function App() {
           const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
           if (data && !error) {
               const mapped = data.map((t: any) => ({
-                  id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, studentId: t.student_id, planId: t.plan_id, paymentMethod: t.payment_method, externalReference: t.external_reference
+                  id: t.id, 
+                  description: t.description, 
+                  amount: t.amount, 
+                  type: t.type, 
+                  date: t.date, 
+                  status: t.status, 
+                  studentId: t.student_id, 
+                  planId: t.plan_id, 
+                  paymentMethod: t.payment_method, 
+                  externalReference: t.external_reference
               }));
               setTransactions(prev => [...prev, ...mapped]);
           }
@@ -388,8 +399,22 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-    // Fix: Using studentData.medicalCertificateExpiry instead of studentData.medical_expiry
-    const payload = { name: studentData.name, birth_date: studentData.birthDate, rg: studentData.rg, cpf: studentData.cpf, phone: studentData.phone, medical_expiry: studentData.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: studentData.address, guardian: studentData.guardian, plan_id: studentData.planId, group_ids: studentData.groupIds, group_id: primaryGroupId, active: studentData.active, documents: studentData.documents };
+    const payload = { 
+        name: studentData.name, 
+        birth_date: studentData.birthDate, 
+        rg: studentData.rg, 
+        cpf: studentData.cpf, 
+        phone: studentData.phone, 
+        medical_expiry: studentData.medicalCertificateExpiry, 
+        photo_url: finalPhotoUrl, 
+        address: studentData.address, 
+        guardian: studentData.guardian, 
+        plan_id: studentData.planId, 
+        group_ids: studentData.groupIds, 
+        group_id: primaryGroupId, 
+        active: studentData.active, 
+        documents: studentData.documents 
+    };
     const { data, error } = await supabase.from('students').insert([payload]).select().single();
     if (data && !error) {
         const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id, groupIds: studentData.groupIds, active: data.active, documents: data.documents };
@@ -403,8 +428,22 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        // Fix: Using s.medicalCertificateExpiry instead of s.medical_expiry
-        return { name: s.name, birth_date: s.birthDate, rg: s.rg, cpf: s.cpf, phone: s.phone, medical_expiry: s.medicalCertificateExpiry, photo_url: s.photoUrl, address: s.address, guardian: s.guardian, plan_id: s.planId || null, group_ids: s.groupIds || [], group_id: primaryGroupId, active: s.active, documents: s.documents };
+        return { 
+            name: s.name, 
+            birth_date: s.birthDate, 
+            rg: s.rg, 
+            cpf: s.cpf, 
+            phone: s.phone, 
+            medical_expiry: s.medicalCertificateExpiry, 
+            photo_url: s.photoUrl, 
+            address: s.address, 
+            guardian: s.guardian, 
+            plan_id: s.planId || null, 
+            group_ids: s.groupIds || [], 
+            group_id: primaryGroupId, 
+            active: s.active, 
+            documents: s.documents 
+        };
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
@@ -455,7 +494,6 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      // Fix: Using a.feePayments instead of a.fee_payments
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -476,7 +514,6 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      // Fix: Using a.feePayments instead of a.fee_payments
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -530,13 +567,13 @@ function App() {
   };
 
   const handleAddTransaction = async (t: any) => { 
-      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.studentId || null, plan_id: t.plan_id || null, payment_method: t.paymentMethod, payment_link: t.payment_link, external_reference: t.externalReference };
+      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.studentId || null, plan_id: t.plan_id || null, payment_method: t.paymentMethod, payment_link: t.payment_link, external_reference: t.external_reference };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
       if(data && !error) setTransactions(prev => [...prev, { ...t, id: data.id }]);
   };
   
   const handleUpdateTransaction = async (t: any) => { 
-      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.student_id || null, plan_id: t.plan_id || null, payment_method: t.paymentMethod, payment_link: t.payment_link };
+      const payload = { description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, student_id: t.student_id || null, plan_id: t.plan_id || null, payment_method: t.payment_method, payment_link: t.payment_link };
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? t : tx));
   };
@@ -558,13 +595,13 @@ function App() {
   };
   
   const handleAddPlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
       if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
   };
   
   const handleUpdatePlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
       const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
       if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };

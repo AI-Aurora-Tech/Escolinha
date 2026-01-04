@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2 } from 'lucide-react';
@@ -140,7 +139,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   }, [monitoredPayments, pixData, transactions, onUpdateTransaction]); 
 
   const handleManualTuitionGen = async () => {
-      if (confirm("Deseja gerar as mensalidades pendentes para todos os alunos ativos?\n\nAtenção: A cobrança só será gerada se o vencimento estiver a pelo menos 10 dias da data atual.")) {
+      if (confirm("Deseja gerar as mensalidades ainda não lançadas do mês atual para todos os alunos ativos?")) {
           setIsGenerating(true);
           try {
               await onGenerateTuitions();
@@ -300,7 +299,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
-  // Fix: changed readText (which doesn't exist/accept arguments in this context) to writeText to correctly copy the PIX code.
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código Copiado!"); } };
 
   const studentTransactions = transactions.filter(t => t.studentId === editingId && t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
