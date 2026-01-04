@@ -45,11 +45,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [pixLoading, setPixLoading] = useState(false);
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   
-  const [sendingPixId, setSendingPixId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [monitoredPayments, setMonitoredPayments] = useState<{ mpId: number, txIds: string[] }[]>([]);
   const [selectedFinanceIds, setSelectedFinanceIds] = useState<Set<string>>(new Set());
-  const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7)); 
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -58,10 +56,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [isLoadingCep, setIsLoadingCep] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
 
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+
+  // Previne múltiplas verificações simultâneas do mesmo externalReference
+  const checkingRefs = useRef<Set<string>>(new Set());
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -88,23 +88,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 t.studentId === editingId && 
                 t.status !== PaymentStatus.PAID && 
                 t.status !== PaymentStatus.CANCELLED && 
-                t.externalReference
+                t.externalReference &&
+                !checkingRefs.current.has(t.externalReference)
             );
             
             for (const tx of pendingWithRef) {
+                const ref = tx.externalReference!;
+                checkingRefs.current.add(ref);
                 try {
-                    const status = await checkMPPaymentStatus(tx.externalReference!);
+                    const status = await checkMPPaymentStatus(ref);
                     if (status === 'approved') {
                         handlePayTransaction(tx.id, PaymentMethod.PIX_MERCADO_PAGO);
                     }
                 } catch (e) {
                     console.error("Erro na baixa automática:", e);
+                } finally {
+                    // Pequeno delay para evitar overload de rede e erros de ReadableStream
+                    setTimeout(() => checkingRefs.current.delete(ref), 2000);
                 }
             }
         };
         autoReconciliation();
     }
-  }, [activeTab, editingId]);
+  }, [activeTab, editingId, transactions]);
 
   useEffect(() => {
     if (monitoredPayments.length === 0) return;
@@ -126,9 +132,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             } catch (error) { remainingMonitored.push(payment); }
         }
         if (somethingChanged) setMonitoredPayments(remainingMonitored);
-    }, 3000); 
+    }, 5000); 
     return () => clearInterval(interval);
-  }, [monitoredPayments, pixData, transactions, onUpdateTransaction]); 
+  }, [monitoredPayments, pixData, transactions]); 
 
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
@@ -159,7 +165,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const getStudentOverdueCount = (studentId: string) => {
     const today = new Date();
-    return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && new Date(t.date) < today).length;
+    const todayStr = today.toISOString().split('T')[0];
+    return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && t.date < todayStr).length;
   };
 
   const handleManualTuitionGen = async () => {
@@ -245,7 +252,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const msg = `Olá *${student.guardian.name}*, aqui é da escolinha *Garotos do Martinica*! ⚽\n\nNotamos que o(a) atleta *${student.name}* está com pendências na entrega da documentação obrigatória (RG, CPF, Comprovante de Endereço ou Escolar).\n\nPor favor, entregue o quanto antes na secretaria para regularizar a inscrição. Obrigado!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Lembrete de documentos enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
   };
 
   const sendMedicalReminder = async (student: Student) => {
@@ -255,7 +262,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações.");
+    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
@@ -309,7 +316,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const startCamera = async () => {
     setIsCameraOpen(true);
     try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if (videoRef.current) videoRef.current.srcObject = stream; } 
-    catch (err) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
+    catch (error) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
   };
 
   const stopCamera = () => { if (videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop()); setIsCameraOpen(false); };
@@ -369,13 +376,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const result = await createPixPayment({ title: description, price: amount, externalReference: externalRef, payer: { name: studentForm.guardian.name, email: studentForm.guardian.email, phone: studentForm.guardian.phone, identification: { type: 'CPF', number: studentForm.guardian.cpf } } });
           if (result) { setPixData(result); setMonitoredPayments(prev => [...prev, { mpId: result.id, txIds: idsToPay }]); } 
           else { alert("Erro QR Code."); setShowPixModal(false); }
-      } catch (e) { alert("Erro MP."); setShowPixModal(false); } finally { setPixLoading(false); }
+      } catch (error) { alert("Erro MP."); setShowPixModal(false); } finally { setPixLoading(false); }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); };
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código Copiado!"); } };
 
-  const studentTransactions = transactions.filter(t => t.studentId === editingId && t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // TODO HISTÓRICO FINANCEIRO: Mostra TODAS as transações vinculadas ao ID do aluno
+  const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
   const studentActivities = activities.filter(a => editingId && (a.groupId && studentForm.groupIds?.includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
@@ -605,7 +613,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             ) : activeTab === 'FINANCE' ? (
                 <div className="flex-1 overflow-y-auto p-4 md:p-6">
                     <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
-                        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 w-fit"><Wallet className="w-4 h-4" /> Histórico Financeiro</div>
+                        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 w-fit"><Wallet className="w-4 h-4" /> Histórico Financeiro Completo</div>
                         <div className="flex gap-2">
                             {(isGuardian || true) && selectedFinanceIds.size > 0 && (
                                 <button onClick={() => initiatePixPayment()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-bold animate-pulse shadow-lg">

@@ -45,18 +45,15 @@ interface CreatePreferenceData {
 
 // --- HELPERS DE SANITIZAÇÃO ---
 const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
-    // 1. Sanitização do Email
     const email = payerData.email && payerData.email.includes('@') 
         ? payerData.email.trim() 
         : 'cliente@naoinformado.com';
 
-    // 2. Separação de Nome e Sobrenome
     const fullName = payerData.name ? payerData.name.trim() : 'Responsável';
     const nameParts = fullName.split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'do Aluno';
 
-    // 3. Sanitização do Telefone
     const rawPhone = payerData.phone ? payerData.phone.replace(/\D/g, '') : '';
     let phoneObject = undefined;
 
@@ -70,10 +67,10 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     }
 
     const payerPayload: any = {
-        first_name: firstName, // Para /v1/payments usa first_name
-        last_name: lastName,   // Para /v1/payments usa last_name
-        name: firstName,       // Para preferences usa name
-        surname: lastName,     // Para preferences usa surname
+        first_name: firstName,
+        last_name: lastName,
+        name: firstName,
+        surname: lastName,
         email: email,
         identification: {
             type: 'CPF',
@@ -91,7 +88,6 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
   try {
     const { payerPayload, phoneObject } = sanitizePayer(data.payer);
     
-    // Ajuste para Preferences API
     const preferencesPayer = {
         name: payerPayload.name,
         surname: payerPayload.surname,
@@ -100,7 +96,6 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         phone: phoneObject
     };
 
-    // USANDO PROXY: /api/mp/... em vez de https://api.mercadopago.com/...
     const response = await fetch('/api/mp/checkout/preferences', {
       method: 'POST',
       headers: {
@@ -127,6 +122,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       })
     });
 
+    if (!response.ok) return null;
     const result = await response.json();
     const isSandbox = token.startsWith('TEST');
     const paymentLink = isSandbox ? result.sandbox_init_point : result.init_point;
@@ -134,10 +130,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
     if (paymentLink) {
       return { init_point: paymentLink, id: result.id };
     }
-    
-    console.error("Erro MP (Preferences):", result);
     return null;
-
   } catch (error) {
     console.error("Error creating preference:", error);
     return null;
@@ -164,7 +157,6 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             external_reference: data.externalReference
         };
 
-        // USANDO PROXY
         const response = await fetch('/api/mp/v1/payments', {
             method: 'POST',
             headers: {
@@ -175,6 +167,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             body: JSON.stringify(body)
         });
 
+        if (!response.ok) return null;
         const result = await response.json();
 
         if (result.id && result.point_of_interaction) {
@@ -184,10 +177,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
                 qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64
             };
         }
-
-        console.error("Erro MP (PIX):", result);
         return null;
-
     } catch (error) {
         console.error("Error creating PIX:", error);
         return null;
@@ -199,16 +189,20 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
     if (!token) return null;
 
     try {
-        // USANDO PROXY
         const response = await fetch(`/api/mp/v1/payments/${paymentId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
-        const result = await response.json();
+        
+        if (!response.ok) return null;
+        const text = await response.text();
+        if (!text) return null;
+        const result = JSON.parse(text);
         return result.status;
     } catch (error) {
+        console.error("Error getting status:", error);
         return null;
     }
 };
@@ -218,23 +212,34 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
     if (!token) return null;
   
     try {
-      // USANDO PROXY
       const response = await fetch(`/api/mp/v1/payments/search?external_reference=${externalReference}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
         }
       });
   
-      const result = await response.json();
+      if (!response.ok) return null;
       
-      if (result.results && result.results.length > 0) {
+      const rawText = await response.text();
+      if (!rawText || rawText.trim() === "") return 'pending';
+
+      // Robust JSON parsing to avoid "Unexpected character" errors
+      let result;
+      try {
+          result = JSON.parse(rawText.trim());
+      } catch (parseError) {
+          console.error("Malformed JSON response from MP search", rawText);
+          return 'pending';
+      }
+      
+      if (result && result.results && result.results.length > 0) {
         const lastPayment = result.results[result.results.length - 1];
         return lastPayment.status; 
       }
       
       return 'pending';
-  
     } catch (error) {
       console.error("Error checking payment:", error);
       return null;
