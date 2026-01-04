@@ -492,7 +492,6 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      // FIX: Changed a.presentation_time to a.presentationTime to match local state property name.
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
@@ -513,7 +512,6 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      // FIX: Changed a.presentation_time to a.presentationTime to match local state property name.
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -576,8 +574,8 @@ function App() {
           student_id: t.studentId || null, 
           plan_id: t.planId || null, 
           payment_method: t.paymentMethod || null, 
-          payment_link: t.paymentLink || null, 
-          external_reference: t.externalReference || null 
+          payment_link: t.payment_link, 
+          external_reference: t.external_reference
       };
       const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
       if(data && !error) setTransactions(prev => [...prev, { ...t, id: data.id }]);
@@ -587,6 +585,8 @@ function App() {
       if (!t.id) return;
       
       const payload: any = {};
+      // Somente incluímos no payload se a propriedade existir no objeto 't' de entrada.
+      // Se não existir, o Supabase não alterará a coluna correspondente.
       if (t.description !== undefined) payload.description = t.description;
       if (t.amount !== undefined) payload.amount = t.amount;
       if (t.type !== undefined) payload.type = t.type;
@@ -601,6 +601,8 @@ function App() {
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
+      // Atualização de estado local via merge, mantendo os dados anteriores (como studentId)
+      // se não estiverem presentes no objeto parcial 't'.
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
   };
 
@@ -623,8 +625,7 @@ function App() {
   const handleAddPlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
-      if(data && !error) setTransactions(prev => [...prev]); // trigger refresh
-      fetchData(); // reload plans
+      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
   };
   
   const handleUpdatePlan = async (p: any) => { 

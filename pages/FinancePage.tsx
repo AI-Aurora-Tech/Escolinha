@@ -12,7 +12,7 @@ interface FinancePageProps {
   plans: Plan[];
   students: Student[];
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
-  onUpdateTransaction: (t: Transaction) => void;
+  onUpdateTransaction: (t: Partial<Transaction>) => void;
 }
 
 export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, onAddTransaction, onUpdateTransaction }) => {
@@ -142,7 +142,15 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const handleConfirmPayment = () => {
       if (txToPay) {
-          onUpdateTransaction({ ...txToPay, status: PaymentStatus.PAID, paymentMethod: payMethod });
+          // CRITICAL FIX: Enviamos apenas o necessário para a atualização de status.
+          // NÃO espalhamos o objeto txToPay inteiro para evitar que campos inconsistentes
+          // no estado local sobrescrevam o studentId com null no banco de dados.
+          onUpdateTransaction({ 
+              id: txToPay.id, 
+              status: PaymentStatus.PAID, 
+              paymentMethod: payMethod,
+              date: payDate
+          });
           setPayModalOpen(false); setTxToPay(null);
       }
   };
@@ -259,7 +267,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input 
                         type="text" 
-                        placeholder="Buscar por nome do aluno..." 
+                        placeholder="Buscar por nome do atleta..." 
                         className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         value={studentSearchFilter}
                         onChange={(e) => setStudentSearchFilter(e.target.value)}
