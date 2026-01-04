@@ -15,13 +15,11 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNavigate, onLogout, isOpen, onClose }) => {
   
   const menuItems = [
-    // Dashboard hidden for Guardians as requested ("todos os demais itens devem ser removidos")
-    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
+    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
     { id: 'students', label: currentUser.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Alunos & Responsáveis', icon: Users, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
     { id: 'groups', label: 'Grupos', icon: Shirt, roles: [UserRole.ADMIN, UserRole.PROFESSOR] },
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
     { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
-    // Finance hidden for Guardians here because they access payments inside "Meus Filhos" -> "Histórico Financeiro"
     { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
   ];

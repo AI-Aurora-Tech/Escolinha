@@ -201,9 +201,6 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
         fetchData();
-        if (currentUser?.role === UserRole.RESPONSAVEL) {
-            setCurrentPage('students');
-        }
     }
   }, [isAuthenticated]);
 

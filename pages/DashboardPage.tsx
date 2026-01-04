@@ -25,7 +25,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       .length;
   }, [transactions]);
 
-  // Calculate distinct active students who are defaulting
+  // Calculate distinct active students who are defaulting (scoped by props)
   const defaultingStudentsCount = useMemo(() => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -36,10 +36,10 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             .filter(t => 
                 t.type === TransactionType.INCOME && 
                 t.status !== PaymentStatus.PAID && 
-                t.status !== PaymentStatus.CANCELLED && // Ignora cancelados
+                t.status !== PaymentStatus.CANCELLED && 
                 t.studentId &&
-                activeStudentIds.has(t.studentId) && // Apenas alunos ativos
-                t.date < todayStr // Atrasado é estritamente antes de hoje
+                activeStudentIds.has(t.studentId) && 
+                t.date < todayStr
             )
             .map(t => t.studentId)
     );
@@ -49,7 +49,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   const missingDocsCount = useMemo(() => {
       return students.filter(s => {
           if (!s.active || !s.documents) return false;
-          // Helper to check if doc is delivered regardless of format (boolean or object)
           const check = (doc: any) => {
               if (typeof doc === 'boolean') return doc;
               return doc?.delivered;
@@ -65,7 +64,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime())[0];
   }, [activities]);
 
-  // Helper para formatar data sem fuso horário
   const formatDate = (dateString: string) => {
       if (!dateString) return '';
       const parts = dateString.split('-');
@@ -126,13 +124,12 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         startY: 35,
         head: [['Dia', 'Nome do Aluno', 'Idade Atual', 'Telefone', 'Responsável']],
         body: tableData,
-        headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+        headStyles: { fillColor: [249, 115, 22] },
     });
 
     doc.save(`Aniversariantes_${months[birthdayMonth]}.pdf`);
   };
 
-  // --- CÁLCULO RESULTADOS DOS JOGOS (ANO CORRENTE) ---
   const gameStats = useMemo(() => {
     const currentYear = new Date().getFullYear();
     let wins = 0;
@@ -141,7 +138,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     const now = new Date();
 
     activities.forEach(a => {
-        // Verifica se é jogo, se é do ano atual e se já aconteceu (data passada)
         if (a.type === 'GAME' && a.date.startsWith(String(currentYear))) {
              const activityDate = new Date(a.date + 'T' + a.endTime);
              if (activityDate < now) {
@@ -156,9 +152,9 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     });
 
     return [
-        { name: 'Vitórias', value: wins, color: '#22c55e' }, // Green
-        { name: 'Empates', value: draws, color: '#eab308' }, // Yellow
-        { name: 'Derrotas', value: losses, color: '#ef4444' } // Red
+        { name: 'Vitórias', value: wins, color: '#22c55e' }, 
+        { name: 'Empates', value: draws, color: '#eab308' }, 
+        { name: 'Derrotas', value: losses, color: '#ef4444' } 
     ];
   }, [activities]);
 
@@ -166,11 +162,10 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     <div className="space-y-6">
       <h2 className="text-xl md:text-2xl font-bold text-gray-800">Visão Geral</h2>
       
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-500 font-medium">Alunos Ativos</p>
+            <p className="text-sm text-gray-500 font-medium">{role === UserRole.RESPONSAVEL ? 'Seus Filhos' : 'Alunos Ativos'}</p>
             <h3 className="text-2xl font-bold text-gray-900 mt-1">{activeStudents}</h3>
           </div>
           <div className="bg-blue-50 p-3 rounded-lg">
@@ -196,16 +191,18 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
           </div>
         </div>
 
-        {role === UserRole.ADMIN && (
+        {(role === UserRole.ADMIN || role === UserRole.RESPONSAVEL) && (
             <div 
                 className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:border-red-300 transition-colors group"
-                onClick={() => onNavigate && onNavigate('students', { filter: 'DEFAULTING' })}
+                onClick={() => onNavigate && onNavigate(role === UserRole.RESPONSAVEL ? 'students' : 'students', { filter: 'DEFAULTING' })}
             >
                 <div>
-                <p className="text-sm text-gray-500 font-medium group-hover:text-red-600 transition-colors">Alunos Inadimplentes</p>
+                <p className="text-sm text-gray-500 font-medium group-hover:text-red-600 transition-colors">
+                  {role === UserRole.RESPONSAVEL ? 'Mensalidade Pendente' : 'Alunos Inadimplentes'}
+                </p>
                 <h3 className="text-2xl font-bold text-red-600 mt-1 flex items-center gap-2">
                     {defaultingStudentsCount}
-                    <span className="text-xs font-normal text-red-400 bg-red-50 px-2 py-0.5 rounded-full">Ver todos</span>
+                    <span className="text-xs font-normal text-red-400 bg-red-50 px-2 py-0.5 rounded-full">Ver</span>
                 </h3>
                 </div>
                 <div className="bg-red-50 p-3 rounded-lg group-hover:bg-red-100 transition-colors">
@@ -214,7 +211,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             </div>
         )}
 
-        {role === UserRole.ADMIN && missingDocsCount > 0 && (
+        {(role === UserRole.ADMIN || role === UserRole.RESPONSAVEL) && missingDocsCount > 0 && (
             <div 
                 className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:border-orange-300 transition-colors group"
                 onClick={() => onNavigate && onNavigate('students', { filter: 'MISSING_DOCS' })}
@@ -234,7 +231,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Game Stats Chart */}
          <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
@@ -268,7 +264,6 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             </div>
         </div>
 
-        {/* Birthdays Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full lg:min-h-[400px]">
             <div className="p-4 border-b border-gray-100 bg-orange-50 rounded-t-xl flex justify-between items-center">
                 <div className="flex items-center gap-2">
