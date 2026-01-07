@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
 import { StudentsPage } from './pages/StudentsPage';
@@ -12,7 +12,7 @@ import { AICoachPage } from './pages/AICoachPage';
 import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
-import { createMPPreference } from './services/mercadoPago';
+import { checkMPPaymentStatus } from './services/mercadoPago';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -46,6 +46,49 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
+
+  // Ref para evitar múltiplas verificações simultâneas do mesmo pagamento
+  const checkingRefs = useRef<Set<string>>(new Set());
+
+  // --- BACKGROUND RECONCILIATION ---
+  useEffect(() => {
+    if (!isAuthenticated || transactions.length === 0) return;
+
+    const reconcilePayments = async () => {
+        // Filtra transações pendentes que possuem referência externa (PIX/Mercado Pago)
+        const pendingWithRefs = transactions.filter(t => 
+            t.status === PaymentStatus.PENDING && 
+            t.externalReference && 
+            !checkingRefs.current.has(t.externalReference)
+        );
+
+        if (pendingWithRefs.length === 0) return;
+
+        for (const tx of pendingWithRefs) {
+            const ref = tx.externalReference!;
+            checkingRefs.current.add(ref);
+            
+            try {
+                const status = await checkMPPaymentStatus(ref);
+                if (status === 'approved') {
+                    await handleUpdateTransaction({
+                        id: tx.id,
+                        status: PaymentStatus.PAID,
+                        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO
+                    });
+                }
+            } catch (e) {
+                console.error("Erro na reconciliação em segundo plano:", e);
+            } finally {
+                // Remove da lista de checagem após um tempo para permitir re-checagem se necessário
+                setTimeout(() => checkingRefs.current.delete(ref), 10000);
+            }
+        }
+    };
+
+    const interval = setInterval(reconcilePayments, 10000); // Checa a cada 10 segundos
+    return () => clearInterval(interval);
+  }, [isAuthenticated, transactions]);
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
@@ -583,8 +626,6 @@ function App() {
       if (!t.id) return;
       
       const payload: any = {};
-      // SEGURANÇA: Só inclui no payload campos que foram explicitamente passados e não são vazios.
-      // Isso impede que o student_id ou o id sejam sobrescritos por null no banco.
       if (t.description !== undefined) payload.description = t.description;
       if (t.amount !== undefined) payload.amount = t.amount;
       if (t.type !== undefined) payload.type = t.type;
@@ -599,7 +640,6 @@ function App() {
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
-      // Atualização de estado local via merge, preservando os dados anteriores
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
   };
 
