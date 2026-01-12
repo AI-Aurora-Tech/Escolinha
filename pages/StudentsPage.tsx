@@ -141,34 +141,45 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleBatchSendCharges = async () => {
       const today = new Date().toISOString().split('T')[0];
       const debtors = students.filter(s => {
+          if (!s.active) return false;
           const overdue = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
           return overdue.length > 0;
       });
 
       if (debtors.length === 0) {
-          alert("Não há atletas com mensalidades em atraso para notificar.");
+          alert("Não há atletas ativos com mensalidades em atraso para notificar.");
           return;
       }
 
-      if (!confirm(`Deseja enviar lembretes de cobrança via WhatsApp para ${debtors.length} responsáveis?`)) return;
+      const confirmMsg = `Deseja enviar lembretes de cobrança via WhatsApp para ${debtors.length} responsáveis?\n\nREGRA DE SEGURANÇA: O sistema enviará 1 mensagem a cada 10 segundos para evitar que seu número seja bloqueado por SPAM.`;
+      
+      if (!confirm(confirmMsg)) return;
 
       setIsGenerating(true);
       let successCount = 0;
 
-      for (const student of debtors) {
+      // Execução serial com delay de 10s entre cada aluno
+      for (let i = 0; i < debtors.length; i++) {
+          const student = debtors[i];
           const overdueTxs = transactions.filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
           const totalDebt = overdueTxs.reduce((acc, t) => acc + t.amount, 0);
           const phone = student.guardian.phone.replace(/\D/g, '');
 
           if (phone) {
-              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nIdentificamos *${overdueTxs.length}* mensalidade(s) pendente(s) do atleta *${student.name}*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\nPor favor, realize o pagamento via Portal do Aluno ou entre em contato com a secretaria para regularizar.\n\nCaso já tenha realizado o pagamento, por favor desconsidere esta mensagem. Agradecemos a parceria!`;
+              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
+              
               const sent = await sendZApiMessage(phone, message);
               if (sent) successCount++;
+          }
+
+          // Aguarda 10 segundos antes do próximo, exceto se for o último
+          if (i < debtors.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 10000));
           }
       }
 
       setIsGenerating(false);
-      alert(`Processo concluído! ${successCount} mensagens de cobrança enviadas.`);
+      alert(`Processo concluído!\nEnviados com sucesso: ${successCount}\nFalhas/Sem Tel: ${debtors.length - successCount}`);
   };
 
   const handleExportExcel = () => {
