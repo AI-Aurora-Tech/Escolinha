@@ -138,6 +138,39 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
   };
 
+  const handleBatchSendCharges = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const debtors = students.filter(s => {
+          const overdue = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
+          return overdue.length > 0;
+      });
+
+      if (debtors.length === 0) {
+          alert("Não há atletas com mensalidades em atraso para notificar.");
+          return;
+      }
+
+      if (!confirm(`Deseja enviar lembretes de cobrança via WhatsApp para ${debtors.length} responsáveis?`)) return;
+
+      setIsGenerating(true);
+      let successCount = 0;
+
+      for (const student of debtors) {
+          const overdueTxs = transactions.filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
+          const totalDebt = overdueTxs.reduce((acc, t) => acc + t.amount, 0);
+          const phone = student.guardian.phone.replace(/\D/g, '');
+
+          if (phone) {
+              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nIdentificamos *${overdueTxs.length}* mensalidade(s) pendente(s) do atleta *${student.name}*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\nPor favor, realize o pagamento via Portal do Aluno ou entre em contato com a secretaria para regularizar.\n\nCaso já tenha realizado o pagamento, por favor desconsidere esta mensagem. Agradecemos a parceria!`;
+              const sent = await sendZApiMessage(phone, message);
+              if (sent) successCount++;
+          }
+      }
+
+      setIsGenerating(false);
+      alert(`Processo concluído! ${successCount} mensagens de cobrança enviadas.`);
+  };
+
   const handleExportExcel = () => {
       const data = filteredStudents.map(s => ({
           'Nome do Aluno': s.name,
@@ -390,7 +423,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
                     Gerar Mensalidades
                 </button>
-                <button className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm"><Zap className="w-4 h-4" />Enviar Cobranças</button>
+                <button onClick={handleBatchSendCharges} disabled={isGenerating} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm disabled:opacity-50">
+                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    Enviar Cobranças
+                </button>
                 <input type="file" ref={fileInputRef} className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"><Upload className="w-4 h-4" />Importar</button>
                 <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
