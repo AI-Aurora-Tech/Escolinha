@@ -486,7 +486,7 @@ function App() {
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
-          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, planId: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
+          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, plan_id: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
       }
@@ -553,6 +553,7 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
+      // Fix: Property 'home_score' does not exist on type 'Activity'. Using a.homeScore instead of a.home_score.
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -573,7 +574,7 @@ function App() {
                    if (act.id === a.id) return a; 
                    if (updatesMap.has(act.id)) {
                        const up = updatesMap.get(act.id) as any;
-                       return { ...act, title: up.title, type: up.activity_type, fee: up.fee, location: up.location, startTime: up.start_time, endTime: up.end_time, presentationTime: up.presentation_time, opponent: up.opponent, recurrence: up.recurrence, groupId: up.group_id, participants: up.participants, date: up.date };
+                       return { ...act, title: up.title, type: up.activity_type, fee: up.fee, location: up.location, startTime: up.start_time, endTime: up.end_time, presentationTime: up.presentation_time, opponent: up.opponent, recurrence: up.recurrence, groupId: up.group_id, participants: up.participants, date: up.date, homeScore: up.home_score, awayScore: up.away_score, scorers: up.scorers };
                    }
                    return act;
                }));
@@ -755,9 +756,9 @@ function App() {
   };
 
   return (
-    <div className="flex bg-gray-50 min-h-screen font-sans">
+    <div className="flex bg-gray-50 min-h-screen font-sans overflow-x-hidden">
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
-      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 min-w-0 max-w-full overflow-x-hidden">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
             <div className="flex items-center gap-3"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"><Menu className="w-6 h-6" /></button><div><h1 className="text-xl md:text-2xl font-bold text-gray-900">{currentPage === 'dashboard' && 'Visão Geral'}{currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}{currentPage === 'groups' && 'Gestão de Grupos'}{currentPage === 'plans' && 'Planos e Mensalidades'}{currentPage === 'schedule' && 'Agenda'}{currentPage === 'finance' && 'Fluxo de Caixa'}{currentPage === 'users' && 'Gestão de Usuários'}</h1></div></div>
             <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>Sistema Online</div>

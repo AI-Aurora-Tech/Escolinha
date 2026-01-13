@@ -142,9 +142,6 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const handleConfirmPayment = () => {
       if (txToPay) {
-          // CRITICAL FIX: Enviamos apenas o necessário para a atualização de status.
-          // NÃO espalhamos o objeto txToPay inteiro para evitar que campos inconsistentes
-          // no estado local sobrescrevam o studentId com null no banco de dados.
           onUpdateTransaction({ 
               id: txToPay.id, 
               status: PaymentStatus.PAID, 
@@ -203,9 +200,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Fluxo de Caixa</h2>
         <div className="flex gap-2 w-full md:w-auto">
-             <div className="flex bg-gray-100 p-1 rounded-lg">
-                <button onClick={() => setActiveTab('TRANSACTIONS')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Transações</button>
-                <button onClick={() => setActiveTab('SETTINGS')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}><Settings className="w-4 h-4" /> Configurações</button>
+             <div className="flex bg-gray-100 p-1 rounded-lg w-full md:w-auto">
+                <button onClick={() => setActiveTab('TRANSACTIONS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Transações</button>
+                <button onClick={() => setActiveTab('SETTINGS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}><Settings className="w-4 h-4" /> Configurações</button>
              </div>
         </div>
       </div>
@@ -249,16 +246,18 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col space-y-4">
-            <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-                <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <button onClick={() => setFilter('ALL')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'ALL' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todas</button>
-                    <button onClick={() => setFilter('INCOME')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'INCOME' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Receitas</button>
-                    <button onClick={() => setFilter('EXPENSE')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Despesas</button>
+            <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
+                <div className="flex flex-wrap gap-2 justify-center lg:justify-start w-full lg:w-auto">
+                    <button onClick={() => setFilter('ALL')} className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'ALL' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todas</button>
+                    <button onClick={() => setFilter('INCOME')} className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'INCOME' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Receitas</button>
+                    <button onClick={() => setFilter('EXPENSE')} className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Despesas</button>
                 </div>
-                <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-28 sm:w-32" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-                    <button onClick={handleExportReport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><FileText className="w-4 h-4" /> Exportar</button>
-                    <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
+                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button onClick={handleExportReport} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><FileText className="w-4 h-4" /> Exportar</button>
+                      <button onClick={() => setIsModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo</button>
+                    </div>
                 </div>
             </div>
             
@@ -291,8 +290,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[700px]">
+            <div className="overflow-x-auto min-w-0">
+                <table className="w-full text-left min-w-[700px] md:min-w-0">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
                         <tr><th className="px-6 py-3">Data</th><th className="px-6 py-3">Descrição / Atleta</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3">Pagamento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Valor</th><th className="px-6 py-3 text-right">Ações</th></tr>
                     </thead>
@@ -302,7 +301,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                 const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
                                 return (
                                 <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(t.date).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{new Date(t.date).toLocaleDateString()}</td>
                                     <td className="px-6 py-4">
                                         <div className="font-medium text-gray-900">{t.description}</div>
                                         {student && (
@@ -312,9 +311,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                         )}
                                     </td>
                                     <td className="px-6 py-4">{t.type === TransactionType.INCOME ? (<span className="inline-flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-100"><ArrowUpCircle className="w-3 h-3 mr-1" /> Receita</span>) : (<span className="inline-flex items-center text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded border border-red-100"><ArrowDownCircle className="w-3 h-3 mr-1" /> Despesa</span>)}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{getPaymentMethodLabel(t.paymentMethod)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{getPaymentMethodLabel(t.paymentMethod)}</td>
                                     <td className="px-6 py-4">
-                                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                        <span className={`text-xs font-medium px-2 py-1 rounded whitespace-nowrap ${
                                             t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
                                             t.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500' :
                                             'bg-yellow-50 text-yellow-600'
@@ -322,7 +321,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                             {t.status === PaymentStatus.PAID ? 'Pago' : (t.status === PaymentStatus.CANCELLED ? 'Cancelado' : 'Pendente')}
                                         </span>
                                     </td>
-                                    <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
+                                    <td className={`px-6 py-4 text-right font-bold whitespace-nowrap ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right">{t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-5 h-5" /></button>)}</td>
                                 </tr>
                                 )})

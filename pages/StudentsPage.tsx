@@ -463,9 +463,80 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+      {/* VISUALIZAÇÃO MOBILE EM CARDS */}
+      <div className="md:hidden space-y-4">
+          {filteredStudents.map((student) => {
+              const overdueCount = getStudentOverdueCount(student.id);
+              const currentYear = new Date().getFullYear(); 
+              const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
+              const groupNames = student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+              
+              return (
+                  <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueCount > 0 ? 'border-red-200 bg-red-50/20' : 'border-gray-100'}`}>
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="flex items-center gap-3">
+                              <img src={student.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover bg-gray-200 border-2 border-white shadow-sm" />
+                              <div>
+                                  <h4 className="font-bold text-gray-900 text-base leading-tight">{student.name}</h4>
+                                  <span className="text-xs text-gray-500 font-medium">Sub-{currentYear - birthYear} • {calculateAge(student.birthDate)} anos</span>
+                              </div>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${student.active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                              {student.active ? 'Ativo' : 'Inat.'}
+                          </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 mb-4">
+                          <div className="flex items-center gap-2 text-xs">
+                              <UserIcon className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600 font-bold">{student.guardian.name}</span>
+                              {student.guardian.phone && (
+                                  <a href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-500 text-white p-1 rounded-md ml-auto">
+                                      <MessageCircle className="w-3 h-3" />
+                                  </a>
+                              )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px]">
+                              <Layers className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-500 truncate">{groupNames}</span>
+                          </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mb-4 border-t border-gray-50 pt-3">
+                          {overdueCount > 0 && (
+                              <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-lg font-black border border-red-200 flex items-center gap-1 animate-pulse">
+                                  <AlertTriangle className="w-3 h-3" /> {overdueCount} MENS. EM ATRARESO
+                              </span>
+                          )}
+                          {hasMissingDocs(student) && !isGuardian && (
+                              <button onClick={() => sendDocReminder(student)} className="bg-orange-100 text-orange-700 text-[10px] px-2 py-1 rounded-lg font-black border border-orange-200 flex items-center gap-1">
+                                  <FileWarning className="w-3 h-3" /> DOCS PENDENTES
+                              </button>
+                          )}
+                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
+                              <button onClick={() => sendMedicalReminder(student)} className="bg-orange-100 text-orange-700 text-[10px] px-2 py-1 rounded-lg font-black border border-orange-200 flex items-center gap-1">
+                                  <HeartPulse className="w-3 h-3" /> ATESTADO VENCIDO
+                              </button>
+                          )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                          <button onClick={() => handleOpenAttendance(student)} className="flex-1 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 py-2.5 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /> Freq.</button>
+                          <button onClick={() => handleOpenHistory(student)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /> Financ.</button>
+                          <button onClick={() => handleOpenEdit(student)} className="flex-1 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 py-2.5 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /> Editar</button>
+                      </div>
+                  </div>
+              );
+          })}
+          {filteredStudents.length === 0 && (
+              <div className="p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed"><Calculator className="w-10 h-10 mx-auto mb-2 opacity-20" /><p>Nenhum atleta encontrado.</p></div>
+          )}
+      </div>
+
+      {/* VISUALIZAÇÃO DESKTOP (TABELA ORIGINAL) */}
+      <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+         <div className="overflow-x-auto min-w-0">
+          <table className="w-full text-left border-collapse min-w-[700px] md:min-w-[800px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
