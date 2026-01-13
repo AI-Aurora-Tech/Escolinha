@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Group, Student } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -138,10 +138,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
       const matchesAge = age === searchLower;
       return matchesName || matchesAge;
   }).sort((a, b) => {
-      const aSelected = selectedStudentIds.has(a.id);
-      const bSelected = selectedStudentIds.has(b.id);
-      if (aSelected && !bSelected) return -1;
-      if (!aSelected && bSelected) return 1;
+      // FIX: Removida a lógica que movia selecionados para cima. 
+      // Agora mantém apenas a ordem alfabética.
       return a.name.localeCompare(b.name);
   });
 
