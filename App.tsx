@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -163,7 +162,7 @@ function App() {
                      photoUrl: s.photo_url,
                      address: s.address, 
                      guardian: s.guardian, 
-                     planId: s.plan_id,
+                     planId: s.plan_id || '',
                      groupIds: finalGroupIds,
                      active: s.active,
                      documents: s.documents 
@@ -456,7 +455,7 @@ function App() {
     };
     const { data, error } = await supabase.from('students').insert([payload]).select().single();
     if (data && !error) {
-        const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id, groupIds: studentData.groupIds, active: data.active, documents: data.documents };
+        const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id || '', groupIds: studentData.groupIds, active: data.active, documents: data.documents };
         setStudents(prev => [...prev, newStudent]);
         await handleGenerateGlobalTuitions();
     }
@@ -486,7 +485,22 @@ function App() {
       });
       const { data, error } = await supabase.from('students').insert(payload).select();
       if (data && !error) {
-          const mapped: Student[] = data.map((d: any, idx: number) => ({ id: d.id, name: d.name, birthDate: d.birth_date, rg: d.rg, cpf: d.cpf, phone: d.phone, medicalCertificateExpiry: d.medical_expiry, photoUrl: d.photo_url, address: d.address, guardian: d.guardian, plan_id: d.plan_id, groupIds: studentsData[idx].groupIds || [], active: d.active, documents: d.documents }));
+          const mapped: Student[] = data.map((d: any, idx: number) => ({ 
+              id: d.id, 
+              name: d.name, 
+              birthDate: d.birth_date, 
+              rg: d.rg, 
+              cpf: d.cpf, 
+              phone: d.phone, 
+              medicalCertificateExpiry: d.medical_expiry, 
+              photoUrl: d.photo_url, 
+              address: d.address, 
+              guardian: d.guardian, 
+              planId: d.plan_id || '', 
+              groupIds: studentsData[idx].groupIds || [], 
+              active: d.active, 
+              documents: d.documents 
+          }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
       }
@@ -661,13 +675,13 @@ function App() {
   };
   
   const handleAddPlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
       if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
   };
   
   const handleUpdatePlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.dueDay, description: p.description };
+      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
       if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };

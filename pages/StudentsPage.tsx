@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 // Add Banknote as CashIcon to the imports from lucide-react to fix the "Cannot find name 'CashIcon'" error.
@@ -306,9 +305,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
     let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
     let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
+    let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
     let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
     let mplan = planFilter === 'ALL' || s.planId === planFilter;
-    return ms && ma && mc && mstat && mmed && mfin && mdoc && mplan;
+    return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
   });
 
   const startCamera = async () => {
@@ -429,42 +429,42 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         {!isGuardian && (
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-sm disabled:opacity-50">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full md:w-auto">
+                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
-                    Gerar Mensalidades
+                    <span>Mensalidades</span>
                 </button>
-                <button onClick={handleBatchSendCharges} disabled={isGenerating} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm disabled:opacity-50">
+                <button onClick={handleBatchSendCharges} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Enviar Cobranças
+                    <span>Cobrar</span>
                 </button>
                 <input type="file" ref={fileInputRef} className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"><Upload className="w-4 h-4" />Importar</button>
-                <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-sm"><FileSpreadsheet className="w-4 h-4" />Modelo</button>
-                <button onClick={handleExportExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm"><Download className="w-4 h-4" />Exportar</button>
-                <button onClick={handleExportPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-sm"><FileText className="w-4 h-4" />PDF</button>
-                <button onClick={handleOpenNew} className="w-full md:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm"><Plus className="w-4 h-4" />Novo Aluno</button>
+                <button onClick={() => fileInputRef.current?.click()} className="justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-xs sm:text-sm"><Upload className="w-4 h-4" /><span>Importar</span></button>
+                <button onClick={handleDownloadTemplate} className="justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-xs sm:text-sm"><FileSpreadsheet className="w-4 h-4" /><span>Modelo</span></button>
+                <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
+                <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
+                <button onClick={handleOpenNew} className="col-span-2 justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-xs sm:text-sm"><Plus className="w-4 h-4" /><span>Novo Aluno</span></button>
             </div>
         )}
       </div>
 
       {!isGuardian && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-12 gap-4">
-            <div className="md:col-span-2 relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-            <div className="md:col-span-1 relative"><input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} /></div>
-            <div className="md:col-span-2 relative" ref={categoryDropdownRef}>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-2 relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+            <div className="lg:col-span-1 relative"><input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} /></div>
+            <div className="lg:col-span-2 relative" ref={categoryDropdownRef}>
                 <div className="w-full pl-3 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 text-sm cursor-pointer flex items-center justify-between hover:border-primary-300 transition-colors" onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}><div className="flex items-center gap-2 overflow-hidden truncate"><Layers className="w-4 h-4 flex-shrink-0" /><span className="truncate">{selectedCategories.length > 0 ? `${selectedCategories.length} Sel.` : 'Cat.: Todas'}</span></div><ChevronDown className={`w-4 h-4 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} /></div>
                 {isCategoryDropdownOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100"><div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>{availableCategories.map(cat => (<label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors"><input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" /><span>{cat}</span></label>))}{selectedCategories.length > 0 && (<button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>)}</div>)}
             </div>
-            <div className="md:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
-            <div className="md:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
-            <div className="md:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
-            <div className="md:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
+            <div className="lg:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
+            <div className="lg:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
+            <div className="lg:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
+            <div className="lg:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
         </div>
       )}
 
-      {/* VISUALIZAÇÃO MOBILE EM CARDS */}
-      <div className="md:hidden space-y-4">
+      {/* VISUALIZAÇÃO MOBILE/TABLET EM CARDS (Até LG - 1024px) */}
+      <div className="lg:hidden space-y-4">
           {filteredStudents.map((student) => {
               const overdueCount = getStudentOverdueCount(student.id);
               const currentYear = new Date().getFullYear(); 
@@ -505,7 +505,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       <div className="flex flex-wrap gap-2 mb-4 border-t border-gray-50 pt-3">
                           {overdueCount > 0 && (
                               <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-lg font-black border border-red-200 flex items-center gap-1 animate-pulse">
-                                  <AlertTriangle className="w-3 h-3" /> {overdueCount} MENS. EM ATRARESO
+                                  <AlertTriangle className="w-3 h-3" /> {overdueCount} MENSALIDADES ATRASADAS
                               </span>
                           )}
                           {hasMissingDocs(student) && !isGuardian && (
@@ -533,10 +533,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           )}
       </div>
 
-      {/* VISUALIZAÇÃO DESKTOP (TABELA ORIGINAL) */}
-      <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* VISUALIZAÇÃO DESKTOP (Somente em telas grandes LG+ - 1024px) */}
+      <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
          <div className="overflow-x-auto min-w-0">
-          <table className="w-full text-left border-collapse min-w-[700px] md:min-w-[800px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
