@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabaseClient';
@@ -80,23 +80,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       }
   };
 
-  // --- CÁLCULOS TOTAIS ---
-  const totalIncome = transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0);
-  const totalExpense = transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0);
-  const balance = totalIncome - totalExpense;
+  const todayStr = new Date().toISOString().split('T')[0];
 
-  // Cálculos solicitados para o mês corrente
-  const now = new Date();
-  const currentMonthYear = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-  
-  const pendingIncomeCurrentMonth = transactions
-    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date.startsWith(currentMonthYear))
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
-  const pendingExpenseCurrentMonth = transactions
-    .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PENDING && t.date.startsWith(currentMonthYear))
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
+  // --- LÓGICA DE FILTRAGEM ---
   const getFilteredTransactions = () => {
       return transactions.filter(t => {
           const txDate = t.date;
@@ -118,7 +104,30 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
-  const filteredTransactions = getFilteredTransactions();
+  const filteredTransactionsPeriod = getFilteredTransactions();
+
+  // --- CÁLCULOS TOTAIS OBEDECENDO O FILTRO DE PERÍODO ---
+  const totalIncome = filteredTransactionsPeriod
+    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
+    .reduce((acc, curr) => acc + curr.amount, 0);
+
+  const totalExpense = filteredTransactionsPeriod
+    .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID)
+    .reduce((acc, curr) => acc + curr.amount, 0);
+
+  const realizedBalance = totalIncome - totalExpense;
+
+  const pendingIncome = filteredTransactionsPeriod
+    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING)
+    .reduce((acc, curr) => acc + curr.amount, 0);
+
+  const pendingExpense = filteredTransactionsPeriod
+    .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PENDING)
+    .reduce((acc, curr) => acc + curr.amount, 0);
+
+  const lateIncome = filteredTransactionsPeriod
+    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr)
+    .reduce((acc, curr) => acc + curr.amount, 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,36 +222,42 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
           </div>
       ) : (
       <>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-green-100 rounded-lg text-green-600"><ArrowUpCircle className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] font-black text-gray-400 uppercase">Recebido</p><h3 className="text-lg font-black text-gray-900">R$ {totalIncome.toFixed(2)}</h3></div>
+                    <div><p className="text-[9px] font-black text-gray-400 uppercase">Recebido</p><h3 className="text-base font-black text-gray-900 truncate">R$ {totalIncome.toFixed(2)}</h3></div>
                 </div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-100 rounded-lg text-red-600"><ArrowDownCircle className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] font-black text-gray-400 uppercase">Despesas Pagas</p><h3 className="text-lg font-black text-gray-900">R$ {totalExpense.toFixed(2)}</h3></div>
+                    <div><p className="text-[9px] font-black text-gray-400 uppercase">Despesas Pagas</p><h3 className="text-base font-black text-gray-900 truncate">R$ {totalExpense.toFixed(2)}</h3></div>
                 </div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${balance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] font-black text-gray-400 uppercase">Saldo Real</p><h3 className={`text-lg font-black ${balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {balance.toFixed(2)}</h3></div>
+                    <div className={`p-2 rounded-lg ${realizedBalance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-5 h-5" /></div>
+                    <div><p className="text-[9px] font-black text-gray-400 uppercase">Saldo Período</p><h3 className={`text-base font-black truncate ${realizedBalance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {realizedBalance.toFixed(2)}</h3></div>
                 </div>
             </div>
-            {/* NOVOS CARDS SOLICITADOS */}
             <div className="bg-white p-4 rounded-xl border border-blue-50 shadow-sm ring-1 ring-blue-50">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Clock className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] font-black text-blue-400 uppercase">A Receber (Mês)</p><h3 className="text-lg font-black text-blue-700">R$ {pendingIncomeCurrentMonth.toFixed(2)}</h3></div>
+                    <div><p className="text-[9px] font-black text-blue-400 uppercase">A Receber</p><h3 className="text-base font-black text-blue-700 truncate">R$ {pendingIncome.toFixed(2)}</h3></div>
                 </div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-red-50 shadow-sm ring-1 ring-red-50">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-50 rounded-lg text-red-600"><CreditCard className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] font-black text-red-400 uppercase">A Pagar (Mês)</p><h3 className="text-lg font-black text-red-700">R$ {pendingExpenseCurrentMonth.toFixed(2)}</h3></div>
+                    <div><p className="text-[9px] font-black text-red-400 uppercase">A Pagar</p><h3 className="text-base font-black text-red-700 truncate">R$ {pendingExpense.toFixed(2)}</h3></div>
+                </div>
+            </div>
+            {/* NOVO CARD DE ATRASADOS */}
+            <div className="bg-white p-4 rounded-xl border border-orange-50 shadow-sm ring-1 ring-orange-100">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><AlertCircle className="w-5 h-5" /></div>
+                    <div><p className="text-[9px] font-black text-orange-500 uppercase">Total Atrasado</p><h3 className="text-base font-black text-orange-700 truncate">R$ {lateIncome.toFixed(2)}</h3></div>
                 </div>
             </div>
         </div>
@@ -270,7 +285,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <select className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
                         <option value="ALL">Todos os Status</option>
                         <option value={PaymentStatus.PAID}>Pago</option>
-                        <option value={PaymentStatus.PENDING}>Pendente</option>
+                        <option value={PaymentStatus.PENDING}>Pendente / Atrasado</option>
                         <option value={PaymentStatus.CANCELLED}>Cancelado</option>
                         <option value={PaymentStatus.LATE}>Atrasado</option>
                     </select>
@@ -294,11 +309,12 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {filteredTransactions.length > 0 ? (
-                            filteredTransactions.map(t => {
+                        {filteredTransactionsPeriod.length > 0 ? (
+                            filteredTransactionsPeriod.map(t => {
                                 const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+                                const isLate = t.status === PaymentStatus.PENDING && t.date < todayStr;
                                 return (
-                                <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isLate ? 'bg-orange-50/30' : ''}`}>
                                     <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap font-medium">{formatDate(t.date)}</td>
                                     <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(t.paymentDate)}</td>
                                     <td className="px-6 py-4">
@@ -314,9 +330,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                         <span className={`text-[10px] font-black px-2 py-1 rounded uppercase ${
                                             t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
                                             t.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500' :
+                                            isLate ? 'bg-orange-100 text-orange-700 animate-pulse' :
                                             'bg-yellow-50 text-yellow-600'
                                         }`}>
-                                            {t.status === PaymentStatus.PAID ? 'Pago' : (t.status === PaymentStatus.CANCELLED ? 'Cancelado' : 'Pendente')}
+                                            {t.status === PaymentStatus.PAID ? 'Pago' : (t.status === PaymentStatus.CANCELLED ? 'Cancelado' : (isLate ? 'Atrasada' : 'Pendente'))}
                                         </span>
                                     </td>
                                     <td className={`px-6 py-4 text-right font-black whitespace-nowrap ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
