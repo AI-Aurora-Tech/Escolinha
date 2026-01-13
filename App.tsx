@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -85,7 +84,6 @@ function App() {
         }
     };
 
-    // Reconciliação a cada 30 minutos conforme solicitado
     const interval = setInterval(reconcilePayments, 30 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [isAuthenticated, transactions]);
@@ -203,19 +201,7 @@ function App() {
         }
 
         if (activitiesData) {
-             let relevantActivities = activitiesData;
-             if (currentUser?.role === UserRole.RESPONSAVEL) {
-                 const studentIds = mappedStudents.map(s => s.id);
-                 relevantActivities = activitiesData.filter((a: any) => {
-                     const activityGroupId = a.group_id;
-                     const isGroupMatch = mappedStudents.some(s => s.groupIds && s.groupIds.includes(activityGroupId));
-                     const isParticipant = a.participants && a.participants.some((p: string) => studentIds.includes(p));
-                     const isInAttendance = a.attendance && a.attendance.some((p: string) => studentIds.includes(p));
-                     return isGroupMatch || isParticipant || isInAttendance;
-                 });
-             }
-
-             setActivities(relevantActivities.map((a: any) => ({
+             setActivities(activitiesData.map((a: any) => ({
                  id: a.id,
                  title: a.title,
                  type: a.activity_type || 'TRAINING',
@@ -625,7 +611,9 @@ function App() {
   };
 
   const handleAddTransaction = async (t: any) => { 
+    try {
       const transactionsToAdd = [];
+      const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
       if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
           const startDate = new Date(t.date + 'T00:00:00');
@@ -637,12 +625,12 @@ function App() {
               transactionsToAdd.push({
                   description: `${t.description} (${i+1}/${monthsCount})`,
                   category: t.category || 'Geral',
-                  amount: t.amount,
+                  amount: Number(t.amount),
                   type: t.type,
                   date: dueDateStr,
                   status: i === 0 ? t.status : PaymentStatus.PENDING,
-                  payment_date: i === 0 ? (t.paymentDate || null) : null,
-                  payment_method: i === 0 ? (t.paymentMethod || null) : null,
+                  payment_date: i === 0 ? safeVal(t.paymentDate) : null,
+                  payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
                   student_id: null,
                   plan_id: null,
                   preference_id: null,
@@ -654,22 +642,30 @@ function App() {
           transactionsToAdd.push({ 
               description: t.description, 
               category: t.category || 'Geral',
-              amount: t.amount, 
+              amount: Number(t.amount), 
               type: t.type, 
               date: t.date, 
               status: t.status, 
-              payment_date: t.paymentDate || null, 
-              student_id: t.studentId || null, 
-              plan_id: t.planId || null, 
-              payment_method: t.paymentMethod || null, 
-              payment_link: t.paymentLink || null, 
-              external_reference: t.externalReference || null,
-              preference_id: t.preferenceId || null
+              payment_date: safeVal(t.paymentDate),
+              student_id: safeVal(t.studentId), 
+              plan_id: safeVal(t.planId), 
+              payment_method: safeVal(t.paymentMethod), 
+              payment_link: safeVal(t.paymentLink), 
+              external_reference: safeVal(t.externalReference),
+              preference_id: safeVal(t.preferenceId)
           });
       }
 
       const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select();
-      if(data && !error) {
+      
+      if(error) {
+          console.error("Supabase Detailed Error Object:", error);
+          const errorMessage = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+          alert(`Erro ao salvar transação: ${errorMessage}`);
+          return;
+      }
+
+      if(data) {
           const mapped = data.map((newTx: any) => ({
               id: newTx.id,
               description: newTx.description,
@@ -687,33 +683,42 @@ function App() {
               preferenceId: newTx.preference_id
           }));
           setTransactions(prev => [...prev, ...mapped]);
-      } else if (error) {
-          console.error("Erro ao inserir transação:", error);
-          alert("Erro ao salvar lançamento. Verifique se todos os campos estão preenchidos corretamente.");
       }
+    } catch (err: any) {
+        console.error("Critical Exception in handleAddTransaction:", err);
+        const exMsg = err.message || JSON.stringify(err);
+        alert(`Erro inesperado ao registrar transação: ${exMsg}`);
+    }
   };
   
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
       
       const payload: any = {};
+      const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
+
       if (t.description !== undefined) payload.description = t.description;
       if (t.category !== undefined) payload.category = t.category;
-      if (t.amount !== undefined) payload.amount = t.amount;
+      if (t.amount !== undefined) payload.amount = Number(t.amount);
       if (t.type !== undefined) payload.type = t.type;
       if (t.date !== undefined) payload.date = t.date;
-      if (t.paymentDate !== undefined) payload.payment_date = t.paymentDate;
+      if (t.paymentDate !== undefined) payload.payment_date = safeVal(t.paymentDate);
       if (t.status !== undefined) payload.status = t.status;
-      if (t.studentId) payload.student_id = t.studentId; 
-      if (t.planId) payload.plan_id = t.planId;
-      if (t.paymentMethod !== undefined) payload.payment_method = t.paymentMethod;
-      if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
-      if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
-      if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
+      if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
+      if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
+      if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
+      if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
+      if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
+      if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
-      if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
+      if(error) {
+          const errorMessage = error.message || JSON.stringify(error);
+          alert(`Erro ao atualizar transação: ${errorMessage}`);
+      } else {
+          setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
+      }
   };
 
   const handleAddGroup = async (g: any): Promise<string | null> => { 

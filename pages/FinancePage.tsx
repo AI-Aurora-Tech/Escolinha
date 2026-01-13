@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
 import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight } from 'lucide-react';
@@ -142,13 +141,16 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTx.description && (newTx.amount !== undefined && !isNaN(newTx.amount))) {
+    if (newTx.description && newTx.description.trim() !== "" && newTx.amount !== undefined && newTx.amount !== null) {
         onAddTransaction({
             ...newTx,
+            amount: Number(newTx.amount),
             paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
         } as Omit<Transaction, 'id'>);
         setIsModalOpen(false);
         setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 });
+    } else {
+        alert("Preencha a descrição e o valor do lançamento.");
     }
   };
 
@@ -420,7 +422,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       {/* MODAL BAIXA PAGAMENTO */}
       {payModalOpen && txToPay && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in duration-200">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in zoom-in duration-200">
                   <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-black text-gray-800 uppercase">Confirmar Pagamento</h3><button onClick={() => setPayModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button></div>
                   <div className="space-y-4">
                       <p className="text-sm text-gray-600">Baixa em: <strong>{txToPay.description}</strong></p>
@@ -460,7 +462,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
                     <div className="grid grid-cols-2 gap-4">
                         <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Vencimento</label><input className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="date" required value={newTx.date} onChange={e => setNewTx({...newTx, date: e.target.value})} /></div>
-                        <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Forma de Pagto.</label><select className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={newTx.paymentMethod} onChange={e => setNewTx({...newTx, paymentMethod: e.target.value as PaymentMethod})}><option value={PaymentMethod.CASH}>Dinheiro</option><option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option><option value={PaymentMethod.CREDIT_CARD}>Cartão</option></select></div>
+                        <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Forma de Pagto.</label><select className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={newTx.paymentMethod} onChange={(e) => setNewTx({...newTx, paymentMethod: e.target.value as PaymentMethod})}><option value={PaymentMethod.CASH}>Dinheiro</option><option value={PaymentMethod.PIX_MANUAL}>PIX (Manual)</option><option value={PaymentMethod.CREDIT_CARD}>Cartão</option></select></div>
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-xl space-y-3">
