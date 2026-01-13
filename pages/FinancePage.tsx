@@ -26,7 +26,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | PaymentStatus>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | PaymentStatus | 'PENDING_ONLY' | 'LATE_ONLY'>('ALL');
   const [studentSearchFilter, setStudentSearchFilter] = useState('');
 
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -83,49 +83,60 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   };
 
   // --- LÓGICA DE FILTRAGEM ---
-  const getFilteredTransactions = () => {
-      return transactions.filter(t => {
-          const txDate = t.date;
-          const matchesType = filter === 'ALL' || t.type === filter;
-          const matchesStatus = statusFilter === 'ALL' || (statusFilter === PaymentStatus.PENDING ? (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE) : t.status === statusFilter);
-          const matchesDate = txDate >= startDate && txDate <= endDate;
-          
-          let matchesStudent = true;
-          if (studentSearchFilter.trim()) {
-              if (t.studentId) {
-                  const student = students.find(s => s.id === t.studentId);
-                  matchesStudent = student?.name.toLowerCase().includes(studentSearchFilter.toLowerCase()) || false;
-              } else {
-                  matchesStudent = t.description.toLowerCase().includes(studentSearchFilter.toLowerCase());
-              }
+  
+  // Base de transações no período (usada para os cards)
+  const transactionsInPeriod = transactions.filter(t => {
+      const matchesDate = t.date >= startDate && t.date <= endDate;
+      let matchesSearch = true;
+      if (studentSearchFilter.trim()) {
+          if (t.studentId) {
+              const student = students.find(s => s.id === t.studentId);
+              matchesSearch = student?.name.toLowerCase().includes(studentSearchFilter.toLowerCase()) || false;
+          } else {
+              matchesSearch = t.description.toLowerCase().includes(studentSearchFilter.toLowerCase());
           }
+      }
+      return matchesDate && matchesSearch;
+  });
 
-          return matchesType && matchesStatus && matchesDate && matchesStudent;
-      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  };
+  // Lista final exibida na tabela (aplica filtros de tipo e status)
+  const filteredTransactionsList = transactionsInPeriod.filter(t => {
+      const matchesType = filter === 'ALL' || t.type === filter;
+      
+      let matchesStatus = true;
+      if (statusFilter !== 'ALL') {
+          if (statusFilter === 'PENDING_ONLY') {
+              matchesStatus = t.status === PaymentStatus.PENDING && t.date >= todayStr;
+          } else if (statusFilter === 'LATE_ONLY') {
+              matchesStatus = t.status === PaymentStatus.PENDING && t.date < todayStr;
+          } else {
+              matchesStatus = t.status === statusFilter;
+          }
+      }
 
-  const filteredTransactionsPeriod = getFilteredTransactions();
+      return matchesType && matchesStatus;
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // --- CÁLCULOS TOTAIS OBEDECENDO O FILTRO DE PERÍODO ---
-  const totalIncome = filteredTransactionsPeriod
+  // --- CÁLCULOS TOTAIS DOS CARDS (OBEDECEM AO PERÍODO FILTRADO) ---
+  const totalIncome = transactionsInPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const totalExpense = filteredTransactionsPeriod
+  const totalExpense = transactionsInPeriod
     .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
   const realizedBalance = totalIncome - totalExpense;
 
-  const pendingIncome = filteredTransactionsPeriod
-    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING)
+  const pendingIncome = transactionsInPeriod
+    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date >= todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const pendingExpense = filteredTransactionsPeriod
+  const pendingExpense = transactionsInPeriod
     .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PENDING)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const lateIncomeTotal = filteredTransactionsPeriod
+  const lateIncomeTotal = transactionsInPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -284,7 +295,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <select className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
                         <option value="ALL">Todos os Status</option>
                         <option value={PaymentStatus.PAID}>Pago</option>
-                        <option value={PaymentStatus.PENDING}>Pendente / Atrasado</option>
+                        <option value="PENDING_ONLY">Pendente (A Vencer)</option>
+                        <option value="LATE_ONLY">Atrasada (Vencida)</option>
                         <option value={PaymentStatus.CANCELLED}>Cancelado</option>
                     </select>
                 </div>
@@ -308,8 +320,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {filteredTransactionsPeriod.length > 0 ? (
-                            filteredTransactionsPeriod.map(t => {
+                        {filteredTransactionsList.length > 0 ? (
+                            filteredTransactionsList.map(t => {
                                 const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
                                 const isLate = t.status === PaymentStatus.PENDING && t.date < todayStr;
                                 return (
@@ -347,8 +359,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
         {/* LISTA DE TRANSAÇÕES - MOBILE (ELIMINA ROLAGEM HORIZONTAL) */}
         <div className="lg:hidden space-y-4">
-            {filteredTransactionsPeriod.length > 0 ? (
-                filteredTransactionsPeriod.map(t => {
+            {filteredTransactionsList.length > 0 ? (
+                filteredTransactionsList.map(t => {
                     const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
                     const isLate = t.status === PaymentStatus.PENDING && t.date < todayStr;
                     return (
