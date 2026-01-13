@@ -478,7 +478,7 @@ function App() {
             cpf: s.cpf, 
             phone: s.phone, 
             medical_expiry: s.medical_expiry, 
-            photo_url: s.photoUrl, 
+            photo_url: s.photo_url, 
             address: s.address, 
             guardian: s.guardian, 
             plan_id: s.planId || null, 
@@ -627,7 +627,6 @@ function App() {
   const handleAddTransaction = async (t: any) => { 
       const transactionsToAdd = [];
       
-      // FIX: Agora usa a quantidade de meses informada no formulário (default 12 se não enviado)
       if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
           const startDate = new Date(t.date + 'T00:00:00');
           const monthsCount = t.recurrenceMonths || 12;
@@ -642,8 +641,13 @@ function App() {
                   type: t.type,
                   date: dueDateStr,
                   status: i === 0 ? t.status : PaymentStatus.PENDING,
-                  payment_date: i === 0 ? t.paymentDate : null,
-                  payment_method: i === 0 ? t.paymentMethod : null
+                  payment_date: i === 0 ? (t.paymentDate || null) : null,
+                  payment_method: i === 0 ? (t.paymentMethod || null) : null,
+                  student_id: null,
+                  plan_id: null,
+                  preference_id: null,
+                  payment_link: null,
+                  external_reference: null
               });
           }
       } else {
@@ -654,27 +658,37 @@ function App() {
               type: t.type, 
               date: t.date, 
               status: t.status, 
-              payment_date: t.paymentDate || null,
+              payment_date: t.paymentDate || null, 
               student_id: t.studentId || null, 
               plan_id: t.planId || null, 
               payment_method: t.paymentMethod || null, 
-              payment_link: t.payment_link, 
-              external_reference: t.external_reference
+              payment_link: t.paymentLink || null, 
+              external_reference: t.externalReference || null
           });
       }
 
       const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select();
       if(data && !error) {
           const mapped = data.map((newTx: any) => ({
-              ...newTx,
               id: newTx.id,
+              description: newTx.description,
+              category: newTx.category,
+              amount: newTx.amount,
+              type: newTx.type,
+              date: newTx.date,
+              paymentDate: newTx.payment_date,
+              status: newTx.status,
               studentId: newTx.student_id,
               planId: newTx.plan_id,
               paymentMethod: newTx.payment_method,
-              paymentDate: newTx.payment_date,
-              externalReference: newTx.external_reference
+              paymentLink: newTx.payment_link,
+              externalReference: newTx.external_reference,
+              preferenceId: newTx.preference_id
           }));
           setTransactions(prev => [...prev, ...mapped]);
+      } else if (error) {
+          console.error("Erro ao inserir transação:", error);
+          alert("Erro ao salvar lançamento. Verifique se todos os campos estão preenchidos corretamente.");
       }
   };
   

@@ -142,7 +142,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTx.description && newTx.amount) {
+    if (newTx.description && (newTx.amount !== undefined && !isNaN(newTx.amount))) {
         onAddTransaction({
             ...newTx,
             paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
