@@ -663,7 +663,8 @@ function App() {
               plan_id: t.planId || null, 
               payment_method: t.paymentMethod || null, 
               payment_link: t.paymentLink || null, 
-              external_reference: t.externalReference || null
+              external_reference: t.externalReference || null,
+              preference_id: t.preferenceId || null
           });
       }
 
