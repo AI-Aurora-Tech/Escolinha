@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabaseClient';
 
 interface FinancePageProps {
+  students: Student[];
   transactions: Transaction[];
   plans: Plan[];
-  students: Student[];
   onAddTransaction: (t: Omit<Transaction, 'id'> & { recurrenceMonths?: number }) => void;
   onUpdateTransaction: (t: Partial<Transaction>) => void;
 }
@@ -43,6 +43,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const [newTx, setNewTx] = useState<Partial<Transaction> & { recurrenceMonths?: number }>({
     description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12
   });
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Load Settings on Mount
   useEffect(() => {
@@ -80,14 +82,12 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       }
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
-
   // --- LÓGICA DE FILTRAGEM ---
   const getFilteredTransactions = () => {
       return transactions.filter(t => {
           const txDate = t.date;
           const matchesType = filter === 'ALL' || t.type === filter;
-          const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
+          const matchesStatus = statusFilter === 'ALL' || (statusFilter === PaymentStatus.PENDING ? (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE) : t.status === statusFilter);
           const matchesDate = txDate >= startDate && txDate <= endDate;
           
           let matchesStudent = true;
@@ -125,7 +125,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
     .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PENDING)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const lateIncome = filteredTransactionsPeriod
+  const lateIncomeTotal = filteredTransactionsPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -253,11 +253,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div><p className="text-[9px] font-black text-red-400 uppercase">A Pagar</p><h3 className="text-base font-black text-red-700 truncate">R$ {pendingExpense.toFixed(2)}</h3></div>
                 </div>
             </div>
-            {/* NOVO CARD DE ATRASADOS */}
             <div className="bg-white p-4 rounded-xl border border-orange-50 shadow-sm ring-1 ring-orange-100">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><AlertCircle className="w-5 h-5" /></div>
-                    <div><p className="text-[9px] font-black text-orange-500 uppercase">Total Atrasado</p><h3 className="text-base font-black text-orange-700 truncate">R$ {lateIncome.toFixed(2)}</h3></div>
+                    <div><p className="text-[9px] font-black text-orange-500 uppercase">Total Atrasado</p><h3 className="text-base font-black text-orange-700 truncate">R$ {lateIncomeTotal.toFixed(2)}</h3></div>
                 </div>
             </div>
         </div>
@@ -287,13 +286,13 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                         <option value={PaymentStatus.PAID}>Pago</option>
                         <option value={PaymentStatus.PENDING}>Pendente / Atrasado</option>
                         <option value={PaymentStatus.CANCELLED}>Cancelado</option>
-                        <option value={PaymentStatus.LATE}>Atrasado</option>
                     </select>
                 </div>
             </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* LISTA DE TRANSAÇÕES - DESKTOP */}
+        <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto min-w-0">
                 <table className="w-full text-left min-w-[1000px]">
                     <thead className="bg-gray-50 text-gray-500 text-[10px] uppercase font-bold tracking-wider">
@@ -305,7 +304,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                             <th className="px-6 py-3">Forma</th>
                             <th className="px-6 py-3">Status</th>
                             <th className="px-6 py-3 text-right">Valor</th>
-                            <th className="px-6 py-3 text-right">Baixa</th>
+                            <th className="px-6 py-3 text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -345,9 +344,68 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                 </table>
             </div>
         </div>
+
+        {/* LISTA DE TRANSAÇÕES - MOBILE (ELIMINA ROLAGEM HORIZONTAL) */}
+        <div className="lg:hidden space-y-4">
+            {filteredTransactionsPeriod.length > 0 ? (
+                filteredTransactionsPeriod.map(t => {
+                    const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+                    const isLate = t.status === PaymentStatus.PENDING && t.date < todayStr;
+                    return (
+                        <div key={t.id} className={`bg-white p-4 rounded-xl border shadow-sm transition-all ${isLate ? 'border-orange-200 bg-orange-50/10' : 'border-gray-100'}`}>
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase border ${t.type === TransactionType.INCOME ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                        {t.type === TransactionType.INCOME ? 'Receita' : 'Despesa'}
+                                    </span>
+                                    <h4 className="font-bold text-gray-900 mt-1">{t.description}</h4>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                        <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-bold uppercase">{t.category}</span>
+                                        {student && (<span className="text-[10px] text-primary-600 font-bold flex items-center gap-1"><Users className="w-3 h-3" /> {student.name.split(' ')[0]}</span>)}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className={`font-black text-base ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
+                                        {t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}
+                                    </p>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase block mt-1 ${
+                                        t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                        isLate ? 'bg-orange-100 text-orange-700' : 'bg-yellow-50 text-yellow-600'
+                                    }`}>
+                                        {t.status === PaymentStatus.PAID ? 'Pago' : (isLate ? 'Atrasada' : 'Pendente')}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-50">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase">Vencimento</span>
+                                    <span className="text-xs font-bold text-gray-600">{formatDate(t.date)}</span>
+                                </div>
+                                <div className="flex flex-col text-right">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase">Forma de Pagto.</span>
+                                    <span className="text-xs font-bold text-gray-600">{getPaymentMethodLabel(t.paymentMethod)}</span>
+                                </div>
+                            </div>
+
+                            {t.status === PaymentStatus.PENDING && (
+                                <button onClick={() => handleOpenPayModal(t)} className="w-full mt-3 py-2 bg-green-600 text-white rounded-lg font-black text-xs hover:bg-green-700 flex items-center justify-center gap-2 shadow-sm">
+                                    <CheckCircle className="w-4 h-4" /> DAR BAIXA AGORA
+                                </button>
+                            )}
+                        </div>
+                    );
+                })
+            ) : (
+                <div className="p-12 text-center text-gray-400 font-medium italic bg-white rounded-xl border border-dashed">
+                    Nenhum registro no período.
+                </div>
+            )}
+        </div>
       </>
       )}
 
+      {/* MODAL BAIXA PAGAMENTO */}
       {payModalOpen && txToPay && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in duration-200">
@@ -363,6 +421,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
           </div>
       )}
 
+      {/* MODAL NOVO LANÇAMENTO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 my-8 animate-in zoom-in duration-200">
@@ -405,17 +464,17 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                          <span className="text-xs font-bold text-gray-700 flex items-center gap-1 uppercase tracking-tighter"><Repeat className="w-3 h-3" /> Lançamento Recorrente</span>
                                      </label>
                                      {newTx.recurrence === 'MONTHLY' && (
-                                         <div className="flex items-center gap-3 animate-in slide-in-from-top-2 duration-200">
-                                             <span className="text-[10px] font-black text-gray-500 uppercase">Repetir por</span>
+                                         <div className="flex items-center gap-3 animate-in slide-in-from-top-2 duration-200 p-3 bg-indigo-50/50 rounded-lg">
+                                             <span className="text-[10px] font-black text-indigo-600 uppercase">Repetir por</span>
                                              <input 
                                                 type="number" 
                                                 min="1" 
                                                 max="60" 
-                                                className="w-20 border rounded-lg p-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" 
+                                                className="w-20 border-2 border-indigo-200 rounded-lg p-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" 
                                                 value={newTx.recurrenceMonths} 
                                                 onChange={e => setNewTx({...newTx, recurrenceMonths: parseInt(e.target.value) || 1})} 
                                              />
-                                             <span className="text-[10px] font-black text-gray-500 uppercase">meses</span>
+                                             <span className="text-[10px] font-black text-indigo-600 uppercase">meses</span>
                                          </div>
                                      )}
                                  </div>
