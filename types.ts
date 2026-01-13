@@ -13,8 +13,8 @@ export enum PaymentStatus {
 }
 
 export enum TransactionType {
-  INCOME = 'INCOME', // Mensalidades
-  EXPENSE = 'EXPENSE', // Contas a pagar
+  INCOME = 'INCOME', // Mensalidades / Receitas
+  EXPENSE = 'EXPENSE', // Contas a pagar / Despesas
 }
 
 export enum PaymentMethod {
@@ -32,8 +32,8 @@ export interface Plan {
   id: string;
   name: string;
   price: number;
-  dueDay: number; // Novo campo: Dia de vencimento
-  description?: string; // Novo campo: Observação
+  dueDay: number; 
+  description?: string; 
 }
 
 export interface Group {
@@ -74,7 +74,7 @@ export interface StudentDocuments {
 export interface Student {
   id: string;
   name: string;
-  birthDate: string; // Database returns YYYY-MM-DD string
+  birthDate: string; 
   rg: string;        
   cpf: string;       
   phone: string;     
@@ -83,7 +83,7 @@ export interface Student {
   address: Address; 
   guardian: Guardian;
   planId: string;
-  groupIds: string[]; // Alterado de groupId para groupIds
+  groupIds: string[]; 
   active: boolean;
   documents: StudentDocuments;
 }
@@ -91,46 +91,49 @@ export interface Student {
 export interface Activity {
   id: string;
   title: string;
-  type: 'TRAINING' | 'GAME'; // Novo campo
-  fee?: number; // Novo campo: Taxa do jogo
-  location?: string; // Novo campo: Local do jogo
-  presentationTime?: string; // Novo: Horário de apresentação
-  opponent?: string; // Novo: Nome do adversário
-  homeScore?: number; // Novo: Placar (Nós)
-  awayScore?: number; // Novo: Placar (Eles)
-  scorers?: string[]; // Novo: Lista de IDs de quem fez gol
-  groupId?: string; // Optional: Activity might be for specific students only
-  participants?: string[]; // Optional: List of Student IDs if not a group activity
-  date: string; // ISO String
-  startTime: string; // "14:00"
-  endTime: string; // "15:30"
+  type: 'TRAINING' | 'GAME'; 
+  fee?: number; 
+  location?: string; 
+  presentationTime?: string; 
+  opponent?: string; 
+  homeScore?: number; 
+  awayScore?: number; 
+  scorers?: string[]; 
+  groupId?: string; 
+  participants?: string[]; 
+  date: string; 
+  startTime: string; 
+  endTime: string; 
   description?: string;
   recurrence?: 'weekly' | 'none';
-  attendance: string[]; // List of Student IDs present
-  feePayments?: string[]; // Novo campo: Lista de IDs que pagaram a taxa
+  attendance: string[]; 
+  feePayments?: string[]; 
 }
 
 export interface Transaction {
   id: string;
   description: string;
+  category?: string; // Novo campo
   amount: number;
   type: TransactionType;
-  date: string; // Data de vencimento ou pagamento
+  date: string; // Data de vencimento
+  paymentDate?: string; // Novo campo: Data efetiva do pagamento
   status: PaymentStatus;
-  studentId?: string; // If it's a tuition fee
-  paymentMethod?: PaymentMethod; // Novo campo
-  planId?: string; // Novo campo opcional para facilitar rastreio
-  paymentLink?: string; // Link do Mercado Pago
-  externalReference?: string; // ID único enviado ao Mercado Pago
-  preferenceId?: string; // ID da preferência do Mercado Pago
+  studentId?: string; 
+  paymentMethod?: PaymentMethod; 
+  planId?: string; 
+  paymentLink?: string; 
+  externalReference?: string; 
+  preferenceId?: string; 
+  recurrence?: 'NONE' | 'MONTHLY'; // Novo campo
 }
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  password?: string; // Optional for display, required for auth/creation
+  password?: string; 
   role: UserRole;
   avatar: string;
-  cpf?: string; // Para login de responsável
+  cpf?: string; 
 }

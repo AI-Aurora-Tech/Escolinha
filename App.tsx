@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -54,7 +55,6 @@ function App() {
     if (!isAuthenticated || transactions.length === 0) return;
 
     const reconcilePayments = async () => {
-        // Filtra transações pendentes que possuem referência externa (PIX/Mercado Pago)
         const pendingWithRefs = transactions.filter(t => 
             t.status === PaymentStatus.PENDING && 
             t.externalReference && 
@@ -73,19 +73,20 @@ function App() {
                     await handleUpdateTransaction({
                         id: tx.id,
                         status: PaymentStatus.PAID,
-                        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO
+                        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
+                        paymentDate: new Date().toISOString().split('T')[0]
                     });
                 }
             } catch (e) {
-                console.error("Erro na reconciliação em segundo plano:", e);
+                console.error("Erro na reconciliação:", e);
             } finally {
-                // Remove da lista de checagem após um tempo para permitir re-checagem se necessário
                 setTimeout(() => checkingRefs.current.delete(ref), 10000);
             }
         }
     };
 
-    const interval = setInterval(reconcilePayments, 10000); // Checa a cada 10 segundos
+    // Reconciliação a cada 30 minutos conforme solicitado
+    const interval = setInterval(reconcilePayments, 30 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [isAuthenticated, transactions]);
 
@@ -186,9 +187,11 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
+                 category: t.category || 'Geral', 
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
+                 paymentDate: t.payment_date,
                  status: t.status,
                  studentId: t.student_id,
                  planId: t.plan_id,
@@ -373,7 +376,6 @@ function App() {
 
           if (!alreadyExists) {
               const targetDay = plan.dueDay;
-              // FIX: Evitar bug de timezone gerando data via string
               const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
               
               const monthName = new Date(currentYear, currentMonth, 1).toLocaleString('pt-BR', { month: 'long' });
@@ -383,6 +385,7 @@ function App() {
               const externalReference = crypto.randomUUID();
               newTransactionsPayload.push({
                   description: description,
+                  category: 'Mensalidade',
                   amount: plan.price,
                   type: TransactionType.INCOME,
                   date: dateStr,
@@ -401,9 +404,11 @@ function App() {
               const mapped = data.map((t: any) => ({
                   id: t.id, 
                   description: t.description, 
+                  category: t.category,
                   amount: t.amount, 
                   type: t.type, 
                   date: t.date, 
+                  paymentDate: t.payment_date,
                   status: t.status, 
                   studentId: t.student_id, 
                   planId: t.plan_id, 
@@ -567,7 +572,6 @@ function App() {
   
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      // Fix: Property 'home_score' does not exist on type 'Activity'. Using a.homeScore instead of a.home_score.
       const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
@@ -621,20 +625,57 @@ function App() {
   };
 
   const handleAddTransaction = async (t: any) => { 
-      const payload = { 
-          description: t.description, 
-          amount: t.amount, 
-          type: t.type, 
-          date: t.date, 
-          status: t.status, 
-          student_id: t.studentId || null, 
-          plan_id: t.planId || null, 
-          payment_method: t.paymentMethod || null, 
-          payment_link: t.payment_link, 
-          external_reference: t.external_reference
-      };
-      const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
-      if(data && !error) setTransactions(prev => [...prev, { ...t, id: data.id }]);
+      const transactionsToAdd = [];
+      
+      // FIX: Agora usa a quantidade de meses informada no formulário (default 12 se não enviado)
+      if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
+          const startDate = new Date(t.date + 'T00:00:00');
+          const monthsCount = t.recurrenceMonths || 12;
+          for (let i = 0; i < monthsCount; i++) {
+              const d = new Date(startDate);
+              d.setMonth(startDate.getMonth() + i);
+              const dueDateStr = d.toISOString().split('T')[0];
+              transactionsToAdd.push({
+                  description: `${t.description} (${i+1}/${monthsCount})`,
+                  category: t.category || 'Geral',
+                  amount: t.amount,
+                  type: t.type,
+                  date: dueDateStr,
+                  status: i === 0 ? t.status : PaymentStatus.PENDING,
+                  payment_date: i === 0 ? t.paymentDate : null,
+                  payment_method: i === 0 ? t.paymentMethod : null
+              });
+          }
+      } else {
+          transactionsToAdd.push({ 
+              description: t.description, 
+              category: t.category || 'Geral',
+              amount: t.amount, 
+              type: t.type, 
+              date: t.date, 
+              status: t.status, 
+              payment_date: t.paymentDate || null,
+              student_id: t.studentId || null, 
+              plan_id: t.planId || null, 
+              payment_method: t.paymentMethod || null, 
+              payment_link: t.payment_link, 
+              external_reference: t.external_reference
+          });
+      }
+
+      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select();
+      if(data && !error) {
+          const mapped = data.map((newTx: any) => ({
+              ...newTx,
+              id: newTx.id,
+              studentId: newTx.student_id,
+              planId: newTx.plan_id,
+              paymentMethod: newTx.payment_method,
+              paymentDate: newTx.payment_date,
+              externalReference: newTx.external_reference
+          }));
+          setTransactions(prev => [...prev, ...mapped]);
+      }
   };
   
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
@@ -642,9 +683,11 @@ function App() {
       
       const payload: any = {};
       if (t.description !== undefined) payload.description = t.description;
+      if (t.category !== undefined) payload.category = t.category;
       if (t.amount !== undefined) payload.amount = t.amount;
       if (t.type !== undefined) payload.type = t.type;
       if (t.date !== undefined) payload.date = t.date;
+      if (t.paymentDate !== undefined) payload.payment_date = t.paymentDate;
       if (t.status !== undefined) payload.status = t.status;
       if (t.studentId) payload.student_id = t.studentId; 
       if (t.planId) payload.plan_id = t.planId;
