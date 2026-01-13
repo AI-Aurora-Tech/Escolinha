@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal } from 'lucide-react';
@@ -67,7 +66,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const selectedActivity = selectedActivityId ? activities.find(a => a.id === selectedActivityId) || null : null;
   const dailyActivities = activities.filter(a => a.date === selectedDate).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   const allSortedActivities = [...activities].sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
-  const filteredStudents = students.filter(s => s.active && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase())));
+  const filteredStudents = students.filter(s => s.active && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
 
   const formatDate = (dateString: string) => {
       if (!dateString) return ''; const parts = dateString.split('-');
@@ -121,9 +120,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   };
 
   const getAttendeesList = (activity: Partial<Activity>) => {
-      if (activity.groupId) return students.filter(s => s.groupIds?.includes(activity.groupId!) && s.active);
-      if (activity.participants?.length) return students.filter(s => activity.participants?.includes(s.id));
-      return [];
+      let list: Student[] = [];
+      if (activity.groupId) {
+          list = students.filter(s => s.groupIds?.includes(activity.groupId!) && s.active);
+      } else if (activity.participants?.length) {
+          list = students.filter(s => activity.participants?.includes(s.id));
+      }
+      return list.sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
@@ -505,7 +508,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       {notifyModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border-t-4 border-blue-500">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 border-t-4 border-blue-500">
             <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-black flex items-center gap-2 text-gray-800 uppercase tracking-tighter"><Megaphone className="w-5 h-5 text-blue-600" /> Disparos Z-API</h3>{!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="text-gray-400" /></button>}</div>
             <div className="mb-6"><div className="flex justify-between text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><span>Progresso da Fila:</span><span>{notifyCurrentIndex} de {notifyQueue.length}</span></div><div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${(notifyCurrentIndex / notifyQueue.length) * 100}%` }}></div></div>{notifyIsRunning ? (<div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm text-center font-bold animate-pulse">Enviando em {notifyCountdown}s...</div>) : (<div className="bg-green-50 text-green-800 p-3 rounded-xl text-sm text-center font-bold">Processo Concluído!</div>)}</div>
             <div className="bg-gray-900 text-green-400 p-4 rounded-xl h-48 overflow-y-auto text-xs font-mono shadow-inner mb-4">{notifyLogs.map((log, i) => (<div key={i} className="mb-1 border-b border-gray-800 pb-1 last:border-0">{log}</div>))}</div>
