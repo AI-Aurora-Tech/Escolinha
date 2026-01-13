@@ -80,7 +80,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
 
   const birthdayStudents = useMemo(() => {
     return students.filter(s => {
-        if (!s.birthDate) return false;
+        if (!s.birthDate || !s.active) return false; // Apenas alunos ativos na lista de aniversariantes
         const parts = s.birthDate.split('-');
         const month = parseInt(parts[1]) - 1; 
         return month === Number(birthdayMonth);
@@ -314,7 +314,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8 text-center">
                         <Cake className="w-10 h-10 mb-2 opacity-20" />
-                        <p className="text-sm">Nenhum aniversariante em {months[Number(birthdayMonth)]}.</p>
+                        <p className="text-sm">Nenhum aniversariante ativo em {months[Number(birthdayMonth)]}.</p>
                     </div>
                 )}
             </div>
