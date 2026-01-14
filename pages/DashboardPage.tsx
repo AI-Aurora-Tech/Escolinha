@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { Users, CalendarCheck, AlertCircle, Download, Cake, FileWarning, Trophy } from 'lucide-react';
 import { Student, Transaction, Activity, UserRole, TransactionType, PaymentStatus } from '../types';
@@ -18,48 +19,27 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   
   const activeStudents = students.filter(s => s.active).length;
 
-  // Função utilitária centralizada para verificar atraso de 1 dia útil após o vencimento real
-  const checkIsLate = (dateStr: string) => {
-    if (!dateStr) return false;
-    const due = new Date(dateStr + 'T12:00:00');
-    let effectiveDue = new Date(due);
-
-    // Regra: Vencimento em fim de semana pula para segunda
-    if (effectiveDue.getDay() === 6) effectiveDue.setDate(effectiveDue.getDate() + 2);
-    else if (effectiveDue.getDay() === 0) effectiveDue.setDate(effectiveDue.getDate() + 1);
-
-    // Regra do Usuário: Atraso apenas UM dia útil após o vencimento real
-    let graceDate = new Date(effectiveDue);
-    graceDate.setDate(graceDate.getDate() + 1);
-    
-    // Se o dia seguinte ao vencimento for fim de semana, pula para segunda
-    if (graceDate.getDay() === 6) graceDate.setDate(graceDate.getDate() + 2);
-    else if (graceDate.getDay() === 0) graceDate.setDate(graceDate.getDate() + 1);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    graceDate.setHours(0, 0, 0, 0);
-
-    return today > graceDate;
-  };
-
   const pendingPayments = useMemo(() => {
     return transactions
       .filter(t => t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID)
       .length;
   }, [transactions]);
 
+  // Calculate distinct active students who are defaulting (scoped by props)
   const defaultingStudentsCount = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
     const activeStudentIds = new Set(students.filter(s => s.active).map(s => s.id));
     
     const defaulterIds = new Set(
         transactions
             .filter(t => 
                 t.type === TransactionType.INCOME && 
-                t.status === PaymentStatus.PENDING && 
+                t.status !== PaymentStatus.PAID && 
+                t.status !== PaymentStatus.CANCELLED && 
                 t.studentId &&
                 activeStudentIds.has(t.studentId) && 
-                checkIsLate(t.date)
+                t.date < todayStr
             )
             .map(t => t.studentId)
     );
@@ -100,7 +80,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
 
   const birthdayStudents = useMemo(() => {
     return students.filter(s => {
-        if (!s.birthDate || !s.active) return false; 
+        if (!s.birthDate || !s.active) return false; // Apenas alunos ativos na lista de aniversariantes
         const parts = s.birthDate.split('-');
         const month = parseInt(parts[1]) - 1; 
         return month === Number(birthdayMonth);
