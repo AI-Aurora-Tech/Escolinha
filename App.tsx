@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -49,6 +48,13 @@ function App() {
 
   // Ref para evitar múltiplas verificações simultâneas do mesmo pagamento
   const checkingRefs = useRef<Set<string>>(new Set());
+
+  // Helper para formatar data DD/MM/AAAA
+  const formatFriendlyDate = (dateString: string) => {
+    if (!dateString) return '';
+    const parts = dateString.split('-');
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
+  };
 
   // --- BACKGROUND RECONCILIATION ---
   useEffect(() => {
@@ -186,11 +192,11 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
-                 category: 'Geral', // Valor fixo já que a coluna sumiu do DB
+                 category: 'Geral', 
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
-                 paymentDate: t.payment_date,
+                 paymentDate: t.payment_date || t.date, // Fallback caso coluna não exista
                  status: t.status,
                  studentId: t.student_id,
                  planId: t.plan_id,
@@ -394,7 +400,7 @@ function App() {
                   amount: t.amount, 
                   type: t.type, 
                   date: t.date, 
-                  paymentDate: t.payment_date,
+                  paymentDate: t.date,
                   status: t.status, 
                   studentId: t.student_id, 
                   planId: t.plan_id, 
@@ -615,8 +621,8 @@ function App() {
       const transactionsToAdd = [];
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
-      // Como 'category' não existe no banco (Erro schema cache), anexamos à descrição
-      const finalDescription = t.category && t.category !== 'Outros' && t.category !== 'Geral' 
+      // Sanitização de colunas ausentes (category e payment_date)
+      const baseDescription = t.category && t.category !== 'Outros' && t.category !== 'Geral' 
           ? `[${t.category}] ${t.description}` 
           : t.description;
 
@@ -627,29 +633,39 @@ function App() {
               const d = new Date(startDate);
               d.setMonth(startDate.getMonth() + i);
               const dueDateStr = d.toISOString().split('T')[0];
+              
+              // Se pago no ato da criação, anexa info de pagamento à descrição
+              let finalDesc = `${baseDescription} (${i+1}/${monthsCount})`;
+              if (i === 0 && t.status === PaymentStatus.PAID && t.paymentDate) {
+                  finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
+              }
+
               transactionsToAdd.push({
-                  description: `${finalDescription} (${i+1}/${monthsCount})`,
+                  description: finalDesc,
                   amount: Number(t.amount),
                   type: t.type,
                   date: dueDateStr,
                   status: i === 0 ? t.status : PaymentStatus.PENDING,
-                  payment_date: i === 0 ? safeVal(t.paymentDate) : null,
-                  payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
                   student_id: null,
                   plan_id: null,
-                  preference_id: null,
+                  payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
                   payment_link: null,
-                  external_reference: null
+                  external_reference: null,
+                  preference_id: null
               });
           }
       } else {
+          let finalDesc = baseDescription;
+          if (t.status === PaymentStatus.PAID && t.paymentDate) {
+              finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
+          }
+
           transactionsToAdd.push({ 
-              description: finalDescription, 
+              description: finalDesc, 
               amount: Number(t.amount), 
               type: t.type, 
               date: t.date, 
               status: t.status, 
-              payment_date: safeVal(t.paymentDate),
               student_id: safeVal(t.studentId), 
               plan_id: safeVal(t.planId), 
               payment_method: safeVal(t.paymentMethod), 
@@ -662,7 +678,7 @@ function App() {
       const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select();
       
       if(error) {
-          console.error("Supabase Detailed Error Object:", error);
+          console.error("Supabase Detailed Error:", error);
           const errorMessage = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
           alert(`Erro ao salvar transação: ${errorMessage}`);
           return;
@@ -672,11 +688,11 @@ function App() {
           const mapped = data.map((newTx: any) => ({
               id: newTx.id,
               description: newTx.description,
-              category: 'Geral', // Valor padrão UI
+              category: 'Geral',
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
-              paymentDate: newTx.payment_date,
+              paymentDate: newTx.date, // Localmente assumimos data de vencimento como referência
               status: newTx.status,
               studentId: newTx.student_id,
               planId: newTx.plan_id,
@@ -700,12 +716,19 @@ function App() {
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
 
-      if (t.description !== undefined) payload.description = t.description;
-      // 'category' omitido pois não existe no banco
+      // Se mudar status para PAID, anexa a data na descrição para persistência visual
+      if (t.status === PaymentStatus.PAID && t.paymentDate) {
+          const originalTx = transactions.find(x => x.id === t.id);
+          if (originalTx && !originalTx.description.includes("(Pago em")) {
+              payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(t.paymentDate)})`;
+          }
+      } else if (t.description !== undefined) {
+          payload.description = t.description;
+      }
+
       if (t.amount !== undefined) payload.amount = Number(t.amount);
       if (t.type !== undefined) payload.type = t.type;
       if (t.date !== undefined) payload.date = t.date;
-      if (t.paymentDate !== undefined) payload.payment_date = safeVal(t.paymentDate);
       if (t.status !== undefined) payload.status = t.status;
       if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
@@ -717,10 +740,11 @@ function App() {
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
       if(error) {
+          console.error("Supabase Detailed Error (Update):", error);
           const errorMessage = error.message || JSON.stringify(error);
           alert(`Erro ao atualizar transação: ${errorMessage}`);
       } else {
-          setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
+          setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));
       }
   };
 
