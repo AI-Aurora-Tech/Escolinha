@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -185,7 +186,7 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
-                 category: t.category || 'Geral', 
+                 category: 'Geral', // Valor fixo já que a coluna sumiu do DB
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
@@ -371,7 +372,6 @@ function App() {
               const externalReference = crypto.randomUUID();
               newTransactionsPayload.push({
                   description: description,
-                  category: 'Mensalidade',
                   amount: plan.price,
                   type: TransactionType.INCOME,
                   date: dateStr,
@@ -390,7 +390,7 @@ function App() {
               const mapped = data.map((t: any) => ({
                   id: t.id, 
                   description: t.description, 
-                  category: t.category,
+                  category: 'Mensalidade',
                   amount: t.amount, 
                   type: t.type, 
                   date: t.date, 
@@ -615,6 +615,11 @@ function App() {
       const transactionsToAdd = [];
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
+      // Como 'category' não existe no banco (Erro schema cache), anexamos à descrição
+      const finalDescription = t.category && t.category !== 'Outros' && t.category !== 'Geral' 
+          ? `[${t.category}] ${t.description}` 
+          : t.description;
+
       if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
           const startDate = new Date(t.date + 'T00:00:00');
           const monthsCount = t.recurrenceMonths || 12;
@@ -623,8 +628,7 @@ function App() {
               d.setMonth(startDate.getMonth() + i);
               const dueDateStr = d.toISOString().split('T')[0];
               transactionsToAdd.push({
-                  description: `${t.description} (${i+1}/${monthsCount})`,
-                  category: t.category || 'Geral',
+                  description: `${finalDescription} (${i+1}/${monthsCount})`,
                   amount: Number(t.amount),
                   type: t.type,
                   date: dueDateStr,
@@ -640,8 +644,7 @@ function App() {
           }
       } else {
           transactionsToAdd.push({ 
-              description: t.description, 
-              category: t.category || 'Geral',
+              description: finalDescription, 
               amount: Number(t.amount), 
               type: t.type, 
               date: t.date, 
@@ -669,7 +672,7 @@ function App() {
           const mapped = data.map((newTx: any) => ({
               id: newTx.id,
               description: newTx.description,
-              category: newTx.category,
+              category: 'Geral', // Valor padrão UI
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
@@ -698,7 +701,7 @@ function App() {
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
 
       if (t.description !== undefined) payload.description = t.description;
-      if (t.category !== undefined) payload.category = t.category;
+      // 'category' omitido pois não existe no banco
       if (t.amount !== undefined) payload.amount = Number(t.amount);
       if (t.type !== undefined) payload.type = t.type;
       if (t.date !== undefined) payload.date = t.date;
