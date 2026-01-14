@@ -403,7 +403,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
-  const studentActivities = activities.filter(a => editingId && (a.groupId && studentForm.groupIds?.includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
+  const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
       setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
@@ -469,7 +469,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const overdueCount = getStudentOverdueCount(student.id);
               const currentYear = new Date().getFullYear(); 
               const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
-              const groupNames = student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+              const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
               
               return (
                   <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueCount > 0 ? 'border-red-200 bg-red-50/20' : 'border-gray-100'}`}>
@@ -550,7 +550,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredStudents.map((student) => {
-                const groupNames = student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+                const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
                 const overdueCount = getStudentOverdueCount(student.id);
                 const currentYear = new Date().getFullYear(); const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
                 return (
@@ -676,7 +676,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                 <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><Lock className="w-4 h-4" /> Acesso e Plano</h4>
                                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Status do Aluno</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.active ? 'true' : 'false'} onChange={e => setStudentForm({...studentForm, active: e.target.value === 'true'})} disabled={isGuardian}><option value="true">Ativo</option><option value="false">Inativo / Trancado</option></select></div>
                                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Plano de Mensalidade</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})} disabled={isGuardian}><option value="">Selecione um plano...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price.toFixed(2)}</option>)}</select></div>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{groups.map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={studentForm.groupIds?.includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm">{g.name}</span></label>))}</div></div>
+                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{groups.map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={(studentForm.groupIds || []).includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm">{g.name}</span></label>))}</div></div>
                             </div>
                         </div>
 
@@ -807,8 +807,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
                     <div className="max-w-4xl mx-auto space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{studentActivities.filter(a => a.attendance?.includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{studentActivities.filter(a => !a.attendance?.includes(editingId!) && new Date(a.date) < new Date()).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{studentActivities.filter(a => (a.attendance || []).includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{studentActivities.filter(a => !(a.attendance || []).includes(editingId!) && new Date(a.date) < new Date()).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
                              <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Gols Marcados</p><h4 className="text-3xl font-black text-yellow-500">{studentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0)}</h4></div><div className="bg-yellow-50 p-3 rounded-xl"><Medal className="w-6 h-6 text-yellow-600" /></div></div>
                         </div>
 
@@ -816,7 +816,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700"><Trophy className="w-4 h-4 text-primary-600" /> Histórico de Atividades</div>
                             <div className="divide-y divide-gray-100">
                                 {studentActivities.map(act => {
-                                    const isPresent = act.attendance?.includes(editingId!);
+                                    const isPresent = (act.attendance || []).includes(editingId!);
                                     const goals = act.scorers?.filter(s => s === editingId).length || 0;
                                     return (
                                         <div key={act.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">

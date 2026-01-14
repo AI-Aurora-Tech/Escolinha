@@ -122,7 +122,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const getAttendeesList = (activity: Partial<Activity>) => {
       let list: Student[] = [];
       if (activity.groupId) {
-          list = students.filter(s => s.groupIds?.includes(activity.groupId!) && s.active);
+          list = students.filter(s => (s.groupIds || []).includes(activity.groupId!) && s.active);
       } else if (activity.participants?.length) {
           list = students.filter(s => activity.participants?.includes(s.id));
       }
@@ -141,7 +141,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
       const rows = students.filter(s => s.active).map(s => {
-          const rel = training.filter(a => (a.groupId && s.groupIds?.includes(a.groupId)) || a.participants?.includes(s.id));
+          const rel = training.filter(a => (a.groupId && (s.groupIds || []).includes(a.groupId)) || a.participants?.includes(s.id));
           if (!rel.length) return null;
           const pres = rel.filter(a => a.attendance.includes(s.id)).length;
           return [s.name, rel.length, pres, `${Math.round((pres/rel.length)*100)}%`];
@@ -199,16 +199,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation();
       const targetStudents = getAttendeesList(activity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
-      if (confirm(`Convocar ${targetStudents.length} atletas via Z-API?`)) {
-          setNotifyActivity(activity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyLogs([`Iniciando envio via Z-API para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
+      if (confirm(`Convocar ${targetStudents.length} atletas via Z-API?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`)) {
+          setNotifyActivity(activity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
       }
   };
 
   useEffect(() => {
       if (!notifyModalOpen || !notifyIsRunning || !notifyActivity) return;
-      if (notifyCurrentIndex >= notifyQueue.length) { setNotifyIsRunning(false); setNotifyLogs(prev => [...prev, "✅ Todos os comunicados enviados!"]); return; }
-      if (notifyCountdown > 0) notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
-      else processNotifyItem(notifyQueue[notifyCurrentIndex]);
+      if (notifyCurrentIndex >= notifyQueue.length) { setNotifyIsRunning(false); setNotifyLogs(prev => ["✅ Todos os comunicados enviados!", ...prev]); return; }
+      
+      if (notifyCountdown > 0) {
+          notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
+      } else {
+          processNotifyItem(notifyQueue[notifyCurrentIndex]);
+      }
       return () => { if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current); };
   }, [notifyModalOpen, notifyIsRunning, notifyCountdown, notifyCurrentIndex, notifyActivity, notifyQueue]);
 
@@ -229,8 +233,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           
           const sent = await sendZApiMessage(phone, msg);
           setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
-      } else setNotifyLogs(prev => [`⚠️ Sem tel para ${student.name}`, ...prev]);
-      setNotifyCurrentIndex(prev => prev + 1); setNotifyCountdown(10);
+      } else {
+          setNotifyLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
+      }
+      
+      setNotifyCurrentIndex(prev => prev + 1); 
+      setNotifyCountdown(10); // Reseta para 10 segundos antes do próximo
   };
 
   return (
