@@ -123,6 +123,97 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && t.date < todayStr).length;
   };
 
+  const handleGenerateContract = (student: Student) => {
+    const doc = new jsPDF();
+    const plan = plans.find(p => p.id === student.planId);
+    const today = new Date().toLocaleDateString('pt-BR');
+    
+    // Header
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("CONTRATO DE PRESTAÇÃO DE SERVIÇOS ESPORTIVOS", 105, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text("Garotos do Martinica", 105, 28, { align: 'center' });
+    
+    // Dados da Escola
+    doc.setFontSize(10);
+    doc.text("DADOS DA UNIDADE:", 14, 40);
+    doc.setFont("helvetica", "normal");
+    doc.text("Escola: Garotos do Martinica", 14, 45);
+    doc.text("Endereço: Unidade Martinica - São Paulo/SP", 14, 50);
+
+    // Dados do Responsável
+    doc.setFont("helvetica", "bold");
+    doc.text("DADOS DO RESPONSÁVEL (CONTRATANTE):", 14, 60);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Nome: ${student.guardian.name}`, 14, 65);
+    doc.text(`CPF: ${student.guardian.cpf || '-'}`, 14, 70);
+    doc.text(`Telefone: ${student.guardian.phone}`, 100, 70);
+    doc.text(`Email: ${student.guardian.email || '-'}`, 14, 75);
+
+    // Dados do Aluno
+    doc.setFont("helvetica", "bold");
+    doc.text("DADOS DO ALUNO (ATLETA):", 14, 85);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Nome: ${student.name}`, 14, 90);
+    doc.text(`Data de Nascimento: ${formatDate(student.birthDate)} (Idade: ${calculateAge(student.birthDate)} anos)`, 14, 95);
+    doc.text(`RG: ${student.rg || '-'}`, 14, 100);
+    doc.text(`CPF: ${student.cpf || '-'}`, 100, 100);
+
+    // Dados do Plano
+    doc.setFont("helvetica", "bold");
+    doc.text("DADOS DO PLANO CONTRATADO:", 14, 110);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Plano: ${plan?.name || 'Não definido'}`, 14, 115);
+    doc.text(`Valor da Mensalidade: R$ ${plan?.price.toFixed(2) || '0,00'}`, 14, 120);
+    doc.text(`Dia do Vencimento: Todo dia ${plan?.dueDay || '10'}`, 100, 120);
+
+    // Cláusulas
+    doc.setFont("helvetica", "bold");
+    doc.text("TERMOS E CONDIÇÕES:", 14, 130);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    
+    const introText = `Eu, CONTRATANTE, abaixo qualificado, na qualidade de RESPONSÁVEL pelo (ALUNO) acima citado, venho solicitar e formalizar a inscrição, neste TERMO DE CONTRATAÇÃO, na UNIDADE, do ALUNO acima qualificado, declarando e assumindo, nesta oportunidade:`;
+    
+    const clauses = [
+      "1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
+      "2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;",
+      "3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);",
+      "4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção da escola e posteriormente comunicados ao responsável pelo aluno.;",
+      "5 - Autorizo a utilização da imagem do referido aluno nas mídias sociais do Garotos do Martinica / Martinica Oficial, site e demais ações publicitárias com o intuito de promover o trabalho desenvolvido pela entidade.",
+      "6 - Caso o atleta acumule duas ou mais mensalidades em atraso, o mesmo terá o acesso aos treinamentos automaticamente suspenso, permanecendo o bloqueio até a regularização dos débitos pendentes."
+    ];
+
+    let currentY = 135;
+    const splitIntro = doc.splitTextToSize(introText, 180);
+    doc.text(splitIntro, 14, currentY);
+    currentY += (splitIntro.length * 5) + 2;
+
+    clauses.forEach(clause => {
+      const splitClause = doc.splitTextToSize(clause, 180);
+      doc.text(splitClause, 14, currentY);
+      currentY += (splitClause.length * 5) + 1.5;
+    });
+
+    // Seção de Saúde
+    currentY += 5;
+    doc.setFont("helvetica", "bold");
+    doc.text("SEU FILHO POSSUI ALGUM RESTRIÇÃO DE SAUDE: SIM (  ) NÃO (  )", 14, currentY);
+    currentY += 6;
+    doc.text("SE SIM, QUAL: ____________________________________________________________________", 14, currentY);
+
+    // Footer
+    currentY += 20;
+    doc.text(`São Paulo, ${today}.`, 14, currentY);
+    currentY += 20;
+    doc.text("___________________________________________________", 14, currentY);
+    currentY += 5;
+    doc.text("Assinatura do Responsável", 14, currentY);
+
+    doc.save(`Contrato_Martinica_${student.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleManualTuitionGen = async () => {
       if (confirm("Deseja gerar as mensalidades ainda não lançadas deste mês para todos os alunos ativos?")) {
           setIsGenerating(true);
@@ -521,6 +612,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       </div>
 
                       <div className="flex items-center gap-2">
+                          <button onClick={() => handleGenerateContract(student)} className="flex-1 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 py-2.5 rounded-lg text-xs font-bold border border-gray-200"><Printer className="w-3.5 h-3.5" /> Contrato</button>
                           <button onClick={() => handleOpenAttendance(student)} className="flex-1 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 py-2.5 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /> Freq.</button>
                           <button onClick={() => handleOpenHistory(student)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /> Financ.</button>
                           <button onClick={() => handleOpenEdit(student)} className="flex-1 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 py-2.5 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /> Editar</button>
@@ -625,6 +717,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
+                        <button onClick={() => handleGenerateContract(student)} className="text-gray-600 hover:text-gray-800 p-2 bg-gray-50 rounded-lg" title="Imprimir Contrato"><Printer className="w-4 h-4" /></button>
                         <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg"><CalendarCheck className="w-4 h-4" /></button>
                         <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-50 text-blue-600'}`}><History className="w-4 h-4" /></button>
                         <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg"><Edit className="w-4 h-4" /></button>
@@ -652,7 +745,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       </div>
                   )}
               </div>
-              <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
+              <div className="flex items-center gap-3">
+                  {editingId && (
+                      <button 
+                          onClick={() => handleGenerateContract(students.find(s => s.id === editingId)!)}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                          title="Imprimir Contrato"
+                      >
+                          <Printer className="w-4 h-4" />
+                          <span>Contrato</span>
+                      </button>
+                  )}
+                  <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
             </div>
             
             {activeTab === 'DETAILS' ? (
@@ -849,7 +954,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {/* MODAL PIX - MERCADO PAGO */}
       {showPixModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-300">
+             <div className="bg-white rounded-3xl shadow-2xl w-full max-sm overflow-hidden animate-in zoom-in duration-300">
                 <div className="bg-primary-600 p-6 text-white text-center">
                     <QrCode className="w-12 h-12 mx-auto mb-3 opacity-80" />
                     <h3 className="text-xl font-black uppercase tracking-tighter">Pagamento Instantâneo</h3>
@@ -885,7 +990,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {/* MODAL COBRANÇA AVULSA */}
       {showChargeModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Lançar Cobrança</h3>
                 <button onClick={() => setShowChargeModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
