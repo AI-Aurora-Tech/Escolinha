@@ -193,7 +193,8 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
-                 category: t.category || 'Geral', 
+                 // PGRST204 fix: try to extract category from description if column is missing
+                 category: t.category || (t.description.startsWith('[') ? t.description.split(']')[0].substring(1) : 'Geral'), 
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
@@ -374,7 +375,7 @@ function App() {
               
               const monthName = new Date(currentYear, currentMonth, 1).toLocaleString('pt-BR', { month: 'long' });
               const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-              const description = `Mensalidade ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+              const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
 
               const externalReference = crypto.randomUUID();
               newTransactionsPayload.push({
@@ -387,6 +388,7 @@ function App() {
                   plan_id: plan.id,
                   payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                   external_reference: externalReference
+                  // PGRST204 fix: category column removed from insert payload
               });
           }
       }
@@ -577,7 +579,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
       if (a.recurrence === 'weekly') {
@@ -605,6 +607,39 @@ function App() {
                feePayments: newItem.fee_payments || [] 
            }));
            setActivities(prev => [...prev, ...mapped]);
+           
+           // Se for Jogo com Taxa, lança as transações automáticas para CADA instância criada
+           if (a.type === 'GAME' && a.fee > 0) {
+               const txsPayload: any[] = [];
+               const participantsList = a.groupId 
+                   ? students.filter(s => s.groupIds?.includes(a.groupId))
+                   : students.filter(s => a.participants?.includes(s.id));
+               
+               data.forEach((insertedAct: any) => {
+                   const d = new Date(insertedAct.date + 'T12:00:00');
+                   d.setDate(d.getDate() - 1);
+                   const dueDate = d.toISOString().split('T')[0];
+                   
+                   participantsList.forEach(student => {
+                       txsPayload.push({
+                           description: `[Taxa de Jogo] ${insertedAct.title} - Atleta: ${student.name}`,
+                           amount: a.fee,
+                           type: TransactionType.INCOME,
+                           date: dueDate,
+                           status: PaymentStatus.PENDING,
+                           student_id: student.id,
+                           payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                           external_reference: `game_fee_${insertedAct.id}_${student.id}`
+                           // PGRST204 fix: category column removed
+                       });
+                   });
+               });
+
+               if (txsPayload.length > 0) {
+                   await supabase.from('transactions').insert(txsPayload);
+                   await fetchData(); // Sincroniza financeiro
+               }
+           }
       }
       setIsLoading(false);
   };
@@ -766,8 +801,8 @@ function App() {
                   payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
                   payment_link: null,
                   external_reference: null,
-                  preference_id: null,
-                  category: t.category || 'Geral'
+                  preference_id: null
+                  // PGRST204 fix: category column removed
               });
           }
       } else {
@@ -787,8 +822,8 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preferenceId),
-              category: t.category || 'Geral'
+              preference_id: safeVal(t.preferenceId)
+              // PGRST204 fix: category column removed
           });
       }
 
@@ -805,7 +840,7 @@ function App() {
           const mapped = data.map((newTx: any) => ({
               id: newTx.id,
               description: newTx.description,
-              category: newTx.category || 'Geral',
+              category: newTx.description.startsWith('[') ? newTx.description.split(']')[0].substring(1) : 'Geral',
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
@@ -883,7 +918,7 @@ function App() {
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
-      if (t.category !== undefined) payload.category = t.category;
+      // PGRST204 fix: category column removed from update payload
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       

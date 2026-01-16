@@ -239,15 +239,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               const dueDate = d.toISOString().split('T')[0];
 
               onAddTransaction({
-                  description: `Taxa Jogo: ${notifyActivity.title} - Atleta: ${student.name}`,
+                  description: `[Taxa de Jogo] ${notifyActivity.title} - Atleta: ${student.name}`,
                   amount: notifyActivity.fee,
                   type: TransactionType.INCOME,
                   date: dueDate,
                   status: PaymentStatus.PENDING,
                   studentId: student.id,
                   paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
-                  externalReference: extRef,
-                  category: 'Taxa de Jogo'
+                  externalReference: extRef
+                  // PGRST204 fix: category column removed from payload
               });
           }
       }
