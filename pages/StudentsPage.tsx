@@ -376,10 +376,40 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const sendChargeMessage = async (tx: Transaction) => {
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
-      if (!phone || !tx.paymentLink) { alert("Telefone ou Link indisponível."); return; }
-      const message = `Olá ${studentForm.guardian.name}, somos da Garotos do Martinica. ⚽\nConsta a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: R$ ${tx.amount.toFixed(2)}\n\nLink PIX:\n${tx.paymentLink}\n\nObrigado!`;
+      if (!phone) { alert("Telefone indisponível."); return; }
+      
+      let message = `Olá *${studentForm.guardian.name}*, somos da *Garotos do Martinica*. ⚽\n\nConstatamos a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: *R$ ${tx.amount.toFixed(2)}*`;
+      
+      if (tx.paymentLink) {
+          message += `\n\nVocê pode pagar via PIX por este link:\n${tx.paymentLink}`;
+      }
+      
+      message += `\n\nObrigado!`;
+      
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Cobrança enviada via Z-API!"); else alert("Erro Z-API.");
+      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API.");
+  };
+
+  const sendBatchSelectedCharges = async () => {
+      if (selectedFinanceIds.size === 0) return;
+      
+      const phone = studentForm.guardian.phone.replace(/\D/g, '');
+      if (!phone) { alert("Responsável sem telefone cadastrado."); return; }
+
+      const selectedTxs = studentTransactions.filter(t => selectedFinanceIds.has(t.id));
+      const totalAmount = selectedTxs.reduce((acc, t) => acc + t.amount, 0);
+      
+      let message = `Olá *${studentForm.guardian.name}*! ⚽ Aqui é da *Garotos do Martinica*.\n\nIdentificamos pendências para o atleta *${studentForm.name}*:\n\n`;
+      
+      selectedTxs.forEach(t => {
+          message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
+      });
+      
+      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
+      
+      const sent = await sendZApiMessage(phone, message);
+      if (sent) alert(`${selectedTxs.length} cobrança(s) enviada(s) com sucesso!`);
+      else alert("Erro ao enviar mensagens via Z-API.");
   };
 
   const availableCategories = useMemo(() => {
@@ -903,9 +933,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                              <h4 className="text-2xl font-black text-primary-600">R$ {selectedTotal.toFixed(2)}</h4>
                         </div>
                         {selectedFinanceIds.size > 0 && (
-                            <button onClick={() => initiatePixPayment()} disabled={pixLoading} className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-black shadow-lg shadow-primary-200 transition-all flex items-center justify-center gap-3">
-                                {pixLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <QrCode className="w-6 h-6" />} PAGAR COM PIX
-                            </button>
+                            <div className="space-y-3">
+                                <button onClick={() => initiatePixPayment()} disabled={pixLoading} className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-black shadow-lg shadow-primary-200 transition-all flex items-center justify-center gap-3">
+                                    {pixLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <QrCode className="w-6 h-6" />} PAGAR COM PIX
+                                </button>
+                                {!isGuardian && (
+                                    <button onClick={sendBatchSelectedCharges} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2">
+                                        <MessageCircle className="w-5 h-5" /> ENVIAR COBRANÇA (WA)
+                                    </button>
+                                )}
+                            </div>
                         )}
                         {!isGuardian && (
                             <button onClick={() => setShowChargeModal(true)} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
@@ -938,11 +975,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                               {!isGuardian && tx.status === PaymentStatus.PENDING && (
                                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>
+                                                      <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança via WhatsApp"><Send className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); handleCancelTransaction(tx); }} className="p-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300" title="Cancelar Cobrança"><Ban className="w-4 h-4" /></button>
                                                   </div>
                                               )}
-                                              {tx.status === PaymentStatus.PENDING && tx.paymentLink && (
-                                                  <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança PIX via Z-API"><Send className="w-4 h-4" /></button>
+                                              {tx.status === PaymentStatus.PENDING && isGuardian && tx.paymentLink && (
+                                                  <button onClick={(e) => { e.stopPropagation(); copyPixCode(); }} className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100 border border-primary-200" title="Pagar agora"><QrCode className="w-4 h-4" /></button>
                                               )}
                                          </div>
                                      </div>
