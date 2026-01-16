@@ -475,6 +475,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
     let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
     let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
+    let mfinOk2 = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
     let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
     let mplan = planFilter === 'ALL' || s.planId === planFilter;
     return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
@@ -596,15 +597,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
 
-  // Atividades filtradas por mês e ano para a aba Frequência
+  // Atividades filtradas por mês, ano e que já aconteceram (histórico)
   const filteredStudentActivities = useMemo(() => {
     return studentActivities.filter(act => {
+      const actDate = act.date; // YYYY-MM-DD
       const d = new Date(act.date + 'T00:00:00');
+      
       const matchesMonth = attendanceMonth === -1 || d.getMonth() === attendanceMonth;
       const matchesYear = d.getFullYear() === attendanceYear;
-      return matchesMonth && matchesYear;
+      const isPast = actDate <= todayStr;
+      
+      return matchesMonth && matchesYear && isPast;
     });
-  }, [studentActivities, attendanceMonth, attendanceYear]);
+  }, [studentActivities, attendanceMonth, attendanceYear, todayStr]);
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
       setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
