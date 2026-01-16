@@ -107,6 +107,9 @@ function App() {
         let studentsData;
         let transactionsData;
 
+        // Query transactions sem as colunas problemáticas para evitar erro de cache
+        const txSelect = 'id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
+
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const { data: allStudents } = await supabase.from('students').select('*');
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
@@ -119,7 +122,7 @@ function App() {
                  const studentIds = studentsData.map((s: any) => s.id);
                  const { data: myTxs } = await supabase
                     .from('transactions')
-                    .select('*')
+                    .select(txSelect)
                     .in('student_id', studentIds);
                  transactionsData = myTxs;
              } else {
@@ -127,7 +130,7 @@ function App() {
              }
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select('*');
+             const { data: allTxs } = await supabase.from('transactions').select(txSelect);
              studentsData = allStudents;
              transactionsData = allTxs;
         }
@@ -190,23 +193,30 @@ function App() {
         }
 
         if (transactionsData) {
-             setTransactions(transactionsData.map((t: any) => ({
-                 id: t.id,
-                 description: t.description,
-                 // FIX PGRST204: Extrai categoria e data de pagamento da descrição se as colunas estiverem ausentes
-                 category: t.category || (t.description.startsWith('[') ? t.description.split(']')[0].substring(1) : 'Geral'), 
-                 amount: t.amount,
-                 type: t.type,
-                 date: t.date,
-                 paymentDate: t.payment_date || (t.description.includes('(Pago em ') ? t.description.split('(Pago em ')[1].replace(')', '') : undefined),
-                 status: t.status,
-                 studentId: t.student_id,
-                 planId: t.plan_id,
-                 paymentMethod: t.payment_method,
-                 paymentLink: t.payment_link,
-                 externalReference: t.external_reference, 
-                 preferenceId: t.preference_id
-             })));
+             setTransactions(transactionsData.map((t: any) => {
+                 // Extrai categoria e data de pagamento da descrição (Fix PGRST204)
+                 const desc = t.description || '';
+                 const category = desc.startsWith('[') ? desc.split(']')[0].substring(1) : 'Geral';
+                 const paymentDateMatch = desc.match(/\(Pago em (.*?)\)/);
+                 const paymentDate = paymentDateMatch ? paymentDateMatch[1] : undefined;
+
+                 return {
+                     id: t.id,
+                     description: t.description,
+                     category: category,
+                     amount: t.amount,
+                     type: t.type,
+                     date: t.date,
+                     paymentDate: paymentDate,
+                     status: t.status,
+                     studentId: t.student_id,
+                     planId: t.plan_id,
+                     paymentMethod: t.payment_method,
+                     paymentLink: t.payment_link,
+                     externalReference: t.external_reference, 
+                     preferenceId: t.preference_id
+                 };
+             }));
         }
 
         if (activitiesData) {
@@ -773,8 +783,9 @@ function App() {
       const transactionsToAdd = [];
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
-      const baseDescription = t.category && t.category !== 'Outros' && t.category !== 'Geral' 
-          ? `[${t.category}] ${t.description}` 
+      const baseCategory = t.category || 'Geral';
+      const baseDescription = baseCategory !== 'Outros' && baseCategory !== 'Geral' 
+          ? `[${baseCategory}] ${t.description}` 
           : t.description;
 
       if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
@@ -822,12 +833,12 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preference_id)
+              preference_id: safeVal(t.preferenceId)
               // FIX PGRST204: category e payment_date removidos dos payloads
           });
       }
 
-      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select();
+      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select('id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id');
       
       if(error) {
           console.error("Supabase Detailed Error:", error);
