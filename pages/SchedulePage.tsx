@@ -491,6 +491,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Início</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="time" required value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
                     </div>
 
+                    {/* Novo Campo de Recorrência - Somente para Treino */}
+                    {newActivity.type === 'TRAINING' && (
+                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                        <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+                          <Repeat className="w-4 h-4 text-primary-600" />
+                          Recorrência
+                        </label>
+                        <select 
+                          className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer text-sm"
+                          value={newActivity.recurrence}
+                          onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as any})}
+                        >
+                          <option value="none">Evento Único</option>
+                          <option value="weekly">Semanalmente (até o fim do ano)</option>
+                        </select>
+                      </div>
+                    )}
+
                     <div className="bg-gray-50 p-4 rounded-xl space-y-3">
                       <div className="flex items-center gap-2">
                         <input type="checkbox" id="modal-has-fee" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer" />
