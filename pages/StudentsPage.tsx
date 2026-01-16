@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 // Add Banknote as CashIcon to the imports from lucide-react to fix the "Cannot find name 'CashIcon'" error.
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -642,6 +642,40 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const currentYear = new Date().getFullYear();
   const yearsList = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
+  const handleSendAttendanceReport = async () => {
+      const student = students.find(s => s.id === editingId);
+      if (!student || !student.guardian.phone) return alert("Responsável sem telefone cadastrado.");
+
+      const monthName = monthsList.find(m => m.value === attendanceMonth)?.label || "Todos";
+      const presences = filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length;
+      const absences = filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && a.date <= todayStr).length;
+      const goals = filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0);
+
+      let message = `⚽ *Relatório de Presença - Garotos do Martinica*\n\n`;
+      message += `Atleta: *${student.name}*\n`;
+      message += `Período: ${monthName} / ${attendanceYear}\n\n`;
+      message += `✅ Presenças: *${presences}*\n`;
+      message += `❌ Faltas: *${absences}*\n`;
+      message += `🔥 Gols Marcados: *${goals}*\n\n`;
+      message += `*Histórico Recente:*`;
+
+      // Pega as últimas 5 atividades para não estourar limite ou ficar muito longa
+      filteredStudentActivities.slice(0, 8).forEach(act => {
+          const isPresent = (act.attendance || []).includes(editingId!);
+          message += `\n• ${formatDate(act.date)}: ${act.title} (${isPresent ? '✅' : '❌'})`;
+      });
+
+      if (filteredStudentActivities.length > 8) {
+          message += `\n... entre outras.`;
+      }
+
+      message += `\n\nAcompanhe o desempenho completo pelo Portal do Aluno!`;
+
+      const sent = await sendZApiMessage(student.guardian.phone, message);
+      if (sent) alert("Relatório enviado com sucesso via WhatsApp!");
+      else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1092,12 +1126,24 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                              <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && new Date(a.date) < new Date()).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && a.date <= todayStr).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
                              <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Gols Marcados</p><h4 className="text-3xl font-black text-yellow-500">{filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0)}</h4></div><div className="bg-yellow-50 p-3 rounded-xl"><Medal className="w-6 h-6 text-yellow-600" /></div></div>
                         </div>
 
                         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                            <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700"><History className="w-4 h-4 text-primary-600" /> Histórico de Atividades</div>
+                            <div className="p-4 border-b bg-gray-50 flex items-center justify-between font-bold text-gray-700">
+                                <div className="flex items-center gap-2">
+                                    <History className="w-4 h-4 text-primary-600" /> Histórico de Atividades
+                                </div>
+                                {!isGuardian && (
+                                    <button 
+                                        onClick={handleSendAttendanceReport}
+                                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors shadow-sm"
+                                    >
+                                        <MessageCircle className="w-3.5 h-3.5" /> ENVIAR P/ RESPONSÁVEL
+                                    </button>
+                                )}
+                            </div>
                             
                             {/* SEÇÃO DE JOGOS */}
                             <div className="px-4 py-2 bg-yellow-50 text-yellow-800 text-[10px] font-black uppercase border-b border-yellow-100 flex items-center gap-2">
