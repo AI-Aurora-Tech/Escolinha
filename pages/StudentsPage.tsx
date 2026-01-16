@@ -283,42 +283,60 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleExportExcel = () => {
       const data = filteredStudents.map(s => ({
           'Nome do Aluno': s.name,
+          'Data de Nascimento': formatDate(s.birthDate),
           'Idade': calculateAge(s.birthDate),
-          'Nascimento': formatDate(s.birthDate),
+          'RG Aluno': s.rg || '',
+          'CPF Aluno': s.cpf || '',
+          'Telefone Aluno': s.phone || '',
+          'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
           'Responsável': s.guardian.name,
+          'CPF Responsável': s.guardian.cpf || '',
           'Telefone Resp.': s.guardian.phone,
+          'Email Resp.': s.guardian.email || '',
+          'CEP': s.address.cep || '',
+          'Rua': s.address.street || '',
+          'Número': s.address.number || '',
+          'Complemento': s.address.complement || '',
+          'Bairro': s.address.district || '',
+          'Cidade': s.address.city || '',
+          'Estado': s.address.state || '',
+          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
+          'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
           'Status': s.active ? 'Ativo' : 'Inativo',
-          'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
-          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A'
+          'Mensalidades Atrasadas': getStudentOverdueCount(s.id)
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Alunos");
-      XLSX.writeFile(wb, `Alunos_Martinica_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, "Alunos Completo");
+      XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleExportPDF = () => {
-      const doc = new jsPDF();
+      const doc = new jsPDF({ orientation: 'landscape' });
       doc.setFontSize(18);
-      doc.text("Relatório de Alunos - Garotos do Martinica", 14, 20);
+      doc.text("Relatório Geral de Alunos - Garotos do Martinica", 14, 20);
       doc.setFontSize(10);
       doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
       
       const body = filteredStudents.map(s => [
           s.name,
           calculateAge(s.birthDate),
+          s.rg || s.cpf || '-',
           s.guardian.name,
           s.guardian.phone,
-          s.active ? 'Ativo' : 'Inativo'
+          plans.find(p => p.id === s.planId)?.name || '-',
+          s.active ? 'Ativo' : 'Inativo',
+          getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
       ]);
 
       autoTable(doc, {
           startY: 35,
-          head: [['Nome', 'Idade', 'Responsável', 'Telefone', 'Status']],
+          head: [['Nome', 'Idade', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
           body: body,
-          headStyles: { fillColor: [249, 115, 22] }
+          headStyles: { fillColor: [249, 115, 22] },
+          styles: { fontSize: 8 }
       });
-      doc.save("Relatorio_Alunos_Martinica.pdf");
+      doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
   };
 
   const handleDownloadTemplate = () => {
