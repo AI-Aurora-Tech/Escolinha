@@ -173,7 +173,7 @@ function App() {
                      groupIds: finalGroupIds,
                      active: s.active,
                      documents: s.documents 
-                 };
+                 } as Student;
              });
              setStudents(mappedStudents);
         }
@@ -605,39 +605,6 @@ function App() {
                feePayments: newItem.fee_payments || [] 
            }));
            setActivities(prev => [...prev, ...mapped]);
-           
-           // Se for Jogo com Taxa, lança as transações automáticas para CADA instância criada
-           if (a.type === 'GAME' && a.fee > 0) {
-               const txsPayload: any[] = [];
-               const participantsList = a.groupId 
-                   ? students.filter(s => s.groupIds?.includes(a.groupId))
-                   : students.filter(s => a.participants?.includes(s.id));
-               
-               data.forEach((insertedAct: any) => {
-                   const d = new Date(insertedAct.date + 'T12:00:00');
-                   d.setDate(d.getDate() - 1);
-                   const dueDate = d.toISOString().split('T')[0];
-                   
-                   participantsList.forEach(student => {
-                       txsPayload.push({
-                           description: `Taxa Jogo: ${insertedAct.title} - Atleta: ${student.name}`,
-                           amount: a.fee,
-                           type: TransactionType.INCOME,
-                           date: dueDate,
-                           status: PaymentStatus.PENDING,
-                           student_id: student.id,
-                           payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                           external_reference: `game_fee_${insertedAct.id}_${student.id}`,
-                           category: 'Taxa de Jogo'
-                       });
-                   });
-               });
-
-               if (txsPayload.length > 0) {
-                   await supabase.from('transactions').insert(txsPayload);
-                   await fetchData(); // Sincroniza financeiro
-               }
-           }
       }
       setIsLoading(false);
   };
@@ -1033,7 +1000,7 @@ function App() {
       case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={handleBatchAddStudents} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} />;
       case 'groups': if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
       case 'plans': if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
-      case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} />;
+      case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} transactions={transactions} />;
       case 'finance': return (currentUser!.role === UserRole.ADMIN) ? <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
       case 'users': return currentUser!.role === UserRole.ADMIN ? <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
       default: return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;

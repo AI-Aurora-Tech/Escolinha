@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Student, Group, User, UserRole } from '../types';
+import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -10,15 +10,17 @@ interface SchedulePageProps {
   activities: Activity[];
   students: Student[];
   groups: Group[];
+  transactions: Transaction[];
   onAddActivity: (activity: Omit<Activity, 'id'>) => void;
   onUpdateActivity: (activity: Activity) => void;
   onUpdateAttendance: (activityId: string, studentId: string) => void;
   onUpdateFeePayment?: (activityId: string, studentId: string) => void; 
   onDeleteActivity?: (activityId: string) => void;
+  onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -226,6 +228,30 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const processNotifyItem = async (student: Student) => {
       if (!notifyActivity) return;
       const phone = student.guardian.phone.replace(/\D/g, '');
+      const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
+
+      // CRITICAL: Quando a mensagem de convocação de jogo for enviada lançar a TAXA no financeiro do aluno
+      if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0) {
+          const alreadyExists = transactions.some(t => t.externalReference === extRef);
+          if (!alreadyExists) {
+              const d = new Date(notifyActivity.date + 'T12:00:00');
+              d.setDate(d.getDate() - 1);
+              const dueDate = d.toISOString().split('T')[0];
+
+              onAddTransaction({
+                  description: `Taxa Jogo: ${notifyActivity.title} - Atleta: ${student.name}`,
+                  amount: notifyActivity.fee,
+                  type: TransactionType.INCOME,
+                  date: dueDate,
+                  status: PaymentStatus.PENDING,
+                  studentId: student.id,
+                  paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
+                  externalReference: extRef,
+                  category: 'Taxa de Jogo'
+              });
+          }
+      }
+
       if (phone) {
           const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
           const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
@@ -244,8 +270,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       const pref = await createMPPreference({
                           title: `Taxa Jogo: ${notifyActivity.title}`,
                           price: notifyActivity.fee,
-                          // CRITICAL: A referência externa deve ser igual à transação lançada no financeiro para permitir baixa automática
-                          externalReference: `game_fee_${notifyActivity.id}_${student.id}`,
+                          externalReference: extRef,
                           payer: {
                               name: student.guardian.name,
                               email: student.guardian.email || 'financeiro@martinica.com',
@@ -553,8 +578,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Quadra 01, Estádio Municipal..." value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
-                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
+                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
+                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
                     </div>
 
                     <div className="flex justify-end gap-3 pt-6 border-t mt-6">
