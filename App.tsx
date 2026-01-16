@@ -14,6 +14,9 @@ import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucid
 import { checkMPPaymentStatus } from './services/mercadoPago';
 import { sendZApiMessage } from './services/zapiService';
 
+// Lista de colunas seguras para evitar erro PGRST204
+const TX_SELECT_FIELDS = 'id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
+
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -92,7 +95,8 @@ function App() {
         }
     };
 
-    const interval = setInterval(reconcilePayments, 30 * 60 * 1000); 
+    // Frequência aumentada para 2 minutos para garantir baixa rápida das taxas de jogo
+    const interval = setInterval(reconcilePayments, 2 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [isAuthenticated, transactions]);
 
@@ -107,9 +111,6 @@ function App() {
         let studentsData;
         let transactionsData;
 
-        // Query transactions sem as colunas problemáticas para evitar erro de cache
-        const txSelect = 'id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
-
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const { data: allStudents } = await supabase.from('students').select('*');
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
@@ -122,7 +123,7 @@ function App() {
                  const studentIds = studentsData.map((s: any) => s.id);
                  const { data: myTxs } = await supabase
                     .from('transactions')
-                    .select(txSelect)
+                    .select(TX_SELECT_FIELDS)
                     .in('student_id', studentIds);
                  transactionsData = myTxs;
              } else {
@@ -130,9 +131,9 @@ function App() {
              }
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select(txSelect);
-             studentsData = allStudents;
+             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
              transactionsData = allTxs;
+             studentsData = allStudents;
         }
 
         if (currentUser?.role === UserRole.ADMIN) {
@@ -194,7 +195,6 @@ function App() {
 
         if (transactionsData) {
              setTransactions(transactionsData.map((t: any) => {
-                 // Extrai categoria e data de pagamento da descrição (Fix PGRST204)
                  const desc = t.description || '';
                  const category = desc.startsWith('[') ? desc.split(']')[0].substring(1) : 'Geral';
                  const paymentDateMatch = desc.match(/\(Pago em (.*?)\)/);
@@ -372,7 +372,6 @@ function App() {
           const plan = plans.find(p => p.id === student.planId);
           if (!plan) continue;
 
-          // Verifica se já existe transação INCOME para este aluno neste mês/ano corrente
           const alreadyExists = transactions.some(t => 
               t.studentId === student.id && 
               t.type === TransactionType.INCOME && 
@@ -398,13 +397,13 @@ function App() {
                   plan_id: plan.id,
                   payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                   external_reference: externalReference
-                  // FIX PGRST204: category e payment_date removidos dos payloads
               });
           }
       }
 
       if (newTransactionsPayload.length > 0) {
-          const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select();
+          // FIX PGRST204: Uso de select explícito para evitar tentar selecionar colunas inexistentes do cache de esquema
+          const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select(TX_SELECT_FIELDS);
           if (data && !error) {
               const mapped = data.map((t: any) => ({
                   id: t.id, 
@@ -484,7 +483,6 @@ function App() {
         };
         setStudents(prev => [...prev, newStudent]);
         
-        // Mensagem de Boas-vindas Automática
         if (studentData.guardian.phone) {
             const msg = `Seja bem-vindo(a) à Garotos do Martinica! ⚽\n\nOlá *${studentData.guardian.name}*, confirmamos a matrícula do(a) atleta *${studentData.name}*.\n\nFicamos felizes em tê-los conosco! Utilize o CPF do responsável para acessar o Portal do Aluno em nosso site.\n\nQualquer dúvida, estamos à disposição.`;
             const sent = await sendZApiMessage(studentData.guardian.phone, msg);
@@ -618,7 +616,6 @@ function App() {
            }));
            setActivities(prev => [...prev, ...mapped]);
            
-           // Se for Jogo com Taxa, lança as transações automáticas para CADA instância criada
            if (a.type === 'GAME' && a.fee > 0) {
                const txsPayload: any[] = [];
                const participantsList = a.groupId 
@@ -640,24 +637,21 @@ function App() {
                            student_id: student.id,
                            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                            external_reference: `game_fee_${insertedAct.id}_${student.id}`
-                           // FIX PGRST204: category e payment_date removidos dos payloads
                        });
                    });
                });
 
                if (txsPayload.length > 0) {
                    await supabase.from('transactions').insert(txsPayload);
-                   await fetchData(); // Sincroniza financeiro
+                   await fetchData(); 
                }
            }
       }
       setIsLoading(false);
   };
   
-  // Update Activity: handles potential future recurrences as well
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      // Cast basePayload to any to bypass Activity interface constraints during DB mapping
       const basePayload: any = { 
           title: a.title, 
           activity_type: a.type, 
@@ -687,7 +681,6 @@ function App() {
            const { data: futureEvents } = await query;
            
            if (futureEvents && futureEvents.length > 0) {
-               // Calculate time difference to shift future event dates accordingly
                const dayDiff = Math.round((new Date(a.date).getTime() - new Date(original.date).getTime()) / (1000 * 3600 * 24));
                const updates = futureEvents.map((evt: any) => {
                    let nextDateStr = evt.date;
@@ -696,7 +689,6 @@ function App() {
                        evtD.setDate(evtD.getDate() + dayDiff); 
                        nextDateStr = evtD.toISOString().split('T')[0]; 
                    }
-                   // Explicitly cast the returned object to any to resolve property name mismatches with Activity interface
                    return { 
                        id: evt.id, 
                        title: basePayload.title, 
@@ -726,7 +718,6 @@ function App() {
                    if (act.id === a.id) return a; 
                    if (updatesMap.has(act.id)) {
                        const up = updatesMap.get(act.id) as any;
-                       // Remap DB snake_case fields back to Activity camelCase properties
                        return { 
                            ...act, 
                            title: up.title, 
@@ -813,7 +804,6 @@ function App() {
                   payment_link: null,
                   external_reference: null,
                   preference_id: null
-                  // FIX PGRST204: category e payment_date removidos dos payloads
               });
           }
       } else {
@@ -834,11 +824,10 @@ function App() {
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
               preference_id: safeVal(t.preferenceId)
-              // FIX PGRST204: category e payment_date removidos dos payloads
           });
       }
 
-      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select('id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id');
+      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select(TX_SELECT_FIELDS);
       
       if(error) {
           console.error("Supabase Detailed Error:", error);
@@ -884,9 +873,7 @@ function App() {
           if (originalTx && !originalTx.description.includes("(Pago em")) {
               const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
               payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(pDate)})`;
-              // FIX PGRST204: payment_date removido do payload de atualização
               
-              // Recibo de Pagamento Automático Individual via WhatsApp
               if (originalTx.studentId) {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
@@ -896,9 +883,10 @@ function App() {
                   }
               }
 
-              // Lógica de Baixa Automática em Taxas de Jogo
-              if (originalTx.externalReference?.startsWith('game_fee_')) {
-                  const parts = originalTx.externalReference.split('_');
+              // Lógica de Baixa Automática em Taxas de Jogo (Game Fee)
+              const currentExtRef = t.externalReference || originalTx.externalReference;
+              if (currentExtRef?.startsWith('game_fee_')) {
+                  const parts = currentExtRef.split('_');
                   const activityId = parts[2];
                   const studentId = parts[3];
                   
@@ -929,13 +917,12 @@ function App() {
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
-      // FIX PGRST204: category removido do payload de atualização
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
       if(error) {
           console.error("Supabase Detailed Error (Update):", error);
-          const errorMessage = `Erro ${error.code}: ${error.message} ${error.details ? `(${error.details})` : ''}`;
+          const errorMessage = `Erro ${error.code}: ${error.message}`;
           alert(`Erro ao atualizar transação: ${errorMessage}`);
       } else {
           setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));
