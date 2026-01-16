@@ -40,6 +40,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Filtros de presença
+  const [attendanceMonth, setAttendanceMonth] = useState<number>(new Date().getMonth());
+  const [attendanceYear, setAttendanceYear] = useState<number>(new Date().getFullYear());
   
   const [showPixModal, setShowPixModal] = useState(false);
   const [pixLoading, setPixLoading] = useState(false);
@@ -592,6 +596,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
 
+  // Atividades filtradas por mês e ano para a aba Frequência
+  const filteredStudentActivities = useMemo(() => {
+    return studentActivities.filter(act => {
+      const d = new Date(act.date + 'T00:00:00');
+      const matchesMonth = attendanceMonth === -1 || d.getMonth() === attendanceMonth;
+      const matchesYear = d.getFullYear() === attendanceYear;
+      return matchesMonth && matchesYear;
+    });
+  }, [studentActivities, attendanceMonth, attendanceYear]);
+
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
       setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
   };
@@ -610,6 +624,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         else alert('CEP não encontrado.');
     } catch (error) { alert('Erro ao buscar CEP.'); } finally { setIsLoadingCep(false); }
   };
+
+  const monthsList = [
+    { value: 0, label: 'Janeiro' }, { value: 1, label: 'Fevereiro' }, { value: 2, label: 'Março' },
+    { value: 3, label: 'Abril' }, { value: 4, label: 'Maio' }, { value: 5, label: 'Junho' },
+    { value: 6, label: 'Julho' }, { value: 7, label: 'Agosto' }, { value: 8, label: 'Setembro' },
+    { value: 9, label: 'Outubro' }, { value: 10, label: 'Novembro' }, { value: 11, label: 'Dezembro' }
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const yearsList = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
   return (
     <div className="space-y-6">
@@ -1036,16 +1060,39 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             ) : (
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
                     <div className="max-w-4xl mx-auto space-y-6">
+                        {/* Filtros de Frequência */}
+                        <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-wrap items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <Filter className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm font-bold text-gray-700 uppercase">Filtrar Período:</span>
+                          </div>
+                          <select 
+                            className="border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
+                            value={attendanceMonth}
+                            onChange={(e) => setAttendanceMonth(parseInt(e.target.value))}
+                          >
+                            <option value={-1}>Todos os Meses</option>
+                            {monthsList.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                          </select>
+                          <select 
+                            className="border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
+                            value={attendanceYear}
+                            onChange={(e) => setAttendanceYear(parseInt(e.target.value))}
+                          >
+                            {yearsList.map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
+                        </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{studentActivities.filter(a => (a.attendance || []).includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{studentActivities.filter(a => !(a.attendance || []).includes(editingId!) && new Date(a.date) < new Date()).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Gols Marcados</p><h4 className="text-3xl font-black text-yellow-500">{studentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0)}</h4></div><div className="bg-yellow-50 p-3 rounded-xl"><Medal className="w-6 h-6 text-yellow-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && new Date(a.date) < new Date()).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
+                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Gols Marcados</p><h4 className="text-3xl font-black text-yellow-500">{filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0)}</h4></div><div className="bg-yellow-50 p-3 rounded-xl"><Medal className="w-6 h-6 text-yellow-600" /></div></div>
                         </div>
 
                         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                             <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700"><Trophy className="w-4 h-4 text-primary-600" /> Histórico de Atividades</div>
                             <div className="divide-y divide-gray-100">
-                                {studentActivities.map(act => {
+                                {filteredStudentActivities.map(act => {
                                     const isPresent = (act.attendance || []).includes(editingId!);
                                     const goals = act.scorers?.filter(s => s === editingId).length || 0;
                                     return (
@@ -1061,7 +1108,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         </div>
                                     );
                                 })}
-                                {studentActivities.length === 0 && <div className="p-12 text-center text-gray-400"><History className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>Nenhuma atividade registrada para este atleta.</p></div>}
+                                {filteredStudentActivities.length === 0 && <div className="p-12 text-center text-gray-400"><History className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>Nenhuma atividade registrada para este período.</p></div>}
                             </div>
                         </div>
                     </div>
