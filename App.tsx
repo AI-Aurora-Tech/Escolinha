@@ -764,9 +764,26 @@ function App() {
   const handleUpdateFeePayment = async (aid: string, sid: string) => {
       const activity = activities.find(a => a.id === aid); if(!activity) return;
       const current = activity.feePayments || [];
-      const next = current.includes(sid) ? current.filter(id => id !== sid) : [...current, sid];
+      const isPaidNow = !current.includes(sid);
+      const next = isPaidNow ? [...current, sid] : current.filter(id => id !== sid);
+      
       const { error } = await supabase.from('activities').update({ fee_payments: next }).eq('id', aid);
-      if(!error) setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: next } : a));
+      if(!error) {
+          setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: next } : a));
+          
+          // Sincronização Agenda -> Financeiro (Bi-direcional)
+          const targetRef = `game_fee_${aid}_${sid}`;
+          const linkedTx = transactions.find(t => t.externalReference === targetRef);
+          
+          if (linkedTx) {
+              await handleUpdateTransaction({
+                  id: linkedTx.id,
+                  status: isPaidNow ? PaymentStatus.PAID : PaymentStatus.PENDING,
+                  paymentMethod: isPaidNow ? PaymentMethod.CASH : linkedTx.paymentMethod,
+                  paymentDate: isPaidNow ? new Date().toISOString().split('T')[0] : undefined
+              });
+          }
+      }
   };
 
   const handleAddTransaction = async (t: any) => { 
@@ -883,7 +900,7 @@ function App() {
                   }
               }
 
-              // Lógica de Baixa Automática em Taxas de Jogo (Game Fee)
+              // Lógica de Baixa Automática em Taxas de Jogo (Game Fee) (Financeiro -> Agenda)
               const currentExtRef = t.externalReference || originalTx.externalReference;
               if (currentExtRef?.startsWith('game_fee_')) {
                   const parts = currentExtRef.split('_');
