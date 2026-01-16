@@ -244,7 +244,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       const pref = await createMPPreference({
                           title: `Taxa Jogo: ${notifyActivity.title}`,
                           price: notifyActivity.fee,
-                          externalReference: `game_${notifyActivity.id}_${student.id}`,
+                          // CRITICAL: A referência externa deve ser igual à transação lançada no financeiro para permitir baixa automática
+                          externalReference: `game_fee_${notifyActivity.id}_${student.id}`,
                           payer: {
                               name: student.guardian.name,
                               email: student.guardian.email || 'financeiro@martinica.com',

@@ -571,10 +571,38 @@ function App() {
                current.setDate(current.getDate() + 7);
           }
       } else { payloadList.push({ ...basePayload, date: a.date }); }
+      
       const { data, error } = await supabase.from('activities').insert(payloadList).select();
       if(data && !error) {
            const mapped = data.map((newItem: any) => ({ ...a, id: newItem.id, date: newItem.date }));
            setActivities(prev => [...prev, ...mapped]);
+           
+           // Se for Jogo com Taxa, lança as transações automáticas
+           if (a.type === 'GAME' && a.fee > 0) {
+               const activityId = data[0].id;
+               const participantsList = a.groupId 
+                   ? students.filter(s => s.groupIds?.includes(a.groupId))
+                   : students.filter(s => a.participants?.includes(s.id));
+               
+               const d = new Date(a.date + 'T12:00:00');
+               d.setDate(d.getDate() - 1);
+               const dueDate = d.toISOString().split('T')[0];
+               
+               const txsPayload = participantsList.map(student => ({
+                   description: `Taxa Jogo: ${a.title} - Atleta: ${student.name}`,
+                   amount: a.fee,
+                   type: TransactionType.INCOME,
+                   date: dueDate,
+                   status: PaymentStatus.PENDING,
+                   student_id: student.id,
+                   payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                   external_reference: `game_fee_${activityId}_${student.id}`,
+                   category: 'Taxa de Jogo'
+               }));
+
+               await supabase.from('transactions').insert(txsPayload);
+               fetchData(); // Recarrega para ver os lançamentos
+           }
       }
       setIsLoading(false);
   };
@@ -730,18 +758,39 @@ function App() {
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
 
-      if (t.status === PaymentStatus.PAID && t.paymentDate) {
-          const originalTx = transactions.find(x => x.id === t.id);
+      const originalTx = transactions.find(x => x.id === t.id);
+      
+      if (t.status === PaymentStatus.PAID) {
           if (originalTx && !originalTx.description.includes("(Pago em")) {
-              payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(t.paymentDate)})`;
+              const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
+              payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(pDate)})`;
               
               // Recibo de Pagamento Automático Individual via WhatsApp
               if (originalTx.studentId) {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(t.paymentDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
+                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
                       const sent = await sendZApiMessage(student.guardian.phone, msg);
                       if (sent) alert(`Recibo automático enviado com sucesso para ${student.guardian.name}!`);
+                  }
+              }
+
+              // Lógica de Baixa Automática em Taxas de Jogo
+              if (originalTx.externalReference?.startsWith('game_fee_')) {
+                  const parts = originalTx.externalReference.split('_');
+                  const activityId = parts[2];
+                  const studentId = parts[3];
+                  
+                  if (activityId && studentId) {
+                      const activity = activities.find(act => act.id === activityId);
+                      if (activity) {
+                          const currentFeePayments = activity.feePayments || [];
+                          if (!currentFeePayments.includes(studentId)) {
+                              const nextFeePayments = [...currentFeePayments, studentId];
+                              await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+                              setActivities(prev => prev.map(a => a.id === activityId ? { ...a, feePayments: nextFeePayments } : a));
+                          }
+                      }
                   }
               }
           }
@@ -826,7 +875,7 @@ function App() {
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-md overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
                       <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
                           <img src="/logo.svg" alt="Logo" className="w-16 h-16" />
