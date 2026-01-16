@@ -56,6 +56,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [isLoadingCep, setIsLoadingCep] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoUploadRef = useRef<HTMLInputElement>(null);
 
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
@@ -404,16 +405,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const startCamera = async () => {
     setIsCameraOpen(true);
-    try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if (videoRef.current) videoRef.current.srcObject = stream; } 
+    try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }); if (videoRef.current) videoRef.current.srcObject = stream; } 
     catch (error) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
   };
 
-  const stopCamera = () => { if (videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop()); setIsCameraOpen(false); };
+  const stopCamera = () => { 
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(t => t.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraOpen(false); 
+  };
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
-      if (context) { context.drawImage(videoRef.current, 0, 0, 300, 300); setCapturedImage(canvasRef.current.toDataURL('image/jpeg')); stopCamera(); }
+      if (context) { 
+        context.drawImage(videoRef.current, 0, 0, 300, 300); 
+        setCapturedImage(canvasRef.current.toDataURL('image/jpeg')); 
+        stopCamera(); 
+      }
+    }
+  };
+
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCapturedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -582,7 +605,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                               <UserIcon className="w-3.5 h-3.5 text-gray-400" />
                               <span className="text-gray-600 font-bold">{student.guardian.name}</span>
                               {student.guardian.phone && (
-                                  <a href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-500 text-white p-1 rounded-md ml-auto">
+                                  <a href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-50 text-white p-1 rounded-md ml-auto">
                                       <MessageCircle className="w-3 h-3" />
                                   </a>
                               )}
@@ -766,14 +789,35 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <div className="space-y-4">
                             <h4 className="text-sm font-bold border-b pb-2">Foto</h4>
                             <div className="flex flex-col items-center gap-4">
+                                {/* Hidden canvas for photo capture */}
+                                <canvas ref={canvasRef} className="hidden" width="300" height="300"></canvas>
+                                {/* Hidden input for file upload */}
+                                <input type="file" ref={photoUploadRef} className="hidden" accept="image/*" onChange={handlePhotoFileChange} />
+                                
                                 {isCameraOpen ? (
-                                    <div className="relative w-40 h-40 bg-black rounded-lg overflow-hidden"><video ref={videoRef} autoPlay className="w-full h-full object-cover" /><button type="button" onClick={capturePhoto} className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-2"><div className="w-4 h-4 bg-red-600 rounded-full" /></button></div>
+                                    <div className="relative w-40 h-40 bg-black rounded-lg overflow-hidden">
+                                        <video 
+                                          ref={videoRef} 
+                                          autoPlay 
+                                          playsInline 
+                                          muted 
+                                          className="w-full h-full object-cover" 
+                                        />
+                                        <button type="button" onClick={capturePhoto} className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-2">
+                                          <div className="w-4 h-4 bg-red-600 rounded-full" />
+                                        </button>
+                                    </div>
                                 ) : capturedImage ? (
                                     <div className="relative w-32 h-32 md:w-40 md:h-40"><img src={capturedImage} className="w-full h-full object-cover rounded-xl border-2 border-primary-500" />{!isGuardian && <button type="button" onClick={() => setCapturedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md">✕</button>}</div>
                                 ) : (
                                     <div className="w-32 h-32 md:w-40 md:h-40 bg-gray-100 rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 gap-2"><UserIcon className="w-10 h-10" /><span>Sem foto</span></div>
                                 )}
-                                {!isGuardian && !isCameraOpen && <button type="button" onClick={startCamera} className="flex items-center gap-2 text-sm text-primary-600 font-bold hover:bg-primary-50 px-4 py-2 rounded-lg transition-colors"><Camera className="w-4 h-4" /> Tirar Foto</button>}
+                                {!isGuardian && !isCameraOpen && (
+                                  <div className="flex flex-wrap justify-center gap-2">
+                                    <button type="button" onClick={startCamera} className="flex items-center gap-2 text-xs text-primary-600 font-bold hover:bg-primary-50 px-3 py-1.5 rounded-lg border border-primary-200 transition-colors"><Camera className="w-4 h-4" /> Tirar Foto</button>
+                                    <button type="button" onClick={() => photoUploadRef.current?.click()} className="flex items-center gap-2 text-xs text-gray-600 font-bold hover:bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 transition-colors"><Upload className="w-4 h-4" /> Escolher Foto</button>
+                                  </div>
+                                )}
                                 {isCameraOpen && <button type="button" onClick={stopCamera} className="text-sm text-red-600 font-bold">Cancelar Câmera</button>}
                             </div>
 
