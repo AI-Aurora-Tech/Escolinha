@@ -257,7 +257,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const phone = student.guardian.phone.replace(/\D/g, '');
 
           if (phone) {
-              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
+              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
               
               const sent = await sendZApiMessage(phone, message);
               if (sent) successCount++;
@@ -416,7 +416,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       let message = `Olá *${studentForm.guardian.name}*, somos da *Garotos do Martinica*. ⚽\n\nConstatamos a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: *R$ ${tx.amount.toFixed(2)}*`;
       
-      message += `\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica`;
+      message += `\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA`;
 
       if (finalPaymentLink) {
           message += `\n\nOu, se preferir, pague via Cartão clicando no link abaixo:\n${finalPaymentLink}`;
@@ -445,7 +445,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
       });
       
-      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
+      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
       
       const sent = await sendZApiMessage(phone, message);
       if (sent) alert(`${selectedTxs.length} cobrança(s) enviada(s) com sucesso!`);
