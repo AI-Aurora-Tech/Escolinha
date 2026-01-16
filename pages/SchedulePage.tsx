@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquar
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
+import { createMPPreference } from '../services/mercadoPago';
 
 interface SchedulePageProps {
   activities: Activity[];
@@ -229,11 +230,37 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
           const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
           let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+          
           if (notifyActivity.type === 'GAME') {
               if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
               if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
-              if (notifyActivity.fee) msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
+              
+              if (notifyActivity.fee && notifyActivity.fee > 0) {
+                  msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
+                  msg += `\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
+                  
+                  // Tenta gerar link do Mercado Pago para o aluno
+                  try {
+                      const pref = await createMPPreference({
+                          title: `Taxa Jogo: ${notifyActivity.title}`,
+                          price: notifyActivity.fee,
+                          externalReference: `game_${notifyActivity.id}_${student.id}`,
+                          payer: {
+                              name: student.guardian.name,
+                              email: student.guardian.email || 'financeiro@martinica.com',
+                              phone: student.guardian.phone,
+                              identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') }
+                          }
+                      });
+                      if (pref) {
+                          msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
+                      }
+                  } catch (e) {
+                      console.error("Erro ao gerar link MP no convite", e);
+                  }
+              }
           }
+          
           if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
           msg += `\nContamos com a presença!`;
           
@@ -381,7 +408,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {/* MODAL DE RELATÓRIOS */}
       {showReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Exportar Relatórios</h3>
               <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
@@ -427,7 +454,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Vitórias, Derrotas e Gols</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-yellow-500" />
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
 
                 <button 
