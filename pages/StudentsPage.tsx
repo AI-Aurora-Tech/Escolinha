@@ -63,6 +63,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
+  // Use local time for YYYY-MM-DD comparison to avoid UTC mismatch (e.g. at night)
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    return now.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD
+  }, []);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
         if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
@@ -119,8 +125,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const getStudentOverdueCount = (studentId: string) => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && t.date < todayStr).length;
   };
 
@@ -230,10 +234,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleBatchSendCharges = async () => {
-      const today = new Date().toISOString().split('T')[0];
       const debtors = students.filter(s => {
           if (!s.active) return false;
-          const overdue = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
+          const overdue = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr);
           return overdue.length > 0;
       });
 
@@ -252,7 +255,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       // Execução serial com delay de 10s entre cada aluno
       for (let i = 0; i < debtors.length; i++) {
           const student = debtors[i];
-          const overdueTxs = transactions.filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < today);
+          const overdueTxs = transactions.filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr);
           const totalDebt = overdueTxs.reduce((acc, t) => acc + t.amount, 0);
           const phone = student.guardian.phone.replace(/\D/g, '');
 
@@ -993,7 +996,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div className="flex-1 overflow-y-auto p-4 md:p-6">
                          <div className="space-y-3">
                              {studentTransactions.map(tx => {
-                                 const isOverdue = new Date(tx.date) < new Date() && tx.status === PaymentStatus.PENDING;
+                                 const isOverdue = tx.date < todayStr && tx.status === PaymentStatus.PENDING;
                                  const isSelected = selectedFinanceIds.has(tx.id);
                                  return (
                                      <div key={tx.id} onClick={() => tx.status === PaymentStatus.PENDING && toggleFinanceSelection(tx.id)} className={`group relative flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${tx.status === PaymentStatus.PAID ? 'bg-gray-50 opacity-70' : isSelected ? 'bg-primary-50 border-primary-500 ring-2 ring-primary-500/20' : isOverdue ? 'bg-red-50 border-red-200' : 'bg-white hover:border-primary-300'}`}>
