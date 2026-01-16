@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -454,7 +453,23 @@ function App() {
     };
     const { data, error } = await supabase.from('students').insert([payload]).select().single();
     if (data && !error) {
-        const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id || '', groupIds: studentData.groupIds, active: data.active, documents: data.documents };
+        const studentFromDb = data as any;
+        const newStudent: Student = { 
+            id: studentFromDb.id, 
+            name: studentFromDb.name, 
+            birthDate: studentFromDb.birth_date, 
+            rg: studentFromDb.rg, 
+            cpf: studentFromDb.cpf, 
+            phone: studentFromDb.phone, 
+            medicalCertificateExpiry: studentFromDb.medical_expiry, 
+            photoUrl: studentFromDb.photo_url, 
+            address: studentFromDb.address, 
+            guardian: studentFromDb.guardian, 
+            planId: studentFromDb.plan_id || '', 
+            groupIds: studentData.groupIds, 
+            active: studentFromDb.active, 
+            documents: studentFromDb.documents 
+        };
         setStudents(prev => [...prev, newStudent]);
         
         // Mensagem de Boas-vindas Automática
@@ -525,7 +540,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birth_date, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
