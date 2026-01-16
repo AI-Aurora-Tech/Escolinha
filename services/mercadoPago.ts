@@ -1,4 +1,3 @@
-
 import { supabase } from '../lib/supabaseClient';
 
 // Helper to get token from database
@@ -59,10 +58,15 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
 
     if (rawPhone.length >= 10) {
         const areaCode = rawPhone.substring(0, 2);
-        const number = rawPhone.substring(2);
+        const number = rawPhone.substring(rawPhone.length - 8); // Pega os últimos 8 dígitos
         phoneObject = {
             area_code: areaCode,
             number: number
+        };
+    } else {
+        phoneObject = {
+            area_code: '11',
+            number: '99999999'
         };
     }
 
@@ -74,7 +78,7 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
         email: email,
         identification: {
             type: 'CPF',
-            number: payerData.identification.number.replace(/\D/g, '')
+            number: (payerData.identification?.number || '').replace(/\D/g, '')
         }
     };
     
@@ -105,7 +109,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       body: JSON.stringify({
         items: [
           {
-            title: data.title,
+            title: data.title.substring(0, 250), // Limite de caracteres do MP
             quantity: 1,
             currency_id: 'BRL',
             unit_price: Number(data.price)
@@ -122,7 +126,12 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       })
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+        const errData = await response.json();
+        console.error("MP Preference Error:", errData);
+        return null;
+    }
+    
     const result = await response.json();
     const isSandbox = token.startsWith('TEST');
     const paymentLink = isSandbox ? result.sandbox_init_point : result.init_point;
@@ -146,7 +155,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
 
         const body = {
             transaction_amount: Number(data.price),
-            description: data.title,
+            description: data.title.substring(0, 250),
             payment_method_id: "pix",
             payer: {
                 email: payerPayload.email,
@@ -167,7 +176,11 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             body: JSON.stringify(body)
         });
 
-        if (!response.ok) return null;
+        if (!response.ok) {
+            const errData = await response.json();
+            console.error("MP Pix Error:", errData);
+            return null;
+        }
         const result = await response.json();
 
         if (result.id && result.point_of_interaction) {
@@ -207,7 +220,6 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
             const result = JSON.parse(trimmed);
             return result.status;
         } catch (e) {
-            // Caso receba apenas a string de status sem ser um objeto JSON
             if (['approved', 'pending', 'rejected', 'cancelled'].includes(trimmed.toLowerCase())) {
                 return trimmed.toLowerCase() as any;
             }

@@ -196,7 +196,7 @@ function App() {
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
-                 paymentDate: t.payment_date || t.date, // Fallback caso coluna não exista
+                 paymentDate: t.payment_date || t.date,
                  status: t.status,
                  studentId: t.student_id,
                  planId: t.plan_id,
@@ -455,6 +455,8 @@ function App() {
         const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id || '', groupIds: studentData.groupIds, active: data.active, documents: data.documents };
         setStudents(prev => [...prev, newStudent]);
         await handleGenerateGlobalTuitions();
+    } else if (error) {
+        alert(`Erro ao adicionar aluno: ${error.message || 'Erro desconhecido'}`);
     }
     setIsLoading(false);
   };
@@ -500,6 +502,8 @@ function App() {
           }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
+      } else if (error) {
+          alert(`Erro na importação em lote: ${error.message}`);
       }
       setIsLoading(false);
   };
@@ -513,7 +517,11 @@ function App() {
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
       const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
-      if (!error) { setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); }
+      if (!error) { 
+          setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
+      } else {
+          alert(`Erro ao atualizar aluno: ${error.message}`);
+      }
       setIsLoading(false);
   };
   
@@ -621,7 +629,6 @@ function App() {
       const transactionsToAdd = [];
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
-      // Sanitização de colunas ausentes (category e payment_date)
       const baseDescription = t.category && t.category !== 'Outros' && t.category !== 'Geral' 
           ? `[${t.category}] ${t.description}` 
           : t.description;
@@ -634,7 +641,6 @@ function App() {
               d.setMonth(startDate.getMonth() + i);
               const dueDateStr = d.toISOString().split('T')[0];
               
-              // Se pago no ato da criação, anexa info de pagamento à descrição
               let finalDesc = `${baseDescription} (${i+1}/${monthsCount})`;
               if (i === 0 && t.status === PaymentStatus.PAID && t.paymentDate) {
                   finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
@@ -679,7 +685,7 @@ function App() {
       
       if(error) {
           console.error("Supabase Detailed Error:", error);
-          const errorMessage = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+          const errorMessage = `Erro ${error.code}: ${error.message} ${error.details ? `(${error.details})` : ''}`;
           alert(`Erro ao salvar transação: ${errorMessage}`);
           return;
       }
@@ -692,7 +698,7 @@ function App() {
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
-              paymentDate: newTx.date, // Localmente assumimos data de vencimento como referência
+              paymentDate: newTx.date, 
               status: newTx.status,
               studentId: newTx.student_id,
               planId: newTx.plan_id,
@@ -705,8 +711,7 @@ function App() {
       }
     } catch (err: any) {
         console.error("Critical Exception in handleAddTransaction:", err);
-        const exMsg = err.message || JSON.stringify(err);
-        alert(`Erro inesperado ao registrar transação: ${exMsg}`);
+        alert(`Erro inesperado ao registrar transação. Verifique os dados e tente novamente.`);
     }
   };
   
@@ -716,7 +721,6 @@ function App() {
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
 
-      // Se mudar status para PAID, anexa a data na descrição para persistência visual
       if (t.status === PaymentStatus.PAID && t.paymentDate) {
           const originalTx = transactions.find(x => x.id === t.id);
           if (originalTx && !originalTx.description.includes("(Pago em")) {
@@ -741,7 +745,7 @@ function App() {
       
       if(error) {
           console.error("Supabase Detailed Error (Update):", error);
-          const errorMessage = error.message || JSON.stringify(error);
+          const errorMessage = `Erro ${error.code}: ${error.message} ${error.details ? `(${error.details})` : ''}`;
           alert(`Erro ao atualizar transação: ${errorMessage}`);
       } else {
           setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));

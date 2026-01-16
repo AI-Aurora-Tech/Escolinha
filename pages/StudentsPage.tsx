@@ -5,7 +5,7 @@ import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Sq
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { createPixPayment } from '../services/mercadoPago';
+import { createPixPayment, createMPPreference } from '../services/mercadoPago';
 import { sendZApiMessage } from '../services/zapiService';
 
 interface StudentsPageProps {
@@ -257,7 +257,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const phone = student.guardian.phone.replace(/\D/g, '');
 
           if (phone) {
-              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
+              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
               
               const sent = await sendZApiMessage(phone, message);
               if (sent) successCount++;
@@ -378,16 +378,56 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
       if (!phone) { alert("Telefone indisponível."); return; }
       
+      const cleanCpf = studentForm.guardian.cpf?.replace(/\D/g, '');
+      if (!cleanCpf || cleanCpf.length < 11) {
+          alert("Erro: O CPF do responsável é necessário para gerar o link de pagamento do Mercado Pago. Por favor, complete o cadastro.");
+          return;
+      }
+
+      let finalPaymentLink = tx.paymentLink;
+
+      // Gera um link de pagamento em tempo real caso não exista
+      if (!finalPaymentLink) {
+          try {
+              const preference = await createMPPreference({
+                  title: tx.description,
+                  price: tx.amount,
+                  externalReference: tx.externalReference || crypto.randomUUID(),
+                  payer: {
+                      name: studentForm.guardian.name,
+                      email: studentForm.guardian.email || 'financeiro@martinica.com',
+                      phone: studentForm.guardian.phone,
+                      identification: { type: 'CPF', number: cleanCpf }
+                  }
+              });
+
+              if (preference) {
+                  finalPaymentLink = preference.init_point;
+                  onUpdateTransaction({
+                      id: tx.id,
+                      paymentLink: finalPaymentLink,
+                      preferenceId: preference.id
+                  });
+              }
+          } catch (e) {
+              console.error("Erro ao gerar link MP:", e);
+          }
+      }
+
       let message = `Olá *${studentForm.guardian.name}*, somos da *Garotos do Martinica*. ⚽\n\nConstatamos a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: *R$ ${tx.amount.toFixed(2)}*`;
       
-      if (tx.paymentLink) {
-          message += `\n\nVocê pode pagar via PIX por este link:\n${tx.paymentLink}`;
+      message += `\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica`;
+
+      if (finalPaymentLink) {
+          message += `\n\nOu, se preferir, pague via Cartão clicando no link abaixo:\n${finalPaymentLink}`;
+      } else {
+          message += `\n\n(Aviso: No momento, pagamentos via cartão/link estão instáveis. Por favor, utilize a chave PIX acima)`;
       }
       
       message += `\n\nObrigado!`;
       
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API.");
+      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
   };
 
   const sendBatchSelectedCharges = async () => {
@@ -405,7 +445,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
       });
       
-      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
+      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: Garotos do Martinica\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
       
       const sent = await sendZApiMessage(phone, message);
       if (sent) alert(`${selectedTxs.length} cobrança(s) enviada(s) com sucesso!`);
