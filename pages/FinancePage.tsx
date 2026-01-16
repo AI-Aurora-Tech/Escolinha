@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabaseClient';
@@ -24,6 +25,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const [loadingSettings, setLoadingSettings] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | PaymentStatus | 'PENDING_ONLY' | 'LATE_ONLY'>('ALL');
   const [studentSearchFilter, setStudentSearchFilter] = useState('');
@@ -142,16 +144,41 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTx.description && newTx.description.trim() !== "" && newTx.amount !== undefined && newTx.amount !== null) {
-        onAddTransaction({
+        if (editingTxId) {
+          onUpdateTransaction({
+            id: editingTxId,
             ...newTx,
             amount: Number(newTx.amount),
             paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
-        } as Omit<Transaction, 'id'>);
+          });
+        } else {
+          onAddTransaction({
+              ...newTx,
+              amount: Number(newTx.amount),
+              paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
+          } as Omit<Transaction, 'id'>);
+        }
         setIsModalOpen(false);
+        setEditingTxId(null);
         setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 });
     } else {
         alert("Preencha a descrição e o valor do lançamento.");
     }
+  };
+
+  const handleOpenEditModal = (t: Transaction) => {
+    setEditingTxId(t.id);
+    setNewTx({
+      description: t.description.split(' (Pago em')[0], // Limpa a data concatenada se houver
+      category: t.category || 'Outros',
+      amount: t.amount,
+      type: t.type,
+      date: t.date,
+      status: t.status,
+      paymentMethod: t.paymentMethod || PaymentMethod.CASH,
+      recurrence: 'NONE'
+    });
+    setIsModalOpen(true);
   };
 
   const handleOpenPayModal = (tx: Transaction) => {
@@ -283,7 +310,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
                     <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-                    <button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                    <button onClick={() => { setEditingTxId(null); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
                 </div>
             </div>
             
@@ -350,7 +377,12 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                         </span>
                                     </td>
                                     <td className={`px-6 py-4 text-right font-black whitespace-nowrap ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>{t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-right">{t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-6 h-6" /></button>)}</td>
+                                    <td className="px-6 py-4 text-right">
+                                      <div className="flex justify-end gap-2">
+                                        <button onClick={() => handleOpenEditModal(t)} className="text-primary-600 hover:text-primary-800 p-1.5 hover:bg-primary-50 rounded-lg transition-colors" title="Editar"><Edit className="w-4 h-4" /></button>
+                                        {t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-6 h-6" /></button>)}
+                                      </div>
+                                    </td>
                                 </tr>
                                 )})
                         ) : (<tr><td colSpan={8} className="p-12 text-center text-gray-400 font-medium italic">Nenhum registro no período.</td></tr>)}
@@ -359,7 +391,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
             </div>
         </div>
 
-        {/* LISTA DE TRANSAÇÕES - MOBILE (ELIMINA ROLAGEM HORIZONTAL) */}
+        {/* LISTA DE TRANSAÇÕES - MOBILE */}
         <div className="lg:hidden space-y-4">
             {filteredTransactionsList.length > 0 ? (
                 filteredTransactionsList.map(t => {
@@ -378,7 +410,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                         {student && (<span className="text-[10px] text-primary-600 font-bold flex items-center gap-1"><Users className="w-3 h-3" /> {student.name.split(' ')[0]}</span>)}
                                     </div>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right flex flex-col items-end">
                                     <p className={`font-black text-base ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
                                         {t.type === TransactionType.EXPENSE && '- '}R$ {t.amount.toFixed(2)}
                                     </p>
@@ -388,6 +420,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                     }`}>
                                         {t.status === PaymentStatus.PAID ? 'Pago' : (isLate ? 'Atrasada' : 'Pendente')}
                                     </span>
+                                    <button onClick={() => handleOpenEditModal(t)} className="mt-2 text-primary-600"><Edit className="w-4 h-4" /></button>
                                 </div>
                             </div>
                             
@@ -435,12 +468,12 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
           </div>
       )}
 
-      {/* MODAL NOVO LANÇAMENTO */}
+      {/* MODAL NOVO/EDITAR LANÇAMENTO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 my-8 animate-in zoom-in duration-200">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Novo Lançamento Financeiro</h3>
+                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">{editingTxId ? 'Editar Lançamento' : 'Novo Lançamento'}</h3>
                     <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -471,7 +504,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                  <input type="checkbox" checked={newTx.status === PaymentStatus.PAID} onChange={e => setNewTx({...newTx, status: e.target.checked ? PaymentStatus.PAID : PaymentStatus.PENDING})} className="rounded text-primary-600 w-4 h-4" />
                                  <span className="text-xs font-bold text-gray-700">Já está pago?</span>
                              </label>
-                             {newTx.type === TransactionType.EXPENSE && (
+                             {newTx.type === TransactionType.EXPENSE && !editingTxId && (
                                  <div className="flex flex-col gap-2 pt-2 border-t border-gray-200">
                                      <label className="flex items-center gap-2 cursor-pointer">
                                          <input type="checkbox" checked={newTx.recurrence === 'MONTHLY'} onChange={e => setNewTx({...newTx, recurrence: e.target.checked ? 'MONTHLY' : 'NONE'})} className="rounded text-indigo-600 w-4 h-4" />
@@ -499,7 +532,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div className="flex justify-end gap-3 pt-6 border-t mt-4">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
                         <button type="submit" className={`px-8 py-2.5 text-white font-black rounded-xl shadow-lg transition-all ${newTx.type === TransactionType.INCOME ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-red-600 hover:bg-red-700 shadow-red-100'}`}>
-                            {newTx.type === TransactionType.INCOME ? 'LANÇAR RECEITA' : 'LANÇAR DESPESA'}
+                            {editingTxId ? 'SALVAR ALTERAÇÕES' : (newTx.type === TransactionType.INCOME ? 'LANÇAR RECEITA' : 'LANÇAR DESPESA')}
                         </button>
                     </div>
                 </form>
