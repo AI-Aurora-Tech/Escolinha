@@ -12,6 +12,7 @@ import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentSta
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { checkMPPaymentStatus } from './services/mercadoPago';
+import { sendZApiMessage } from './services/zapiService';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -454,6 +455,14 @@ function App() {
     if (data && !error) {
         const newStudent: Student = { id: data.id, name: data.name, birthDate: data.birth_date, rg: data.rg, cpf: data.cpf, phone: data.phone, medicalCertificateExpiry: data.medical_expiry, photoUrl: data.photo_url, address: data.address, guardian: data.guardian, planId: data.plan_id || '', groupIds: studentData.groupIds, active: data.active, documents: data.documents };
         setStudents(prev => [...prev, newStudent]);
+        
+        // Mensagem de Boas-vindas Automática
+        if (studentData.guardian.phone) {
+            const msg = `Seja bem-vindo(a) à Garotos do Martinica! ⚽\n\nOlá *${studentData.guardian.name}*, confirmamos a matrícula do(a) atleta *${studentData.name}*.\n\nFicamos felizes em tê-los conosco! Utilize o CPF do responsável para acessar o Portal do Aluno em nosso site.\n\nQualquer dúvida, estamos à disposição.`;
+            const sent = await sendZApiMessage(studentData.guardian.phone, msg);
+            if (sent) alert(`Mensagem de boas-vindas enviada para ${studentData.guardian.name}!`);
+        }
+
         await handleGenerateGlobalTuitions();
     } else if (error) {
         alert(`Erro ao adicionar aluno: ${error.message || 'Erro desconhecido'}`);
@@ -725,6 +734,16 @@ function App() {
           const originalTx = transactions.find(x => x.id === t.id);
           if (originalTx && !originalTx.description.includes("(Pago em")) {
               payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(t.paymentDate)})`;
+              
+              // Recibo de Pagamento Automático Individual via WhatsApp
+              if (originalTx.studentId) {
+                  const student = students.find(s => s.id === originalTx.studentId);
+                  if (student && student.guardian.phone) {
+                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(t.paymentDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
+                      const sent = await sendZApiMessage(student.guardian.phone, msg);
+                      if (sent) alert(`Recibo automático enviado com sucesso para ${student.guardian.name}!`);
+                  }
+              }
           }
       } else if (t.description !== undefined) {
           payload.description = t.description;
