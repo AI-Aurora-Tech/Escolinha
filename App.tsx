@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -193,7 +194,7 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
-                 category: 'Geral', 
+                 category: t.category || 'Geral', 
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
@@ -524,7 +525,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birth_date, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -573,63 +574,152 @@ function App() {
       } else { payloadList.push({ ...basePayload, date: a.date }); }
       
       const { data, error } = await supabase.from('activities').insert(payloadList).select();
-      if(data && !error) {
-           const mapped = data.map((newItem: any) => ({ ...a, id: newItem.id, date: newItem.date }));
+      if(data && data.length > 0 && !error) {
+           const mapped = data.map((newItem: any) => ({ 
+               id: newItem.id, 
+               title: newItem.title, 
+               type: newItem.activity_type, 
+               fee: newItem.fee, 
+               location: newItem.location, 
+               groupId: newItem.group_id, 
+               participants: newItem.participants, 
+               date: newItem.date, 
+               startTime: newItem.start_time, 
+               endTime: newItem.end_time, 
+               attendance: newItem.attendance || [], 
+               feePayments: newItem.fee_payments || [] 
+           }));
            setActivities(prev => [...prev, ...mapped]);
            
-           // Se for Jogo com Taxa, lança as transações automáticas
+           // Se for Jogo com Taxa, lança as transações automáticas para CADA instância criada
            if (a.type === 'GAME' && a.fee > 0) {
-               const activityId = data[0].id;
+               const txsPayload: any[] = [];
                const participantsList = a.groupId 
                    ? students.filter(s => s.groupIds?.includes(a.groupId))
                    : students.filter(s => a.participants?.includes(s.id));
                
-               const d = new Date(a.date + 'T12:00:00');
-               d.setDate(d.getDate() - 1);
-               const dueDate = d.toISOString().split('T')[0];
-               
-               const txsPayload = participantsList.map(student => ({
-                   description: `Taxa Jogo: ${a.title} - Atleta: ${student.name}`,
-                   amount: a.fee,
-                   type: TransactionType.INCOME,
-                   date: dueDate,
-                   status: PaymentStatus.PENDING,
-                   student_id: student.id,
-                   payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                   external_reference: `game_fee_${activityId}_${student.id}`,
-                   category: 'Taxa de Jogo'
-               }));
+               data.forEach((insertedAct: any) => {
+                   const d = new Date(insertedAct.date + 'T12:00:00');
+                   d.setDate(d.getDate() - 1);
+                   const dueDate = d.toISOString().split('T')[0];
+                   
+                   participantsList.forEach(student => {
+                       txsPayload.push({
+                           description: `Taxa Jogo: ${insertedAct.title} - Atleta: ${student.name}`,
+                           amount: a.fee,
+                           type: TransactionType.INCOME,
+                           date: dueDate,
+                           status: PaymentStatus.PENDING,
+                           student_id: student.id,
+                           payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                           external_reference: `game_fee_${insertedAct.id}_${student.id}`,
+                           category: 'Taxa de Jogo'
+                       });
+                   });
+               });
 
-               await supabase.from('transactions').insert(txsPayload);
-               fetchData(); // Recarrega para ver os lançamentos
+               if (txsPayload.length > 0) {
+                   await supabase.from('transactions').insert(txsPayload);
+                   await fetchData(); // Sincroniza financeiro
+               }
            }
       }
       setIsLoading(false);
   };
   
+  // Update Activity: handles potential future recurrences as well
   const handleUpdateActivity = async (a: Activity) => { 
       const original = activities.find(act => act.id === a.id);
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.feePayments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      // Cast basePayload to any to bypass Activity interface constraints during DB mapping
+      const basePayload: any = { 
+          title: a.title, 
+          activity_type: a.type, 
+          fee: a.fee || 0, 
+          location: a.location || '', 
+          group_id: a.groupId || null, 
+          participants: a.participants || [], 
+          date: a.date, 
+          start_time: a.startTime, 
+          end_time: a.endTime, 
+          recurrence: a.recurrence, 
+          attendance: a.attendance || [], 
+          fee_payments: a.feePayments || [], 
+          presentation_time: a.presentationTime, 
+          opponent: a.opponent, 
+          home_score: a.homeScore ?? 0, 
+          away_score: a.awayScore ?? 0, 
+          scorers: a.scorers || [] 
+      };
+      
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
       if (error) return;
+
       if (original && original.recurrence === 'weekly') {
-          let query = supabase.from('activities').select('*').eq('recurrence', 'weekly').eq('title', original.title).eq('start_time', original.startTime).gt('date', original.date);
+          let query = supabase.from('activities').select('*').eq('recurrence', 'weekly').eq('title', original.title).eq('start_time', (original as any).startTime || original.startTime).gt('date', original.date);
            if (original.groupId) query = query.eq('group_id', original.groupId); else query = query.is('group_id', null);
            const { data: futureEvents } = await query;
+           
            if (futureEvents && futureEvents.length > 0) {
+               // Calculate time difference to shift future event dates accordingly
                const dayDiff = Math.round((new Date(a.date).getTime() - new Date(original.date).getTime()) / (1000 * 3600 * 24));
                const updates = futureEvents.map((evt: any) => {
                    let nextDateStr = evt.date;
-                   if (dayDiff !== 0) { const evtD = new Date(evt.date); evtD.setDate(evtD.getDate() + dayDiff); nextDateStr = evtD.toISOString().split('T')[0]; }
-                   return { id: evt.id, title: basePayload.title, activity_type: basePayload.activity_type, fee: basePayload.fee, location: basePayload.location, group_id: basePayload.group_id, participants: basePayload.participants, start_time: basePayload.start_time, end_time: basePayload.end_time, presentation_time: basePayload.presentation_time, opponent: basePayload.opponent, recurrence: basePayload.recurrence, date: nextDateStr, attendance: evt.attendance, fee_payments: evt.fee_payments, home_score: evt.home_score, away_score: evt.away_score, scorers: evt.scorers };
+                   if (dayDiff !== 0) { 
+                       const evtD = new Date(evt.date); 
+                       evtD.setDate(evtD.getDate() + dayDiff); 
+                       nextDateStr = evtD.toISOString().split('T')[0]; 
+                   }
+                   // Explicitly cast the returned object to any to resolve property name mismatches with Activity interface
+                   return { 
+                       id: evt.id, 
+                       title: basePayload.title, 
+                       activity_type: basePayload.activity_type, 
+                       fee: basePayload.fee, 
+                       location: basePayload.location, 
+                       group_id: basePayload.group_id, 
+                       participants: basePayload.participants, 
+                       start_time: basePayload.start_time, 
+                       end_time: basePayload.end_time, 
+                       presentation_time: basePayload.presentation_time, 
+                       opponent: basePayload.opponent, 
+                       recurrence: basePayload.recurrence, 
+                       date: nextDateStr, 
+                       attendance: evt.attendance, 
+                       fee_payments: evt.fee_payments, 
+                       home_score: evt.home_score, 
+                       away_score: evt.away_score, 
+                       scorers: evt.scorers 
+                   } as any;
                });
+               
                await supabase.from('activities').upsert(updates);
                const updatesMap = new Map(updates.map((u: any) => [u.id, u]));
+               
                setActivities(prev => prev.map(act => {
                    if (act.id === a.id) return a; 
                    if (updatesMap.has(act.id)) {
                        const up = updatesMap.get(act.id) as any;
-                       return { ...act, title: up.title, type: up.activity_type, fee: up.fee, location: up.location, startTime: up.start_time, endTime: up.end_time, presentationTime: up.presentation_time, opponent: up.opponent, recurrence: up.recurrence, groupId: up.group_id, participants: up.participants, date: up.date, homeScore: up.home_score, awayScore: up.away_score, scorers: up.scorers };
+                       // Remap DB snake_case fields back to Activity camelCase properties
+                       return { 
+                           ...act, 
+                           title: up.title, 
+                           type: up.activity_type, 
+                           fee: up.fee, 
+                           location: up.location, 
+                           startTime: up.start_time, 
+                           endTime: up.end_time, 
+                           presentationTime: up.presentation_time, 
+                           opponent: up.opponent, 
+                           recurrence: up.recurrence, 
+                           groupId: up.group_id, 
+                           participants: up.participants, 
+                           date: up.date, 
+                           homeScore: up.home_score, 
+                           awayScore: up.away_score, 
+                           scorers: up.scorers,
+                           attendance: up.attendance || [],
+                           feePayments: up.fee_payments || []
+                       } as Activity;
                    }
                    return act;
                }));
@@ -694,7 +784,8 @@ function App() {
                   payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
                   payment_link: null,
                   external_reference: null,
-                  preference_id: null
+                  preference_id: null,
+                  category: t.category || 'Geral'
               });
           }
       } else {
@@ -714,7 +805,8 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preferenceId)
+              preference_id: safeVal(t.preferenceId),
+              category: t.category || 'Geral'
           });
       }
 
@@ -731,11 +823,11 @@ function App() {
           const mapped = data.map((newTx: any) => ({
               id: newTx.id,
               description: newTx.description,
-              category: 'Geral',
+              category: newTx.category || 'Geral',
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
-              paymentDate: newTx.date, 
+              paymentDate: newTx.payment_date || newTx.date, 
               status: newTx.status,
               studentId: newTx.student_id,
               planId: newTx.plan_id,
@@ -764,6 +856,7 @@ function App() {
           if (originalTx && !originalTx.description.includes("(Pago em")) {
               const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
               payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(pDate)})`;
+              payload.payment_date = pDate;
               
               // Recibo de Pagamento Automático Individual via WhatsApp
               if (originalTx.studentId) {
@@ -808,6 +901,7 @@ function App() {
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
+      if (t.category !== undefined) payload.category = t.category;
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
