@@ -140,7 +140,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       doc.setFontSize(10);
       doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
-      const rows = students.filter(s => s.active).map(s => {
+      // Ordena alfabeticamente os atletas ativos para o relatório
+      const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
+
+      const rows = sortedStudents.map(s => {
           const rel = training.filter(a => (a.groupId && (s.groupIds || []).includes(a.groupId)) || a.participants?.includes(s.id));
           if (!rel.length) return null;
           const pres = rel.filter(a => a.attendance.includes(s.id)).length;
@@ -181,19 +184,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const generateStudentStatsReport = () => {
     const games = getFilteredActivitiesForReport('GAME'); if (!games.length) return alert("Nenhum jogo no período.");
     const doc = new jsPDF();
-    doc.text('Estatísticas dos Atletas (Artilharia)', 14, 20);
+    doc.text('Estatísticas dos Atletas (Alfabética)', 14, 20);
     doc.setFontSize(10);
     doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
-    const stats = students.filter(s => s.active).map(s => {
+    // Ordena alfabeticamente os atletas ativos para o relatório de estatísticas
+    const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
+
+    const stats = sortedStudents.map(s => {
         const goals = games.reduce((acc, g) => acc + (g.scorers?.filter(id => id === s.id).length || 0), 0);
         const matches = games.filter(g => g.attendance.includes(s.id)).length;
         if (goals === 0 && matches === 0) return null;
         return [s.name, matches, goals];
-    }).filter(Boolean).sort((a: any, b: any) => b[2] - a[2]);
+    }).filter(Boolean);
 
     autoTable(doc, { startY: 35, head: [['Atleta', 'Jogos Disputados', 'Gols Marcados']], body: stats as any[], headStyles: { fillColor: [249, 115, 22] } });
-    doc.save(`Artilharia_Atletas_${reportStartDate}.pdf`);
+    doc.save(`Estatisticas_Alfabeticas_${reportStartDate}.pdf`);
   };
 
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
@@ -404,7 +410,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors"><CheckSquare className="w-5 h-5 text-orange-600" /></div>
                     <div>
                       <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência nos Treinos</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas (Alfabética)</span>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
@@ -432,7 +438,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div>
                     <div>
                       <span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações (Alfabética)</span>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />

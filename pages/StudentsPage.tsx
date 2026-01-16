@@ -467,19 +467,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const toggleCategory = (cat: string) => { setSelectedCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]); };
 
-  const filteredStudents = students.filter(s => {
-    const ms = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.guardian.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const ma = true;
-    let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
-    let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
-    let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
-    let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
-    let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
-    let mfinOk2 = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
-    let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
-    let mplan = planFilter === 'ALL' || s.planId === planFilter;
-    return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
-  });
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const ms = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.guardian.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const ma = true;
+      let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
+      let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
+      let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
+      let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
+      let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
+      let mfinOk2 = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
+      let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
+      let mplan = planFilter === 'ALL' || s.planId === planFilter;
+      return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, searchTerm, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
 
   const startCamera = async () => {
     setIsCameraOpen(true);
@@ -673,7 +675,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 {isCategoryDropdownOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100"><div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>{availableCategories.map(cat => (<label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors"><input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" /><span>{cat}</span></label>))}{selectedCategories.length > 0 && (<button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>)}</div>)}
             </div>
             <div className="lg:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
-            <div className="lg:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
+            <div className="lg:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
             <div className="lg:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
             <div className="lg:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
         </div>
@@ -1095,15 +1097,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         </div>
 
                         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                            <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700"><Trophy className="w-4 h-4 text-primary-600" /> Histórico de Atividades</div>
-                            <div className="divide-y divide-gray-100">
-                                {filteredStudentActivities.map(act => {
+                            <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700"><History className="w-4 h-4 text-primary-600" /> Histórico de Atividades</div>
+                            
+                            {/* SEÇÃO DE JOGOS */}
+                            <div className="px-4 py-2 bg-yellow-50 text-yellow-800 text-[10px] font-black uppercase border-b border-yellow-100 flex items-center gap-2">
+                                <Trophy className="w-3 h-3" /> Jogos
+                            </div>
+                            <div className="divide-y divide-gray-100 border-b">
+                                {filteredStudentActivities.filter(a => a.type === 'GAME').map(act => {
                                     const isPresent = (act.attendance || []).includes(editingId!);
                                     const goals = act.scorers?.filter(s => s === editingId).length || 0;
                                     return (
                                         <div key={act.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                                             <div className="flex items-center gap-4">
-                                                <div className={`p-2 rounded-lg ${act.type === 'GAME' ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'}`}>{act.type === 'GAME' ? <Trophy className="w-5 h-5" /> : <Zap className="w-5 h-5" />}</div>
+                                                <div className="p-2 rounded-lg bg-yellow-100 text-yellow-600"><Trophy className="w-5 h-5" /></div>
                                                 <div><p className="font-bold text-sm text-gray-800">{act.title}</p><p className="text-xs text-gray-400">{formatDate(act.date)} • {act.startTime}</p></div>
                                             </div>
                                             <div className="flex items-center gap-4">
@@ -1113,7 +1120,33 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         </div>
                                     );
                                 })}
-                                {filteredStudentActivities.length === 0 && <div className="p-12 text-center text-gray-400"><History className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>Nenhuma atividade registrada para este período.</p></div>}
+                                {filteredStudentActivities.filter(a => a.type === 'GAME').length === 0 && (
+                                    <div className="p-8 text-center text-gray-400 text-xs italic">Nenhum jogo registrado neste período.</div>
+                                )}
+                            </div>
+
+                            {/* SEÇÃO DE TREINOS */}
+                            <div className="px-4 py-2 bg-blue-50 text-blue-800 text-[10px] font-black uppercase border-b border-blue-100 flex items-center gap-2">
+                                <Zap className="w-3 h-3" /> Treinos
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                                {filteredStudentActivities.filter(a => a.type !== 'GAME').map(act => {
+                                    const isPresent = (act.attendance || []).includes(editingId!);
+                                    return (
+                                        <div key={act.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-2 rounded-lg bg-blue-100 text-blue-600"><Zap className="w-5 h-5" /></div>
+                                                <div><p className="font-bold text-sm text-gray-800">{act.title}</p><p className="text-xs text-gray-400">{formatDate(act.date)} • {act.startTime}</p></div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter border ${isPresent ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{isPresent ? 'Presença' : 'Falta'}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {filteredStudentActivities.filter(a => a.type !== 'GAME').length === 0 && (
+                                    <div className="p-8 text-center text-gray-400 text-xs italic">Nenhum treino registrado neste período.</div>
+                                )}
                             </div>
                         </div>
                     </div>
