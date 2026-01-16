@@ -193,12 +193,12 @@ function App() {
              setTransactions(transactionsData.map((t: any) => ({
                  id: t.id,
                  description: t.description,
-                 // PGRST204 fix: try to extract category from description if column is missing
+                 // FIX PGRST204: Extrai categoria e data de pagamento da descrição se as colunas estiverem ausentes
                  category: t.category || (t.description.startsWith('[') ? t.description.split(']')[0].substring(1) : 'Geral'), 
                  amount: t.amount,
                  type: t.type,
                  date: t.date,
-                 paymentDate: t.payment_date || t.date,
+                 paymentDate: t.payment_date || (t.description.includes('(Pago em ') ? t.description.split('(Pago em ')[1].replace(')', '') : undefined),
                  status: t.status,
                  studentId: t.student_id,
                  planId: t.plan_id,
@@ -388,7 +388,7 @@ function App() {
                   plan_id: plan.id,
                   payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                   external_reference: externalReference
-                  // PGRST204 fix: category column removed from insert payload
+                  // FIX PGRST204: category e payment_date removidos dos payloads
               });
           }
       }
@@ -403,7 +403,7 @@ function App() {
                   amount: t.amount, 
                   type: t.type, 
                   date: t.date, 
-                  paymentDate: t.date,
+                  paymentDate: undefined,
                   status: t.status, 
                   studentId: t.student_id, 
                   planId: t.plan_id, 
@@ -630,7 +630,7 @@ function App() {
                            student_id: student.id,
                            payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                            external_reference: `game_fee_${insertedAct.id}_${student.id}`
-                           // PGRST204 fix: category column removed
+                           // FIX PGRST204: category e payment_date removidos dos payloads
                        });
                    });
                });
@@ -802,7 +802,7 @@ function App() {
                   payment_link: null,
                   external_reference: null,
                   preference_id: null
-                  // PGRST204 fix: category column removed
+                  // FIX PGRST204: category e payment_date removidos dos payloads
               });
           }
       } else {
@@ -822,8 +822,8 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preferenceId)
-              // PGRST204 fix: category column removed
+              preference_id: safeVal(t.preference_id)
+              // FIX PGRST204: category e payment_date removidos dos payloads
           });
       }
 
@@ -844,7 +844,7 @@ function App() {
               amount: newTx.amount,
               type: newTx.type,
               date: newTx.date,
-              paymentDate: newTx.payment_date || newTx.date, 
+              paymentDate: (newTx.description.includes('(Pago em ') ? newTx.description.split('(Pago em ')[1].replace(')', '') : undefined),
               status: newTx.status,
               studentId: newTx.student_id,
               planId: newTx.plan_id,
@@ -873,7 +873,7 @@ function App() {
           if (originalTx && !originalTx.description.includes("(Pago em")) {
               const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
               payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(pDate)})`;
-              payload.payment_date = pDate;
+              // FIX PGRST204: payment_date removido do payload de atualização
               
               // Recibo de Pagamento Automático Individual via WhatsApp
               if (originalTx.studentId) {
@@ -918,7 +918,7 @@ function App() {
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
-      // PGRST204 fix: category column removed from update payload
+      // FIX PGRST204: category removido do payload de atualização
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
