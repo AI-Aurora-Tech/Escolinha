@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabaseClient';
 
 interface FinancePageProps {
@@ -85,7 +86,6 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   // --- LÓGICA DE FILTRAGEM ---
   
-  // Base de transações no período (usada para os cards)
   const transactionsInPeriod = transactions.filter(t => {
       const matchesDate = t.date >= startDate && t.date <= endDate;
       let matchesSearch = true;
@@ -100,7 +100,6 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       return matchesDate && matchesSearch;
   });
 
-  // Lista final exibida na tabela (aplica filtros de tipo e status)
   const filteredTransactionsList = transactionsInPeriod.filter(t => {
       const matchesType = filter === 'ALL' || t.type === filter;
       
@@ -118,7 +117,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       return matchesType && matchesStatus;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // --- CÁLCULOS TOTAIS DOS CARDS (OBEDECEM AO PERÍODO FILTRADO) ---
+  // --- CÁLCULOS TOTAIS DOS CARDS ---
   const totalIncome = transactionsInPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
     .reduce((acc, curr) => acc + curr.amount, 0);
@@ -169,7 +168,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const handleOpenEditModal = (t: Transaction) => {
     setEditingTxId(t.id);
     setNewTx({
-      description: t.description.split(' (Pago em')[0], // Limpa a data concatenada se houver
+      description: t.description.split(' (Pago em')[0],
       category: t.category || 'Outros',
       amount: t.amount,
       type: t.type,
@@ -218,6 +217,56 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
           case PaymentMethod.OTHER: return 'Outro';
           default: return '-';
       }
+  };
+
+  // --- RELATÓRIOS ---
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Relatório Financeiro - Garotos do Martinica", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Período: ${formatDate(startDate)} até ${formatDate(endDate)}`, 14, 28);
+    doc.text(`Tipo de Lançamento: ${filter === 'ALL' ? 'Todos' : filter === 'INCOME' ? 'Receitas' : 'Despesas'}`, 14, 34);
+    
+    // Resumo de Totais no Cabeçalho do PDF
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Recebido: R$ ${totalIncome.toFixed(2)}`, 14, 44);
+    doc.text(`Total Pago: R$ ${totalExpense.toFixed(2)}`, 80, 44);
+    doc.text(`Saldo Realizado: R$ ${realizedBalance.toFixed(2)}`, 150, 44);
+    doc.setFont("helvetica", "normal");
+
+    const body = filteredTransactionsList.map(t => [
+      formatDate(t.date),
+      t.description,
+      t.category || 'Geral',
+      t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
+      t.status === PaymentStatus.PAID ? 'Pago' : (new Date(t.date) < new Date() ? 'Atrasado' : 'Pendente'),
+      `R$ ${t.amount.toFixed(2)}`
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Vencimento', 'Descrição', 'Categoria', 'Tipo', 'Status', 'Valor']],
+      body: body,
+      headStyles: { fillColor: [249, 115, 22] }
+    });
+
+    doc.save(`Relatorio_Financeiro_Martinica_${startDate}_${endDate}.pdf`);
+  };
+
+  const handleExportExcel = () => {
+    const data = filteredTransactionsList.map(t => ({
+      'Vencimento': formatDate(t.date),
+      'Descrição': t.description,
+      'Categoria': t.category || 'Geral',
+      'Tipo': t.type === TransactionType.INCOME ? 'Receita' : 'Despesa',
+      'Status': t.status === PaymentStatus.PAID ? 'Pago' : (new Date(t.date) < new Date() ? 'Atrasado' : 'Pendente'),
+      'Valor (R$)': t.amount
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Financeiro");
+    XLSX.writeFile(wb, `Financeiro_Martinica_${startDate}_${endDate}.xlsx`);
   };
 
   return (
@@ -310,7 +359,11 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
                     <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-full sm:w-auto justify-center"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600 w-full sm:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-                    <button onClick={() => { setEditingTxId(null); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                        <button onClick={handleExportExcel} className="p-2 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-100 transition-colors" title="Exportar Excel"><FileSpreadsheet className="w-5 h-5" /></button>
+                        <button onClick={handleExportPDF} className="p-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors" title="Gerar Relatório PDF"><FileText className="w-5 h-5" /></button>
+                        <button onClick={() => { setEditingTxId(null); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                    </div>
                 </div>
             </div>
             
