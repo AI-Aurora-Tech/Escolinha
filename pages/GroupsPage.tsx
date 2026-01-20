@@ -132,14 +132,15 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   };
 
   const filteredStudents = students.filter(s => {
+      // CRITICAL: Apenas alunos ativos aparecem para serem inclusos nos grupos
+      if (!s.active) return false;
+
       const age = calculateAge(s.birthDate).toString();
       const searchLower = searchTerm.toLowerCase();
       const matchesName = s.name.toLowerCase().includes(searchLower);
       const matchesAge = age === searchLower;
       return matchesName || matchesAge;
   }).sort((a, b) => {
-      // FIX: Removida a lógica que movia selecionados para cima. 
-      // Agora mantém apenas a ordem alfabética.
       return a.name.localeCompare(b.name);
   });
 
