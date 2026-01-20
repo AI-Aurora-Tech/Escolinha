@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Group, Student } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -20,6 +20,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
   
   const initialFormState = {
     name: ''
@@ -44,6 +45,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     setForm(initialFormState);
     setSelectedStudentIds(new Set()); 
     setSearchTerm('');
+    setMemberFilter('ALL');
     setIsModalOpen(true);
   };
 
@@ -60,6 +62,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
 
     setSelectedStudentIds(new Set(currentStudents));
     setSearchTerm('');
+    setMemberFilter('ALL');
     setIsModalOpen(true);
   };
 
@@ -134,6 +137,11 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   const filteredStudents = students.filter(s => {
       // CRITICAL: Apenas alunos ativos aparecem para serem inclusos nos grupos
       if (!s.active) return false;
+
+      // Filtro de Membros
+      const isSelected = selectedStudentIds.has(s.id);
+      if (memberFilter === 'MEMBERS' && !isSelected) return false;
+      if (memberFilter === 'NON_MEMBERS' && isSelected) return false;
 
       const age = calculateAge(s.birthDate).toString();
       const searchLower = searchTerm.toLowerCase();
@@ -216,7 +224,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                         </div>
                     </div>
 
-                    <div className="flex flex-col h-[400px]">
+                    <div className="flex flex-col h-[450px]">
                         <h4 className="font-semibold text-gray-700 flex items-center gap-2 mb-3">
                             <Users className="w-4 h-4" /> Incluir Atletas
                         </h4>
@@ -225,40 +233,86 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                             <input 
                                 type="text" 
-                                placeholder="Buscar por nome ou idade (ex: 10)..." 
-                                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                                placeholder="Buscar por nome ou idade..." 
+                                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm shadow-sm"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
 
-                        <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50">
+                        {/* Filtro de Membros estilo Tabs/Pills */}
+                        <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-3">
+                            <button 
+                                type="button"
+                                onClick={() => setMemberFilter('ALL')}
+                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'ALL' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Todos
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setMemberFilter('MEMBERS')}
+                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'MEMBERS' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                No Grupo
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setMemberFilter('NON_MEMBERS')}
+                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'NON_MEMBERS' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Disponíveis
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 shadow-inner">
                             {filteredStudents.length > 0 ? (
                                 <div className="divide-y divide-gray-200">
                                     {filteredStudents.map(student => {
                                         const isSelected = selectedStudentIds.has(student.id);
+                                        const isMemberOfCurrentGroup = editingId && student.groupIds?.includes(editingId);
                                         const age = calculateAge(student.birthDate);
-                                        const studentGroupNames = student.groupIds ? student.groupIds.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') : '';
+                                        
+                                        // Mapeia nomes dos grupos destacando o atual
+                                        const groupNames = (student.groupIds || []).map(gid => {
+                                            const gName = groups.find(g => g.id === gid)?.name;
+                                            if (editingId && gid === editingId) return { name: gName, active: true };
+                                            return { name: gName, active: false };
+                                        }).filter(g => g.name);
 
                                         return (
                                             <div 
                                                 key={student.id} 
-                                                className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white transition-colors ${isSelected ? 'bg-primary-50' : ''}`}
+                                                className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white transition-colors border-l-4 ${
+                                                    isSelected ? 'bg-primary-50' : ''
+                                                } ${
+                                                    isMemberOfCurrentGroup ? 'border-green-500 bg-green-50/30' : 'border-transparent'
+                                                }`}
                                                 onClick={() => toggleStudent(student.id)}
                                             >
                                                 <div className={`text-primary-600`}>
                                                     {isSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-gray-300" />}
                                                 </div>
-                                                <img src={student.photoUrl} alt="" className="w-8 h-8 rounded-full bg-gray-200 object-cover" />
+                                                <img src={student.photoUrl} alt="" className="w-8 h-8 rounded-full bg-gray-200 object-cover shadow-sm" />
                                                 <div className="flex-1 min-w-0">
-                                                    <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>
-                                                        {student.name}
-                                                    </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className={`text-sm font-bold truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>
+                                                            {student.name}
+                                                        </p>
+                                                        {isMemberOfCurrentGroup && (
+                                                            <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">Membro</span>
+                                                        )}
+                                                    </div>
                                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                                         <span>{age} anos</span>
-                                                        {studentGroupNames && (
-                                                            <span className="truncate max-w-[150px] text-gray-400" title={studentGroupNames}>
-                                                                • {studentGroupNames}
+                                                        {groupNames.length > 0 && (
+                                                            <span className="truncate max-w-[150px] text-gray-400">
+                                                                • {groupNames.map((g, idx) => (
+                                                                    <React.Fragment key={idx}>
+                                                                        <span className={g.active ? 'text-green-600 font-bold' : ''}>{g.name}</span>
+                                                                        {idx < groupNames.length - 1 ? ', ' : ''}
+                                                                    </React.Fragment>
+                                                                ))}
                                                             </span>
                                                         )}
                                                     </div>
@@ -268,13 +322,15 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                     })}
                                 </div>
                             ) : (
-                                <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4 text-center">
-                                    Nenhum aluno encontrado para "{searchTerm}"
+                                <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4 text-center flex-col gap-2">
+                                    <Search className="w-8 h-8 opacity-20" />
+                                    <p>Nenhum aluno encontrado para os critérios selecionados.</p>
                                 </div>
                             )}
                         </div>
-                        <div className="mt-2 text-right text-xs text-gray-500">
-                            {selectedStudentIds.size} alunos selecionados
+                        <div className="mt-2 text-right text-xs text-gray-500 flex justify-between items-center px-1">
+                            <span className="bg-gray-100 px-2 py-0.5 rounded-full font-medium">Exibindo {filteredStudents.length} atletas</span>
+                            <span className="font-bold text-primary-600">{selectedStudentIds.size} selecionados</span>
                         </div>
                     </div>
 
