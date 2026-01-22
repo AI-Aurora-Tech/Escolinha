@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal } from 'lucide-react';
@@ -218,6 +219,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       if (notifyCurrentIndex >= notifyQueue.length) { setNotifyIsRunning(false); setNotifyLogs(prev => ["✅ Todos os comunicados enviados!", ...prev]); return; }
       
       if (notifyCountdown > 0) {
+          // Fix: Call setNotifyCountdown instead of non-existent setCountdown
           notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
       } else {
           processNotifyItem(notifyQueue[notifyCurrentIndex]);
@@ -255,8 +257,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       if (phone) {
           const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
           const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
-          let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+          let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
           
+          // Lógica de Horário solicitada: Apenas início para Jogo, intervalo para Treino
+          if (notifyActivity.type === 'GAME') {
+              msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`;
+          } else {
+              msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+          }
+
           if (notifyActivity.type === 'GAME') {
               if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
               if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
@@ -265,7 +274,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
                   msg += `\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
                   
-                  // Tenta gerar link do Mercado Pago para o aluno
                   try {
                       const pref = await createMPPreference({
                           title: `Taxa Jogo: ${notifyActivity.title}`,
@@ -288,7 +296,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           }
           
           if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-          msg += `\nContamos com a presença!`;
+          
+          // Pedido de confirmação solicitado para mensagens de jogo
+          if (notifyActivity.type === 'GAME') {
+              msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+          }
+
+          msg += `\n\nContamos com a presença!`;
           
           const sent = await sendZApiMessage(phone, msg);
           setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
