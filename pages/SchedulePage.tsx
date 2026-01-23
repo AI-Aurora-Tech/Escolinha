@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
@@ -51,6 +50,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [reportEndDate, setReportEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+  const [reportSelectedGameId, setReportSelectedGameId] = useState<string>('ALL');
 
   // --- NOTIFICATION STATE ---
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -158,14 +158,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   };
 
   const generateGameAttendanceAndPaymentReport = () => {
-    const games = getFilteredActivitiesForReport('GAME');
-    if (!games.length) return alert("Nenhum jogo no período.");
+    const games = reportSelectedGameId === 'ALL' 
+      ? getFilteredActivitiesForReport('GAME')
+      : activities.filter(a => a.id === reportSelectedGameId);
+
+    if (!games.length) return alert("Nenhum jogo encontrado para os critérios selecionados.");
     
     const doc = new jsPDF();
     doc.setFontSize(14);
     doc.text('Presença e Pagamento de Taxas - JOGOS', 14, 20);
     doc.setFontSize(10);
-    doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+    const subtitle = reportSelectedGameId === 'ALL' 
+      ? `Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`
+      : `Jogo Selecionado: ${games[0].title} (${formatFriendlyDate(games[0].date)})`;
+    doc.text(subtitle, 14, 28);
 
     const tableData: any[] = [];
 
@@ -174,7 +180,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       attendees.forEach(student => {
         const isPresent = game.attendance.includes(student.id);
         const isPaid = game.feePayments?.includes(student.id);
-        const feeValue = game.fee && game.fee > 0 ? `R$ ${game.fee.toFixed(2)}` : 'N/A';
 
         tableData.push([
           formatDate(game.date),
@@ -205,6 +210,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     });
 
     doc.save(`Relatorio_Taxas_Jogos_${reportStartDate}.pdf`);
+  };
+
+  const formatFriendlyDate = (dateString: string) => {
+    if (!dateString) return '';
+    const parts = dateString.split('-');
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
   };
 
   const generateGameGeneralReport = () => {
@@ -356,6 +367,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setNotifyCurrentIndex(prev => prev + 1); 
       setNotifyCountdown(10);
   };
+
+  const gamesForSelect = activities.filter(a => 
+    a.type === 'GAME' && 
+    a.date >= reportStartDate && 
+    a.date <= reportEndDate
+  ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   return (
     <div className="space-y-6">
@@ -512,7 +529,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {/* MODAL DE RELATÓRIOS */}
       {showReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Exportar Relatórios</h3>
               <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
@@ -530,6 +547,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 </div>
               </div>
 
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Filtrar por Jogo (Opcional)</label>
+                <select 
+                  className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
+                  value={reportSelectedGameId}
+                  onChange={(e) => setReportSelectedGameId(e.target.value)}
+                >
+                  <option value="ALL">Todos os Jogos do Período</option>
+                  {gamesForSelect.map(game => (
+                    <option key={game.id} value={game.id}>
+                      {formatFriendlyDate(game.date)} - {game.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="pt-4 border-t space-y-3 h-[300px] overflow-y-auto pr-2">
                 <p className="text-sm text-gray-600 mb-2 font-medium">Selecione o relatório desejado:</p>
                 
@@ -544,7 +577,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
 
                 {/* NOVO RELATÓRIO DE TAXAS E PRESENÇA EM JOGOS */}
@@ -559,7 +592,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Status de Pagamento por Jogo</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
+                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
                 </button>
 
                 <button 
@@ -573,7 +606,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Vitórias, Derrotas e Gols</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
 
                 <button 
@@ -587,7 +620,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
+                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
                 </button>
               </div>
             </div>
