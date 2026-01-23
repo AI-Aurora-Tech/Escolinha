@@ -131,26 +131,39 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   };
 
   const finishedGames = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
     return activities
-      .filter(a => a.type === 'GAME' && typeof a.homeScore === 'number' && typeof a.awayScore === 'number')
+      .filter(a => {
+        // Um jogo é considerado "finalizado" para a dashboard se:
+        // 1. For do tipo GAME
+        // 2. Pertencer ao ano corrente
+        // 3. A data/hora de início já passou (flag temporal de finalização)
+        // 4. Possuir valores numéricos para os placares
+        const gameStart = new Date(`${a.date}T${a.startTime}`);
+        return (
+          a.type === 'GAME' && 
+          a.date.startsWith(String(currentYear)) &&
+          gameStart < now &&
+          typeof a.homeScore === 'number' && 
+          typeof a.awayScore === 'number'
+        );
+      })
       .sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
   }, [activities]);
 
   const gameStats = useMemo(() => {
-    const currentYear = new Date().getFullYear();
     let wins = 0;
     let draws = 0;
     let losses = 0;
 
     finishedGames.forEach(a => {
-        if (a.date.startsWith(String(currentYear))) {
-            const home = a.homeScore || 0;
-            const away = a.awayScore || 0;
+        const home = a.homeScore || 0;
+        const away = a.awayScore || 0;
 
-            if (home > away) wins++;
-            else if (home < away) losses++;
-            else draws++;
-        }
+        if (home > away) wins++;
+        else if (home < away) losses++;
+        else draws++;
     });
 
     return [
@@ -269,7 +282,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
             {finishedGames.length > 0 && (
               <div className="mt-8 pt-6 border-t border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <Goal className="w-4 h-4" /> Últimos Resultados
+                  <Goal className="w-4 h-4" /> Últimos Resultados ({new Date().getFullYear()})
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {finishedGames.slice(0, 4).map(game => {
