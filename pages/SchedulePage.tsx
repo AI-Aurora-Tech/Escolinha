@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
@@ -25,6 +25,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showFinishModal, setShowFinishModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
@@ -99,6 +100,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setHasFee(!!activity.fee && activity.fee > 0); setShowAddModal(true);
   };
 
+  const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
+    e.stopPropagation();
+    setEditingId(activity.id);
+    setNewActivity({ ...activity, scorers: activity.scorers || [] });
+    setShowFinishModal(true);
+  };
+
   const handleDelete = (id: string) => { if (confirm('Excluir atividade?')) { onDeleteActivity?.(id); if (selectedActivityId === id) setSelectedActivityId(null); } };
 
   const updateScorer = (index: number, studentId: string) => {
@@ -122,6 +130,33 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           else onAddActivity(activityData as Omit<Activity, 'id'>);
           setShowAddModal(false);
       } else alert("Dados incompletos.");
+  };
+
+  const handleFinishMatchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId) return;
+
+    const activityData = {
+      ...newActivity,
+      id: editingId,
+      scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
+    } as Activity;
+
+    onUpdateActivity(activityData);
+    setShowFinishModal(false);
+
+    if (confirm("Resultado salvo!\nDeseja disparar o comunicado do resultado via WhatsApp para os responsáveis?")) {
+        const targetStudents = getAttendeesList(activityData);
+        if (targetStudents.length > 0) {
+            setNotifyActivity(activityData);
+            setNotifyQueue(targetStudents);
+            setNotifyCurrentIndex(0);
+            setNotifyIsRunning(true);
+            setNotifyModalOpen(true);
+            setNotifyLogs([`Iniciando envio de resultados para ${targetStudents.length} atletas...`]);
+            setNotifyCountdown(1);
+        }
+    }
   };
 
   const getAttendeesList = (activity: Partial<Activity>) => {
@@ -344,7 +379,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const phone = student.guardian.phone.replace(/\D/g, '');
       const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
 
-      if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0) {
+      // Lógica de Cobrança (Se for convite inicial)
+      if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0 && !notifyLogs.some(l => l.includes('RESULTADO'))) {
           const alreadyExists = transactions.some(t => t.externalReference === extRef);
           if (!alreadyExists) {
               const d = new Date(notifyActivity.date + 'T12:00:00');
@@ -365,52 +401,50 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }
 
       if (phone) {
-          const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
-          const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
-          let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
-          
-          if (notifyActivity.type === 'GAME') {
-              msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`;
+          let msg = '';
+          const isResultNotify = notifyLogs[notifyLogs.length-1].includes('resultados');
+
+          if (isResultNotify) {
+            // MENSAGEM DE RESULTADO
+            msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
+            
+            if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
+                msg += `\n⚽ *NOSSOS GOLS:*`;
+                const goalCounts = notifyActivity.scorers.reduce((acc, sid) => {
+                    acc[sid] = (acc[sid] || 0) + 1;
+                    return acc;
+                }, {} as Record<string, number>);
+
+                Object.entries(goalCounts).forEach(([sid, count]) => {
+                    const sName = students.find(s => s.id === sid)?.name || 'Atleta';
+                    msg += `\n• ${sName} (${count}x)`;
+                });
+            }
+            msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
           } else {
-              msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
-          }
+            // MENSAGEM DE CONVOCAÇÃO (PADRÃO)
+            const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
+            const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+            msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
+            
+            if (notifyActivity.type === 'GAME') { msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; } 
+            else { msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`; }
 
-          if (notifyActivity.type === 'GAME') {
-              if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
-              if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
-              
-              if (notifyActivity.fee && notifyActivity.fee > 0) {
-                  msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
-                  msg += `\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
-                  
-                  try {
-                      const pref = await createMPPreference({
-                          title: `Taxa Jogo: ${notifyActivity.title}`,
-                          price: notifyActivity.fee,
-                          externalReference: extRef,
-                          payer: {
-                              name: student.guardian.name,
-                              email: student.guardian.email || 'financeiro@martinica.com',
-                              phone: student.guardian.phone,
-                              identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') }
-                          }
-                      });
-                      if (pref) {
-                          msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
-                      }
-                  } catch (e) {
-                      console.error("Erro ao gerar link MP no convite", e);
-                  }
-              }
+            if (notifyActivity.type === 'GAME') {
+                if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
+                if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
+                if (notifyActivity.fee && notifyActivity.fee > 0) {
+                    msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
+                    try {
+                        const pref = await createMPPreference({ title: `Taxa Jogo: ${notifyActivity.title}`, price: notifyActivity.fee, externalReference: extRef, payer: { name: student.guardian.name, email: student.guardian.email || 'financeiro@martinica.com', phone: student.guardian.phone, identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') } } });
+                        if (pref) msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
+                    } catch (e) { console.error("Erro MP", e); }
+                }
+            }
+            if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
+            if (notifyActivity.type === 'GAME') msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+            msg += `\n\nContamos com a presença!`;
           }
-          
-          if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-          
-          if (notifyActivity.type === 'GAME') {
-              msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
-          }
-
-          msg += `\n\nContamos com a presença!`;
           
           const sent = await sendZApiMessage(phone, msg);
           setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
@@ -466,6 +500,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     const g = groups.find(x => x.id === a.groupId); 
                     const attendeesCount = getAttendeesList(a).length;
                     const presenceCount = a.attendance.length;
+                    const isFinished = a.type === 'GAME' && (a.homeScore! > 0 || a.awayScore! > 0 || (a.scorers && a.scorers.length > 0));
 
                     return (
                       <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100 hover:border-primary-200'}`} onClick={() => setSelectedActivityId(a.id)}>
@@ -475,6 +510,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                   {a.type === 'GAME' ? <Trophy className="text-yellow-500 w-5 h-5" /> : <CalendarIcon className="text-primary-500 w-5 h-5" />}
                                   {a.title}
                                   {a.fee ? <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 uppercase">Taxa: R$ {a.fee}</span> : null}
+                                  {isFinished && <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded-full font-black ml-2 uppercase border border-green-200">Finalizado</span>}
                                 </h4>
                                 {a.type === 'GAME' && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
                                     <div className="font-bold text-sm mb-2 text-gray-600 uppercase tracking-tight">{a.opponent || 'Adversário não informado'}</div>
@@ -493,6 +529,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             </div>
                             {!isGuardian && (
                                 <div className="flex gap-2">
+                                    {a.type === 'GAME' && (
+                                      <button onClick={(e) => handleOpenFinishMatch(e, a)} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Encerrar Partida (Lançar Placar)">
+                                        <Flag className="w-4 h-4" />
+                                      </button>
+                                    )}
                                     <button onClick={(e) => handleOpenNotify(e, a)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Convocar via WhatsApp">
                                         <Megaphone className="w-4 h-4" />
                                     </button>
@@ -634,7 +675,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
 
-                {/* NOVO RELATÓRIO DE TAXAS E PRESENÇA EM JOGOS */}
                 <button 
                   onClick={generateGameAttendanceAndPaymentReport}
                   className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl transition-all group text-left"
@@ -686,6 +726,62 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         </div>
       )}
 
+      {/* MODAL ENCERRAR JOGO (RESULTADO) */}
+      {showFinishModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3>
+                  <button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
+                </div>
+
+                <form onSubmit={handleFinishMatchSubmit} className="space-y-6">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-xs font-bold text-gray-400 uppercase mb-3 text-center tracking-widest">Placar Final</p>
+                      <div className="flex items-center gap-4">
+                          <div className="flex-1 text-center">
+                            <label className="block text-[10px] font-black text-primary-600 mb-1 uppercase">Garotos</label>
+                            <input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-primary-500 outline-none transition-all" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} />
+                          </div>
+                          <div className="text-2xl font-light text-gray-300 pt-4">X</div>
+                          <div className="flex-1 text-center">
+                            <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase truncate">{newActivity.opponent || 'Visitante'}</label>
+                            <input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-gray-400 outline-none transition-all" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} />
+                          </div>
+                      </div>
+                    </div>
+
+                    {(newActivity.homeScore || 0) > 0 && (
+                      <div className="space-y-3">
+                        <label className="block text-xs font-black text-gray-500 uppercase tracking-wider">Artilheiros (Garotos)</label>
+                        <div className="max-h-48 overflow-y-auto pr-2 space-y-2">
+                           {Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (
+                             <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                               <span className="text-[10px] font-black text-primary-600 w-8">GOL {idx + 1}</span>
+                               <select 
+                                 className="flex-1 border rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                                 value={newActivity.scorers?.[idx] || ''} 
+                                 onChange={e => updateScorer(idx, e.target.value)}
+                                 required
+                               >
+                                 <option value="">Quem marcou?</option>
+                                 {getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                               </select>
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-3 pt-4 border-t">
+                        <button type="submit" className="w-full py-4 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all uppercase tracking-tighter">SALVAR RESULTADO</button>
+                        <button type="button" onClick={() => setShowFinishModal(false)} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Voltar</button>
+                    </div>
+                </form>
+             </div>
+        </div>
+      )}
+
       {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 overflow-y-auto max-h-[90vh] animate-in zoom-in duration-200">
@@ -715,7 +811,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                  <div className="text-2xl font-light text-gray-300">X</div>
                                  <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
                              </div>
-                             {(newActivity.homeScore || 0) > 0 && (<div className="space-y-2 pt-2 border-t border-yellow-100">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2"><span className="text-[10px] font-black text-yellow-700 w-12 uppercase">Gol {idx + 1}:</span><select className="flex-1 border border-yellow-200 rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Selecione o artilheiro...</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div>)}
+                             {(newActivity.homeScore || 0) > 0 && (<div className="space-y-2 pt-2 border-t border-yellow-100">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2"><span className="text-[10px] font-black text-yellow-700 w-12 uppercase">Gol {idx + 1}:</span><select className="flex-1 border border-yellow-200 rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-primary-500" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Selecione o artilheiro...</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div>)}
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
                         </div>)}
 
