@@ -98,7 +98,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setHasFee(!!activity.fee && activity.fee > 0); setShowAddModal(true);
   };
 
-  const handleDelete = (e: React.MouseEvent, activityId: string) => { e.stopPropagation(); if (confirm('Excluir atividade?')) { onDeleteActivity?.(activityId); if (selectedActivityId === activityId) setSelectedActivityId(null); } };
+  const handleDelete = (id: string) => { if (confirm('Excluir atividade?')) { onDeleteActivity?.(id); if (selectedActivityId === id) setSelectedActivityId(null); } };
 
   const updateScorer = (index: number, studentId: string) => {
     const newScorers = [...(newActivity.scorers || [])];
@@ -144,7 +144,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       doc.setFontSize(10);
       doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
-      // Ordena alfabeticamente os atletas ativos para o relatório
       const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
 
       const rows = sortedStudents.map(s => {
@@ -156,6 +155,56 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       autoTable(doc, { startY: 35, head: [['Atleta', 'Treinos', 'Presenças', '%']], body: rows as any[], headStyles: { fillColor: [249, 115, 22] } });
       doc.save(`Frequencia_Treinos_${reportStartDate}.pdf`);
+  };
+
+  const generateGameAttendanceAndPaymentReport = () => {
+    const games = getFilteredActivitiesForReport('GAME');
+    if (!games.length) return alert("Nenhum jogo no período.");
+    
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text('Presença e Pagamento de Taxas - JOGOS', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
+
+    const tableData: any[] = [];
+
+    games.forEach(game => {
+      const attendees = getAttendeesList(game);
+      attendees.forEach(student => {
+        const isPresent = game.attendance.includes(student.id);
+        const isPaid = game.feePayments?.includes(student.id);
+        const feeValue = game.fee && game.fee > 0 ? `R$ ${game.fee.toFixed(2)}` : 'N/A';
+
+        tableData.push([
+          formatDate(game.date),
+          game.title,
+          student.name,
+          isPresent ? '✅ Presente' : '❌ Ausente',
+          game.fee && game.fee > 0 ? (isPaid ? '💰 Pago' : '⏳ Pendente') : '-'
+        ]);
+      });
+    });
+
+    autoTable(doc, { 
+      startY: 35, 
+      head: [['Data', 'Jogo', 'Atleta', 'Presença', 'Taxa']], 
+      body: tableData,
+      headStyles: { fillColor: [249, 115, 22] },
+      styles: { fontSize: 8 },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          if (data.cell.text[0].includes('Ausente')) data.cell.styles.textColor = [220, 38, 38];
+          if (data.cell.text[0].includes('Presente')) data.cell.styles.textColor = [22, 163, 74];
+        }
+        if (data.section === 'body' && data.column.index === 4) {
+          if (data.cell.text[0].includes('Pendente')) data.cell.styles.textColor = [217, 119, 6];
+          if (data.cell.text[0].includes('Pago')) data.cell.styles.textColor = [79, 70, 229];
+        }
+      }
+    });
+
+    doc.save(`Relatorio_Taxas_Jogos_${reportStartDate}.pdf`);
   };
 
   const generateGameGeneralReport = () => {
@@ -192,7 +241,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     doc.setFontSize(10);
     doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
 
-    // Ordena alfabeticamente os atletas ativos para o relatório de estatísticas
     const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
 
     const stats = sortedStudents.map(s => {
@@ -231,7 +279,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const phone = student.guardian.phone.replace(/\D/g, '');
       const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
 
-      // CRITICAL: Quando a mensagem de convocação de jogo for enviada lançar a TAXA no financeiro do aluno
       if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0) {
           const alreadyExists = transactions.some(t => t.externalReference === extRef);
           if (!alreadyExists) {
@@ -248,7 +295,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   studentId: student.id,
                   paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
                   externalReference: extRef
-                  // PGRST204 fix: category column removed from payload
               });
           }
       }
@@ -258,7 +304,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
           let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
           
-          // Lógica de Horário solicitada: Apenas início para Jogo, intervalo para Treino
           if (notifyActivity.type === 'GAME') {
               msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`;
           } else {
@@ -296,7 +341,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           
           if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
           
-          // Pedido de confirmação solicitado para mensagens de jogo
           if (notifyActivity.type === 'GAME') {
               msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
           }
@@ -310,7 +354,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }
       
       setNotifyCurrentIndex(prev => prev + 1); 
-      setNotifyCountdown(10); // Reseta para 10 segundos antes do próximo
+      setNotifyCountdown(10);
   };
 
   return (
@@ -384,7 +428,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     <button onClick={(e) => handleOpenEdit(e, a)} className="p-1.5 text-primary-600 hover:bg-gray-50 rounded-lg transition-colors" title="Editar">
                                         <Edit className="w-4 h-4" />
                                     </button>
-                                    <button onClick={(e) => handleDelete(e, a.id)} className="p-1.5 text-red-600 hover:bg-gray-50 rounded-lg transition-colors" title="Excluir">
+                                    <button onClick={(e) => handleDelete(a.id)} className="p-1.5 text-red-600 hover:bg-gray-50 rounded-lg transition-colors" title="Excluir">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
@@ -441,7 +485,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             );
                         })}
                     </div>
-                    {/* FOOTER COM CONTABILIZAÇÃO DE PRESENÇA */}
                     <div className="p-4 bg-gray-50 border-t rounded-b-xl space-y-2">
                         <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider">
                             <div className="flex gap-4">
@@ -487,7 +530,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 </div>
               </div>
 
-              <div className="pt-4 border-t space-y-3">
+              <div className="pt-4 border-t space-y-3 h-[300px] overflow-y-auto pr-2">
                 <p className="text-sm text-gray-600 mb-2 font-medium">Selecione o relatório desejado:</p>
                 
                 <button 
@@ -498,10 +541,25 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors"><CheckSquare className="w-5 h-5 text-orange-600" /></div>
                     <div>
                       <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência nos Treinos</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas (Alfabética)</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                </button>
+
+                {/* NOVO RELATÓRIO DE TAXAS E PRESENÇA EM JOGOS */}
+                <button 
+                  onClick={generateGameAttendanceAndPaymentReport}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl transition-all group text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors"><DollarSign className="w-5 h-5 text-indigo-600" /></div>
+                    <div>
+                      <span className="font-bold text-gray-800 block group-hover:text-indigo-700">Taxas e Presença em Jogos</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Status de Pagamento por Jogo</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
                 </button>
 
                 <button 
@@ -526,7 +584,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div>
                     <div>
                       <span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações (Alfabética)</span>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
@@ -579,7 +637,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Início</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="time" required value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
                     </div>
 
-                    {/* Novo Campo de Recorrência - Somente para Treino */}
                     {newActivity.type === 'TRAINING' && (
                       <div className="animate-in fade-in slide-in-from-top-1 duration-200">
                         <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
