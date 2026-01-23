@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
 import { Group, Student } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 interface GroupsPageProps {
   groups: Group[];
@@ -19,6 +20,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
   
@@ -55,7 +57,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
         name: group.name
     });
     
-    // Check if student has this group in their groupIds array
     const currentStudents = students
         .filter(s => s.groupIds && s.groupIds.includes(group.id))
         .map(s => s.id);
@@ -73,12 +74,10 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     if (editingId) {
         onUpdateGroup({ ...form, id: editingId });
     } else {
-        // Wait for ID from Supabase
-        const newId = await onAddGroup({ ...form, id: '' }); // ID is ignored in insert usually
+        const newId = await onAddGroup({ ...form, id: '' });
         targetGroupId = newId;
     }
     
-    // Assign/Sync students
     if (targetGroupId) {
         onBatchAssignStudents(Array.from(selectedStudentIds), targetGroupId);
     }
@@ -92,6 +91,67 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     }
   };
 
+  const toggleGroupSelection = (id: string) => {
+    const next = new Set(selectedGroupIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedGroupIds(next);
+  };
+
+  const handleExportGroupsExcel = (targetGroupIds?: string[]) => {
+    const idsToExport = targetGroupIds || Array.from(selectedGroupIds);
+    if (idsToExport.length === 0) {
+      alert('Nenhum grupo selecionado para exportar.');
+      return;
+    }
+
+    const exportData: any[] = [];
+    const currentYear = new Date().getFullYear();
+
+    idsToExport.forEach(gid => {
+      const group = groups.find(g => g.id === gid);
+      if (!group) return;
+
+      const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
+      
+      if (groupStudents.length === 0) {
+        // Adiciona apenas o cabeçalho se o grupo estiver vazio
+        exportData.push({
+          'Grupo': group.name,
+          'Atleta': 'Nenhum atleta vinculado',
+          'Idade': '-',
+          'Categoria': '-',
+          'Responsável': '-',
+          'WhatsApp': '-',
+          'Status': '-'
+        });
+      } else {
+        groupStudents.forEach(s => {
+          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+          exportData.push({
+            'Grupo': group.name,
+            'Atleta': s.name,
+            'Idade': calculateAge(s.birthDate),
+            'Categoria': `Sub-${currentYear - birthYear}`,
+            'Responsável': s.guardian.name,
+            'WhatsApp': s.guardian.phone,
+            'Status': s.active ? 'Ativo' : 'Inativo'
+          });
+        });
+      }
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Lista de Atletas");
+    
+    const fileName = idsToExport.length === 1 
+      ? `Grupo_${groups.find(g => g.id === idsToExport[0])?.name.replace(/\s+/g, '_')}.xlsx`
+      : `Exportacao_Grupos_Martinica_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    XLSX.writeFile(wb, fileName);
+  };
+
   const handleExportGroupPDF = (group: Group) => {
     const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
 
@@ -101,7 +161,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
     }
 
     const doc = new jsPDF();
-
     doc.setFontSize(18);
     doc.text(`Lista de Atletas - ${group.name}`, 14, 22);
     doc.setFontSize(10);
@@ -118,75 +177,94 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
         startY: 35,
         head: [['Nome', 'RG', 'CPF', 'Data Nascimento']],
         body: tableData,
-        headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+        headStyles: { fillColor: [249, 115, 22] },
     });
 
     doc.save(`Grupo_${group.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const toggleStudent = (studentId: string) => {
-      const newSet = new Set(selectedStudentIds);
-      if (newSet.has(studentId)) {
-          newSet.delete(studentId);
-      } else {
-          newSet.add(studentId);
-      }
-      setSelectedStudentIds(newSet);
+      const next = new Set(selectedStudentIds);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      setSelectedStudentIds(next);
   };
 
   const filteredStudents = students.filter(s => {
-      // CRITICAL: Apenas alunos ativos aparecem para serem inclusos nos grupos
       if (!s.active) return false;
-
-      // Filtro de Membros
       const isSelected = selectedStudentIds.has(s.id);
       if (memberFilter === 'MEMBERS' && !isSelected) return false;
       if (memberFilter === 'NON_MEMBERS' && isSelected) return false;
-
       const age = calculateAge(s.birthDate).toString();
       const searchLower = searchTerm.toLowerCase();
-      const matchesName = s.name.toLowerCase().includes(searchLower);
-      const matchesAge = age === searchLower;
-      return matchesName || matchesAge;
-  }).sort((a, b) => {
-      return a.name.localeCompare(b.name);
-  });
+      return s.name.toLowerCase().includes(searchLower) || age === searchLower;
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Grupos e Categorias</h2>
-        <button 
-          onClick={handleOpenNew}
-          className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Grupo
-        </button>
+        <div className="flex gap-2 w-full md:w-auto">
+          {selectedGroupIds.size > 0 && (
+            <button 
+              onClick={() => handleExportGroupsExcel()}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm font-bold text-sm"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Exportar Selecionados ({selectedGroupIds.size})
+            </button>
+          )}
+          <button 
+            onClick={handleOpenNew}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm font-bold text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Grupo
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {groups.map(group => {
             const studentCount = students.filter(s => s.groupIds && s.groupIds.includes(group.id)).length;
+            const isSelected = selectedGroupIds.has(group.id);
 
             return (
-                <div key={group.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:border-primary-200 transition-colors">
+                <div 
+                  key={group.id} 
+                  className={`relative bg-white p-6 rounded-xl shadow-sm border transition-all hover:shadow-md ${isSelected ? 'border-primary-500 ring-1 ring-primary-500 bg-primary-50/10' : 'border-gray-100 hover:border-primary-200'}`}
+                >
                     <div className="flex justify-between items-start mb-4">
-                        <div className="bg-primary-50 p-3 rounded-lg">
-                            <Shield className="w-6 h-6 text-primary-600" />
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => toggleGroupSelection(group.id)}
+                            className={`p-1 rounded-md transition-colors ${isSelected ? 'text-primary-600' : 'text-gray-300 hover:text-primary-400'}`}
+                          >
+                            {isSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                          </button>
+                          <div className={`p-3 rounded-lg ${isSelected ? 'bg-primary-100' : 'bg-primary-50'}`}>
+                              <Shield className={`w-6 h-6 ${isSelected ? 'text-primary-700' : 'text-primary-600'}`} />
+                          </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
+                            <button 
+                                onClick={() => handleExportGroupsExcel([group.id])} 
+                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                title="Exportar para Excel"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" />
+                            </button>
                             <button 
                                 onClick={() => handleExportGroupPDF(group)} 
-                                className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                title="Exportar Lista de Alunos"
+                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                                title="Exportar para PDF"
                             >
                                 <Download className="w-4 h-4" />
                             </button>
-                            <button onClick={() => handleOpenEdit(group)} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors">
+                            <button onClick={() => handleOpenEdit(group)} className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                                 <Edit className="w-4 h-4" />
                             </button>
-                            <button onClick={() => handleDelete(group.id)} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-50 rounded-lg transition-colors">
+                            <button onClick={() => handleDelete(group.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
@@ -194,13 +272,19 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                     <h3 className="text-lg font-bold text-gray-900 mb-1">{group.name}</h3>
                     
                     <div className="flex items-center gap-3 pt-4 border-t border-gray-50 mt-4">
-                        <div className="flex items-center gap-1 text-sm text-gray-500 bg-gray-50 px-2 py-1 rounded-full">
-                            <Users className="w-4 h-4" /> {studentCount} Atletas
+                        <div className="flex items-center gap-1 text-sm text-gray-500 font-medium">
+                            <Users className="w-4 h-4 text-gray-400" /> {studentCount} Atletas Vinculados
                         </div>
                     </div>
                 </div>
             );
         })}
+        {groups.length === 0 && (
+          <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-dashed border-gray-200">
+            <Shield className="w-12 h-12 mx-auto text-gray-300 mb-2 opacity-50" />
+            <p className="text-gray-400 font-medium">Nenhum grupo cadastrado.</p>
+          </div>
+        )}
       </div>
 
       {isModalOpen && (
@@ -214,55 +298,43 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                 <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-4">
                         <h4 className="font-semibold text-gray-700 flex items-center gap-2">
-                            <Shield className="w-4 h-4" /> Dados do Grupo
+                            <Shield className="w-4 h-4 text-primary-600" /> Dados do Grupo
                         </h4>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Grupo</label>
+                            <label className="block text-sm font-bold text-gray-600 mb-1 uppercase tracking-tight text-[10px]">Nome do Grupo</label>
                             <input required type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" 
-                                placeholder="Ex: Fraldinha A"
+                                placeholder="Ex: Sub-11 A"
                                 value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
                         </div>
                     </div>
 
                     <div className="flex flex-col h-[450px]">
                         <h4 className="font-semibold text-gray-700 flex items-center gap-2 mb-3">
-                            <Users className="w-4 h-4" /> Incluir Atletas
+                            <Users className="w-4 h-4 text-primary-600" /> Gerenciar Membros
                         </h4>
                         
                         <div className="relative mb-3">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                             <input 
                                 type="text" 
-                                placeholder="Buscar por nome ou idade..." 
+                                placeholder="Buscar atleta..." 
                                 className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm shadow-sm"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
 
-                        {/* Filtro de Membros estilo Tabs/Pills */}
                         <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-3">
-                            <button 
-                                type="button"
-                                onClick={() => setMemberFilter('ALL')}
-                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'ALL' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Todos
-                            </button>
-                            <button 
-                                type="button"
-                                onClick={() => setMemberFilter('MEMBERS')}
-                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'MEMBERS' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                No Grupo
-                            </button>
-                            <button 
-                                type="button"
-                                onClick={() => setMemberFilter('NON_MEMBERS')}
-                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${memberFilter === 'NON_MEMBERS' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Disponíveis
-                            </button>
+                            {['ALL', 'MEMBERS', 'NON_MEMBERS'].map((mode) => (
+                                <button 
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setMemberFilter(mode as any)}
+                                    className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${memberFilter === mode ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    {mode === 'ALL' ? 'Todos' : mode === 'MEMBERS' ? 'No Grupo' : 'Disponíveis'}
+                                </button>
+                            ))}
                         </div>
 
                         <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50 shadow-inner">
@@ -272,8 +344,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                         const isSelected = selectedStudentIds.has(student.id);
                                         const isMemberOfCurrentGroup = editingId && student.groupIds?.includes(editingId);
                                         const age = calculateAge(student.birthDate);
-                                        
-                                        // Mapeia nomes dos grupos destacando o atual
                                         const groupNames = (student.groupIds || []).map(gid => {
                                             const gName = groups.find(g => g.id === gid)?.name;
                                             if (editingId && gid === editingId) return { name: gName, active: true };
@@ -283,27 +353,19 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                         return (
                                             <div 
                                                 key={student.id} 
-                                                className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white transition-colors border-l-4 ${
-                                                    isSelected ? 'bg-primary-50' : ''
-                                                } ${
-                                                    isMemberOfCurrentGroup ? 'border-green-500 bg-green-50/30' : 'border-transparent'
-                                                }`}
+                                                className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white transition-colors border-l-4 ${isSelected ? 'bg-primary-50/50' : ''} ${isMemberOfCurrentGroup ? 'border-green-500' : 'border-transparent'}`}
                                                 onClick={() => toggleStudent(student.id)}
                                             >
-                                                <div className={`text-primary-600`}>
+                                                <div className="text-primary-600">
                                                     {isSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-gray-300" />}
                                                 </div>
                                                 <img src={student.photoUrl} alt="" className="w-8 h-8 rounded-full bg-gray-200 object-cover shadow-sm" />
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2">
-                                                        <p className={`text-sm font-bold truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>
-                                                            {student.name}
-                                                        </p>
-                                                        {isMemberOfCurrentGroup && (
-                                                            <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">Membro</span>
-                                                        )}
+                                                        <p className={`text-sm font-bold truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>{student.name}</p>
+                                                        {isMemberOfCurrentGroup && <span className="bg-green-100 text-green-700 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">Membro</span>}
                                                     </div>
-                                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                                    <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
                                                         <span>{age} anos</span>
                                                         {groupNames.length > 0 && (
                                                             <span className="truncate max-w-[150px] text-gray-400">
@@ -324,23 +386,19 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                             ) : (
                                 <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4 text-center flex-col gap-2">
                                     <Search className="w-8 h-8 opacity-20" />
-                                    <p>Nenhum aluno encontrado para os critérios selecionados.</p>
+                                    <p className="font-medium">Nenhum aluno encontrado.</p>
                                 </div>
                             )}
                         </div>
-                        <div className="mt-2 text-right text-xs text-gray-500 flex justify-between items-center px-1">
-                            <span className="bg-gray-100 px-2 py-0.5 rounded-full font-medium">Exibindo {filteredStudents.length} atletas</span>
-                            <span className="font-bold text-primary-600">{selectedStudentIds.size} selecionados</span>
+                        <div className="mt-2 text-right text-[10px] text-gray-400 flex justify-between items-center px-1 font-bold uppercase tracking-wider">
+                            <span>Exibindo {filteredStudents.length} atletas</span>
+                            <span className="text-primary-600">{selectedStudentIds.size} selecionados</span>
                         </div>
                     </div>
 
                     <div className="lg:col-span-2 flex justify-end gap-3 pt-4 border-t border-gray-100">
-                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">
-                            Cancelar
-                        </button>
-                        <button type="submit" className="px-5 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30">
-                            Salvar Grupo
-                        </button>
+                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                        <button type="submit" className="px-8 py-2.5 bg-primary-600 text-white font-black rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20 uppercase tracking-tighter">Salvar Grupo</button>
                     </div>
                 </form>
             </div>
