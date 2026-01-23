@@ -131,9 +131,8 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
   };
 
   const finishedGames = useMemo(() => {
-    const now = new Date();
     return activities
-      .filter(a => a.type === 'GAME' && (a.homeScore !== undefined || new Date(a.date + 'T' + a.endTime) < now))
+      .filter(a => a.type === 'GAME' && typeof a.homeScore === 'number' && typeof a.awayScore === 'number')
       .sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
   }, [activities]);
 
@@ -261,7 +260,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
                         <Trophy className="w-12 h-12 mb-2 opacity-20" />
-                        <p>Nenhum jogo realizado neste ano ainda.</p>
+                        <p>Nenhum jogo finalizado neste ano ainda.</p>
                     </div>
                 )}
             </div>
