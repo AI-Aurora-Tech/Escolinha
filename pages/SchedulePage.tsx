@@ -219,7 +219,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       if (notifyCurrentIndex >= notifyQueue.length) { setNotifyIsRunning(false); setNotifyLogs(prev => ["✅ Todos os comunicados enviados!", ...prev]); return; }
       
       if (notifyCountdown > 0) {
-          // Fix: Call setNotifyCountdown instead of non-existent setCountdown
           notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
       } else {
           processNotifyItem(notifyQueue[notifyCurrentIndex]);
@@ -350,6 +349,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         <div className="lg:col-span-2 space-y-4">
             {dailyActivities.length > 0 ? dailyActivities.map(a => {
                     const g = groups.find(x => x.id === a.groupId); 
+                    const attendeesCount = getAttendeesList(a).length;
+                    const presenceCount = a.attendance.length;
+
                     return (
                       <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100 hover:border-primary-200'}`} onClick={() => setSelectedActivityId(a.id)}>
                         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
@@ -363,7 +365,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     <div className="font-bold text-sm mb-2 text-gray-600 uppercase tracking-tight">{a.opponent || 'Adversário não informado'}</div>
                                     <div className="flex items-center gap-4"><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">GAROTOS</span><span className="text-2xl font-black text-primary-600">{a.homeScore}</span></div><span className="text-gray-300 font-bold text-lg">X</span><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">VISITANTE</span><span className="text-2xl font-black text-gray-700">{a.awayScore}</span></div></div>
                                 </div>)}
-                                <div className="flex gap-3 mt-3 text-sm text-gray-500"><span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span><span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Individual'}</span>{a.location && <span className="flex items-center gap-1 truncate max-w-[150px]"><MapPin className="w-3 h-3" />{a.location}</span>}</div>
+                                <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
+                                    <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span>
+                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Individual'}</span>
+                                    {!isGuardian && (
+                                        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                            <CheckCircle className="w-3 h-3" /> Frequência: {presenceCount}/{attendeesCount}
+                                        </span>
+                                    )}
+                                    {a.location && <span className="flex items-center gap-1 truncate max-w-[150px]"><MapPin className="w-3 h-3" />{a.location}</span>}
+                                </div>
                             </div>
                             {!isGuardian && (
                                 <div className="flex gap-2">
@@ -385,9 +396,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         <div className="lg:col-span-1">
             {selectedActivity ? (
                 <div className="bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm">
-                    <div className="p-4 border-b bg-gray-50 rounded-t-xl font-bold flex justify-between items-center">
+                    <div className="p-4 border-b bg-gray-50 rounded-t-xl font-bold flex justify-between items-center text-sm">
                       <span className="truncate mr-2">Lista: {selectedActivity.title}</span>
-                      {selectedActivity.fee ? <span className="text-xs text-orange-600 font-bold bg-orange-100 px-2 py-1 rounded whitespace-nowrap">R$ {selectedActivity.fee.toFixed(2)}</span> : null}
+                      {selectedActivity.fee ? <span className="text-[10px] text-orange-600 font-black bg-orange-100 px-2 py-1 rounded whitespace-nowrap uppercase">R$ {selectedActivity.fee.toFixed(2)}</span> : null}
                     </div>
                     <div className="p-2 max-h-[500px] overflow-y-auto">
                         {getAttendeesList(selectedActivity).map(s => {
@@ -430,11 +441,21 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             );
                         })}
                     </div>
-                    {selectedActivity.fee && !isGuardian && (
-                      <div className="p-3 bg-gray-50 border-t rounded-b-xl text-[10px] text-gray-500 font-medium">
-                        Total Arrecadado: R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}
-                      </div>
-                    )}
+                    {/* FOOTER COM CONTABILIZAÇÃO DE PRESENÇA */}
+                    <div className="p-4 bg-gray-50 border-t rounded-b-xl space-y-2">
+                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                            <div className="flex gap-4">
+                                <span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span>
+                                <span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span>
+                            </div>
+                        </div>
+                        {selectedActivity.fee && !isGuardian && (
+                          <div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase">
+                            <span>Arrecadação:</span>
+                            <span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span>
+                          </div>
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div className="bg-white rounded-xl border p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400">
