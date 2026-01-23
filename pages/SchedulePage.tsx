@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon } from 'lucide-react';
@@ -165,51 +166,104 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     if (!games.length) return alert("Nenhum jogo encontrado para os critérios selecionados.");
     
     const doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text('Presença e Pagamento de Taxas - JOGOS', 14, 20);
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text('Relatório de Presença e Taxas - JOGOS', 14, 20);
+    
     doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
     const subtitle = reportSelectedGameId === 'ALL' 
-      ? `Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`
-      : `Jogo Selecionado: ${games[0].title} (${formatFriendlyDate(games[0].date)})`;
+      ? `Período: ${formatFriendlyDate(reportStartDate)} a ${formatFriendlyDate(reportEndDate)}`
+      : `Jogo: ${games[0].title} (${formatFriendlyDate(games[0].date)})`;
     doc.text(subtitle, 14, 28);
 
     const tableData: any[] = [];
+    let totalCollected = 0;
+    let totalPending = 0;
+    let totalPresent = 0;
+    let totalAbsent = 0;
 
     games.forEach(game => {
       const attendees = getAttendeesList(game);
       attendees.forEach(student => {
         const isPresent = game.attendance.includes(student.id);
         const isPaid = game.feePayments?.includes(student.id);
+        const fee = game.fee || 0;
+        const groupName = groups.find(g => g.id === game.groupId)?.name || 'Lista Avulsa';
+
+        if (isPresent) totalPresent++; else totalAbsent++;
+        if (fee > 0) {
+            if (isPaid) totalCollected += fee; else totalPending += fee;
+        }
 
         tableData.push([
-          formatDate(game.date),
+          formatFriendlyDate(game.date),
           game.title,
           student.name,
-          isPresent ? '✅ Presente' : '❌ Ausente',
-          game.fee && game.fee > 0 ? (isPaid ? '💰 Pago' : '⏳ Pendente') : '-'
+          groupName,
+          isPresent ? 'PRESENTE' : 'AUSENTE',
+          fee > 0 ? (isPaid ? `PAGO (R$ ${fee.toFixed(2)})` : `PENDENTE (R$ ${fee.toFixed(2)})`) : '-'
         ]);
       });
     });
 
+    // Tabela de Resumo no Início
+    autoTable(doc, {
+        startY: 35,
+        head: [['Resumo do Relatório', 'Valor/Qtd']],
+        body: [
+            ['Jogos Selecionados', games.length.toString()],
+            ['Total Presenças / Faltas', `${totalPresent} / ${totalAbsent}`],
+            ['Total Arrecadado (Taxas)', `R$ ${totalCollected.toFixed(2)}`],
+            ['Total Pendente (Taxas)', `R$ ${totalPending.toFixed(2)}`],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 9 },
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY;
+
+    // Tabela de Detalhamento com formatação robusta e ícones simulados por cores
     autoTable(doc, { 
-      startY: 35, 
-      head: [['Data', 'Jogo', 'Atleta', 'Presença', 'Taxa']], 
+      startY: finalY + 10, 
+      head: [['Data', 'Jogo', 'Atleta', 'Grupo', 'Presença', 'Status Taxa']], 
       body: tableData,
       headStyles: { fillColor: [249, 115, 22] },
-      styles: { fontSize: 8 },
+      styles: { fontSize: 7, cellPadding: 2, valign: 'middle' },
+      columnStyles: {
+        0: { cellWidth: 20 }, // Data
+        1: { cellWidth: 35 }, // Jogo
+        2: { cellWidth: 40 }, // Atleta
+        3: { cellWidth: 25 }, // Grupo
+        4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' }, // Presença
+        5: { cellWidth: 45, halign: 'center', fontStyle: 'bold' }  // Status Taxa
+      },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3) {
-          if (data.cell.text[0].includes('Ausente')) data.cell.styles.textColor = [220, 38, 38];
-          if (data.cell.text[0].includes('Presente')) data.cell.styles.textColor = [22, 163, 74];
-        }
+        // Coluna de Presença
         if (data.section === 'body' && data.column.index === 4) {
-          if (data.cell.text[0].includes('Pendente')) data.cell.styles.textColor = [217, 119, 6];
-          if (data.cell.text[0].includes('Pago')) data.cell.styles.textColor = [79, 70, 229];
+          const text = data.cell.text[0];
+          if (text === 'AUSENTE') {
+            data.cell.styles.textColor = [220, 38, 38]; // Red 600
+            data.cell.text = ['[X] AUSENTE'];
+          } else {
+            data.cell.styles.textColor = [22, 163, 74]; // Green 600
+            data.cell.text = ['[V] PRESENTE'];
+          }
+        }
+        // Coluna de Status Taxa
+        if (data.section === 'body' && data.column.index === 5) {
+          const text = data.cell.text[0];
+          if (text.includes('PENDENTE')) {
+            data.cell.styles.textColor = [217, 119, 6]; // Orange 600
+          } else if (text.includes('PAGO')) {
+            data.cell.styles.textColor = [79, 70, 229]; // Indigo 600
+          }
         }
       }
     });
 
-    doc.save(`Relatorio_Taxas_Jogos_${reportStartDate}.pdf`);
+    doc.save(`Relatorio_Frequencia_Taxas_Jogos_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const formatFriendlyDate = (dateString: string) => {
