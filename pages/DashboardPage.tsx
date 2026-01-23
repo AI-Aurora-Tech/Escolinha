@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Users, CalendarCheck, AlertCircle, Download, Cake, FileWarning, Trophy } from 'lucide-react';
+import { Users, CalendarCheck, AlertCircle, Download, Cake, FileWarning, Trophy, Goal, ChevronRight } from 'lucide-react';
 import { Student, Transaction, Activity, UserRole, TransactionType, PaymentStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { jsPDF } from 'jspdf';
@@ -130,24 +130,27 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     doc.save(`Aniversariantes_${months[birthdayMonth]}.pdf`);
   };
 
+  const finishedGames = useMemo(() => {
+    const now = new Date();
+    return activities
+      .filter(a => a.type === 'GAME' && (a.homeScore !== undefined || new Date(a.date + 'T' + a.endTime) < now))
+      .sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date + 'T' + a.startTime).getTime());
+  }, [activities]);
+
   const gameStats = useMemo(() => {
     const currentYear = new Date().getFullYear();
     let wins = 0;
     let draws = 0;
     let losses = 0;
-    const now = new Date();
 
-    activities.forEach(a => {
-        if (a.type === 'GAME' && a.date.startsWith(String(currentYear))) {
-             const activityDate = new Date(a.date + 'T' + a.endTime);
-             if (activityDate < now) {
-                 const home = a.homeScore || 0;
-                 const away = a.awayScore || 0;
+    finishedGames.forEach(a => {
+        if (a.date.startsWith(String(currentYear))) {
+            const home = a.homeScore || 0;
+            const away = a.awayScore || 0;
 
-                 if (home > away) wins++;
-                 else if (home < away) losses++;
-                 else draws++;
-             }
+            if (home > away) wins++;
+            else if (home < away) losses++;
+            else draws++;
         }
     });
 
@@ -156,7 +159,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
         { name: 'Empates', value: draws, color: '#eab308' }, 
         { name: 'Derrotas', value: losses, color: '#ef4444' } 
     ];
-  }, [activities]);
+  }, [finishedGames]);
 
   return (
     <div className="space-y-6">
@@ -231,13 +234,13 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-         <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+         <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-yellow-500" /> Resultados nos Jogos ({new Date().getFullYear()})
                 </h3>
             </div>
-            <div className="h-64 md:h-80 w-full">
+            <div className="h-64 w-full">
                 {gameStats.some(s => s.value > 0) ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={gameStats} layout="horizontal">
@@ -262,6 +265,47 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
                     </div>
                 )}
             </div>
+
+            {/* LISTAGEM DE RESULTADOS RECENTES */}
+            {finishedGames.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <Goal className="w-4 h-4" /> Últimos Resultados
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {finishedGames.slice(0, 4).map(game => {
+                    const result = game.homeScore! > game.awayScore! ? 'W' : game.homeScore! < game.awayScore! ? 'L' : 'D';
+                    const color = result === 'W' ? 'bg-green-100 text-green-700 border-green-200' : result === 'L' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200';
+                    const label = result === 'W' ? 'Vitória' : result === 'L' ? 'Derrota' : 'Empate';
+
+                    return (
+                      <div key={game.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/30 hover:bg-white hover:shadow-sm transition-all group">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">{formatDate(game.date)}</p>
+                          <h5 className="text-sm font-bold text-gray-700 truncate group-hover:text-primary-600 transition-colors">vs {game.opponent || 'Indefinido'}</h5>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-lg border border-gray-100 shadow-sm">
+                            <span className="text-lg font-black text-primary-600">{game.homeScore}</span>
+                            <span className="text-gray-300 font-light">x</span>
+                            <span className="text-lg font-black text-gray-700">{game.awayScore}</span>
+                          </div>
+                          <span className={`w-2 h-8 rounded-full ${result === 'W' ? 'bg-green-500' : result === 'L' ? 'bg-red-500' : 'bg-yellow-500'}`} title={label} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {finishedGames.length > 4 && (
+                  <button 
+                    onClick={() => onNavigate?.('schedule')}
+                    className="mt-4 w-full py-2 text-xs font-bold text-gray-400 hover:text-primary-600 transition-colors flex items-center justify-center gap-1 uppercase"
+                  >
+                    Ver Histórico Completo <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full lg:min-h-[400px]">
