@@ -62,6 +62,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [notifyCountdown, setNotifyCountdown] = useState(10);
   const [notifyLogs, setNotifyLogs] = useState<string[]>([]);
   const [notifyActivity, setNotifyActivity] = useState<Activity | null>(null);
+  const [notifyIsFeeCharging, setNotifyIsFeeCharging] = useState(false); 
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
@@ -145,12 +146,39 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     onUpdateActivity(activityData);
     setShowFinishModal(false);
 
-    if (confirm("Resultado salvo!\nDeseja disparar o comunicado do resultado via WhatsApp para os responsáveis?")) {
+    // Fluxo de cobrança de taxas pós-jogo
+    if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
+        if (confirm("Resultado salvo!\nDeseja realizar a cobrança via WhatsApp das taxas de jogo para os atletas PRESENTES que ainda não pagaram?")) {
+            const participants = getAttendeesList(activityData);
+            
+            // CONDIÇÃO REFINADA: 
+            // 1. Estar no array de presença (attendance)
+            // 2. NÃO estar no array de pagamentos (feePayments)
+            const debtors = participants.filter(s => 
+                (activityData.attendance || []).includes(s.id) && 
+                !(activityData.feePayments || []).includes(s.id)
+            );
+            
+            if (debtors.length > 0) {
+                setNotifyActivity(activityData);
+                setNotifyQueue(debtors);
+                setNotifyCurrentIndex(0);
+                setNotifyIsFeeCharging(true);
+                setNotifyIsRunning(true);
+                setNotifyModalOpen(true);
+                setNotifyLogs([`Iniciando cobrança de taxas para ${debtors.length} atletas PRESENTES com pendência...`]);
+                setNotifyCountdown(1);
+            } else {
+                alert("Nenhuma taxa pendente para os atletas que compareceram ao jogo.");
+            }
+        }
+    } else if (confirm("Resultado salvo!\nDeseja disparar o comunicado do resultado via WhatsApp para os responsáveis?")) {
         const targetStudents = getAttendeesList(activityData);
         if (targetStudents.length > 0) {
             setNotifyActivity(activityData);
             setNotifyQueue(targetStudents);
             setNotifyCurrentIndex(0);
+            setNotifyIsFeeCharging(false);
             setNotifyIsRunning(true);
             setNotifyModalOpen(true);
             setNotifyLogs([`Iniciando envio de resultados para ${targetStudents.length} atletas...`]);
@@ -242,7 +270,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       });
     });
 
-    // Tabela de Resumo no Início
     autoTable(doc, {
         startY: 35,
         head: [['Resumo do Relatório', 'Valor/Qtd']],
@@ -259,7 +286,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
     const finalY = (doc as any).lastAutoTable.finalY;
 
-    // Tabela de Detalhamento com formatação robusta e ícones simulados por cores
     autoTable(doc, { 
       startY: finalY + 10, 
       head: [['Data', 'Jogo', 'Atleta', 'Grupo', 'Presença', 'Status Taxa']], 
@@ -267,32 +293,30 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       headStyles: { fillColor: [249, 115, 22] },
       styles: { fontSize: 7, cellPadding: 2, valign: 'middle' },
       columnStyles: {
-        0: { cellWidth: 20 }, // Data
-        1: { cellWidth: 35 }, // Jogo
-        2: { cellWidth: 40 }, // Atleta
-        3: { cellWidth: 25 }, // Grupo
-        4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' }, // Presença
-        5: { cellWidth: 45, halign: 'center', fontStyle: 'bold' }  // Status Taxa
+        0: { cellWidth: 20 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
+        5: { cellWidth: 45, halign: 'center', fontStyle: 'bold' }
       },
       didParseCell: (data) => {
-        // Coluna de Presença
         if (data.section === 'body' && data.column.index === 4) {
           const text = data.cell.text[0];
           if (text === 'AUSENTE') {
-            data.cell.styles.textColor = [220, 38, 38]; // Red 600
+            data.cell.styles.textColor = [220, 38, 38];
             data.cell.text = ['[X] AUSENTE'];
           } else {
-            data.cell.styles.textColor = [22, 163, 74]; // Green 600
+            data.cell.styles.textColor = [22, 163, 74];
             data.cell.text = ['[V] PRESENTE'];
           }
         }
-        // Coluna de Status Taxa
         if (data.section === 'body' && data.column.index === 5) {
           const text = data.cell.text[0];
           if (text.includes('PENDENTE')) {
-            data.cell.styles.textColor = [217, 119, 6]; // Orange 600
+            data.cell.styles.textColor = [217, 119, 6];
           } else if (text.includes('PAGO')) {
-            data.cell.styles.textColor = [79, 70, 229]; // Indigo 600
+            data.cell.styles.textColor = [79, 70, 229];
           }
         }
       }
@@ -358,7 +382,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       e.stopPropagation();
       const targetStudents = getAttendeesList(activity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
       if (confirm(`Convocar ${targetStudents.length} atletas via Z-API?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`)) {
-          setNotifyActivity(activity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
+          setNotifyActivity(activity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
       }
   };
 
@@ -379,71 +403,44 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const phone = student.guardian.phone.replace(/\D/g, '');
       const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
 
-      // Lógica de Cobrança (Se for convite inicial)
-      if (notifyActivity.type === 'GAME' && notifyActivity.fee && notifyActivity.fee > 0 && !notifyLogs.some(l => l.includes('RESULTADO'))) {
-          const alreadyExists = transactions.some(t => t.externalReference === extRef);
-          if (!alreadyExists) {
-              const d = new Date(notifyActivity.date + 'T12:00:00');
-              d.setDate(d.getDate() - 1);
-              const dueDate = d.toISOString().split('T')[0];
-
-              onAddTransaction({
-                  description: `[Taxa de Jogo] ${notifyActivity.title} - Atleta: ${student.name}`,
-                  amount: notifyActivity.fee,
-                  type: TransactionType.INCOME,
-                  date: dueDate,
-                  status: PaymentStatus.PENDING,
-                  studentId: student.id,
-                  paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
-                  externalReference: extRef
-              });
-          }
-      }
-
       if (phone) {
           let msg = '';
-          const isResultNotify = notifyLogs[notifyLogs.length-1].includes('resultados');
-
-          if (isResultNotify) {
-            // MENSAGEM DE RESULTADO
-            msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
-            
-            if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
-                msg += `\n⚽ *NOSSOS GOLS:*`;
-                const goalCounts = notifyActivity.scorers.reduce((acc, sid) => {
-                    acc[sid] = (acc[sid] || 0) + 1;
-                    return acc;
-                }, {} as Record<string, number>);
-
-                Object.entries(goalCounts).forEach(([sid, count]) => {
-                    const sName = students.find(s => s.id === sid)?.name || 'Atleta';
-                    msg += `\n• ${sName} (${count}x)`;
-                });
-            }
-            msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
+          
+          if (notifyIsFeeCharging) {
+              // MENSAGEM DE COBRANÇA DE TAXA ATRASADA (PÓS JOGO) - REFINADA
+              msg = `⚽ *COBRANÇA DE TAXA - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Notamos que a taxa referente ao jogo *${notifyActivity.title}* do atleta *${student.name}* (presente na partida) ainda não foi regularizada.\n\n💰 Valor: *R$ ${notifyActivity.fee?.toFixed(2)}*\n\n*Pagamento via PIX (Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento para mantermos o histórico financeiro em dia. Caso já tenha pago, favor desconsiderar.`;
+          } else if (notifyLogs.some(l => l.includes('resultados'))) {
+              // MENSAGEM DE RESULTADO
+              msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
+              if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
+                  msg += `\n⚽ *NOSSOS GOLS:*`;
+                  const goalCounts = notifyActivity.scorers.reduce((acc, sid) => { acc[sid] = (acc[sid] || 0) + 1; return acc; }, {} as Record<string, number>);
+                  Object.entries(goalCounts).forEach(([sid, count]) => {
+                      const sName = students.find(s => s.id === sid)?.name || 'Atleta';
+                      msg += `\n• ${sName} (${count}x)`;
+                  });
+              }
+              msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
           } else {
-            // MENSAGEM DE CONVOCAÇÃO (PADRÃO)
-            const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
-            const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
-            msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
-            
-            if (notifyActivity.type === 'GAME') { msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; } 
-            else { msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`; }
-
-            if (notifyActivity.type === 'GAME') {
-                if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
-                if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
-                if (notifyActivity.fee && notifyActivity.fee > 0) {
-                    msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
-                    try {
-                        const pref = await createMPPreference({ title: `Taxa Jogo: ${notifyActivity.title}`, price: notifyActivity.fee, externalReference: extRef, payer: { name: student.guardian.name, email: student.guardian.email || 'financeiro@martinica.com', phone: student.guardian.phone, identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') } } });
-                        if (pref) msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
-                    } catch (e) { console.error("Erro MP", e); }
-                }
-            }
-            if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-            if (notifyActivity.type === 'GAME') msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
-            msg += `\n\nContamos com a presença!`;
+              // MENSAGEM DE CONVOCAÇÃO (PADRÃO)
+              const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
+              const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+              msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
+              if (notifyActivity.type === 'GAME') msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; else msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
+              if (notifyActivity.type === 'GAME') {
+                  if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
+                  if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
+                  if (notifyActivity.fee && notifyActivity.fee > 0) {
+                      msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
+                      try {
+                          const pref = await createMPPreference({ title: `Taxa Jogo: ${notifyActivity.title}`, price: notifyActivity.fee, externalReference: extRef, payer: { name: student.guardian.name, email: student.guardian.email || 'financeiro@martinica.com', phone: student.guardian.phone, identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') } } });
+                          if (pref) msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
+                      } catch (e) { console.error("Erro MP", e); }
+                  }
+              }
+              if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
+              if (notifyActivity.type === 'GAME') msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+              msg += `\n\nContamos com a presença!`;
           }
           
           const sent = await sendZApiMessage(phone, msg);
@@ -481,13 +478,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   <CalendarIcon className="w-4 h-4 text-primary-600 pointer-events-none" />
                   <span className="text-gray-800 font-bold text-sm pointer-events-none">{formatDate(selectedDate)}</span>
                   <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none" />
-                  <input 
-                    type="date" 
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
-                    value={selectedDate} 
-                    title="Mudar Data"
-                    onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} 
-                  />
+                  <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" value={selectedDate} title="Mudar Data" onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} />
               </div>
               <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronRight /></button>
           </div>
@@ -546,7 +537,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 </div>
                             )}
                         </div>
-                    </div>);
+                      </div>);
                 }) : (<div className="bg-white p-12 rounded-xl border border-dashed text-center flex flex-col items-center justify-center h-64 text-gray-400"><CalendarIcon className="w-12 h-12 mb-2 opacity-20" /><p>Nenhuma atividade para este dia.</p></div>)}
         </div>
         <div className="lg:col-span-1">
@@ -561,36 +552,14 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             const pres = selectedActivity.attendance.includes(s.id); 
                             const goals = selectedActivity.scorers?.filter(x => x === s.id).length || 0;
                             const isFeePaid = selectedActivity.feePayments?.includes(s.id);
-
                             return (
                                 <div key={s.id} className="flex items-center justify-between p-3 border-b last:border-0 hover:bg-gray-50 transition-colors rounded-lg">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="text-sm font-medium truncate">{s.name}</span>
-                                        {goals > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded-full font-bold">⚽ {goals}</span>}
-                                    </div>
+                                    <div className="flex items-center gap-2 min-w-0"><span className="text-sm font-medium truncate">{s.name}</span>{goals > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded-full font-bold">⚽ {goals}</span>}</div>
                                     <div className="flex items-center gap-2">
                                         {!isGuardian ? (
-                                            <>
-                                                <button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>
-                                                    {pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                                                </button>
-                                                {selectedActivity.fee && selectedActivity.fee > 0 && (
-                                                    <button 
-                                                        onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} 
-                                                        className={`p-1.5 rounded-full transition-colors ${isFeePaid ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'}`}
-                                                        title={isFeePaid ? "Cancelar Pagamento da Taxa" : "Dar Baixa na Taxa"}
-                                                    >
-                                                        <DollarSign className="w-5 h-5" />
-                                                    </button>
-                                                )}
-                                            </>
+                                            <><button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</button>{selectedActivity.fee && selectedActivity.fee > 0 && (<button onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${isFeePaid ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'}`} title={isFeePaid ? "Cancelar Pagamento da Taxa" : "Dar Baixa na Taxa"}><DollarSign className="w-5 h-5" /></button>)}</>
                                         ) : (
-                                            <div className="flex items-center gap-2">
-                                                <div className={pres ? 'text-green-600' : 'text-gray-300'}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</div>
-                                                {selectedActivity.fee && selectedActivity.fee > 0 && (
-                                                    <div className={isFeePaid ? 'text-indigo-600' : 'text-gray-300'} title={isFeePaid ? "Taxa Paga" : "Taxa Pendente"}><DollarSign className="w-5 h-5" /></div>
-                                                )}
-                                            </div>
+                                            <div className="flex items-center gap-2"><div className={pres ? 'text-green-600' : 'text-gray-300'}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</div>{selectedActivity.fee && selectedActivity.fee > 0 && (<div className={isFeePaid ? 'text-indigo-600' : 'text-gray-300'} title={isFeePaid ? "Taxa Paga" : "Taxa Pendente"}><DollarSign className="w-5 h-5" /></div>)}</div>
                                         )}
                                     </div>
                                 </div>
@@ -598,25 +567,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         })}
                     </div>
                     <div className="p-4 bg-gray-50 border-t rounded-b-xl space-y-2">
-                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider">
-                            <div className="flex gap-4">
-                                <span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span>
-                                <span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span>
-                            </div>
-                        </div>
-                        {selectedActivity.fee && !isGuardian && (
-                          <div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase">
-                            <span>Arrecadação:</span>
-                            <span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span>
-                          </div>
-                        )}
+                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider"><div className="flex gap-4"><span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span><span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span></div></div>
+                        {selectedActivity.fee && !isGuardian && (<div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase"><span>Arrecadação:</span><span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span></div>)}
                     </div>
                 </div>
             ) : (
-                <div className="bg-white rounded-xl border p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400">
-                    <CalendarIcon className="w-12 h-12 mb-2 opacity-20" />
-                    <p>Selecione uma atividade para ver a lista.</p>
-                </div>
+                <div className="bg-white rounded-xl border p-8 text-center h-64 flex flex-col items-center justify-center text-gray-400"><CalendarIcon className="w-12 h-12 mb-2 opacity-20" /><p>Selecione uma atividade para ver a lista.</p></div>
             )}
         </div>
       </div>
@@ -625,103 +581,29 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {showReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Exportar Relatórios</h3>
-              <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
-            </div>
-            
+            <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-primary-600" /> Exportar Relatórios</h3><button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button></div>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Inicial</label>
-                  <input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Final</label>
-                  <input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
-                </div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Inicial</label><input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} /></div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Final</label><input type="date" className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} /></div>
               </div>
-
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Filtrar por Jogo (Opcional)</label>
-                <select 
-                  className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                  value={reportSelectedGameId}
-                  onChange={(e) => setReportSelectedGameId(e.target.value)}
-                >
-                  <option value="ALL">Todos os Jogos do Período</option>
-                  {gamesForSelect.map(game => (
-                    <option key={game.id} value={game.id}>
-                      {formatFriendlyDate(game.date)} - {game.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100"><label className="block text-xs font-bold text-gray-500 uppercase mb-2">Filtrar por Jogo (Opcional)</label><select className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500" value={reportSelectedGameId} onChange={(e) => setReportSelectedGameId(e.target.value)}><option value="ALL">Todos os Jogos do Período</option>{gamesForSelect.map(game => (<option key={game.id} value={game.id}>{formatFriendlyDate(game.date)} - {game.title}</option>))}</select></div>
               <div className="pt-4 border-t space-y-3 h-[300px] overflow-y-auto pr-2">
-                <p className="text-sm text-gray-600 mb-2 font-medium">Selecione o relatório desejado:</p>
-                
-                <button 
-                  onClick={generateTrainingReport}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all group text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors"><CheckSquare className="w-5 h-5 text-orange-600" /></div>
-                    <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência nos Treinos</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span>
-                    </div>
-                  </div>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                <button onClick={generateTrainingReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors"><CheckSquare className="w-5 h-5 text-orange-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-orange-700">Frequência nos Treinos</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presenças vs Faltas</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
-
-                <button 
-                  onClick={generateGameAttendanceAndPaymentReport}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl transition-all group text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors"><DollarSign className="w-5 h-5 text-indigo-600" /></div>
-                    <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-indigo-700">Taxas e Presença em Jogos</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Status de Pagamento por Jogo</span>
-                    </div>
-                  </div>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
+                <button onClick={generateGameAttendanceAndPaymentReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors"><DollarSign className="w-5 h-5 text-indigo-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-indigo-700">Taxas e Presença em Jogos</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Status de Pagamento por Jogo</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
                 </button>
-
-                <button 
-                  onClick={generateGameGeneralReport}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-yellow-50 border border-gray-100 hover:border-yellow-200 rounded-xl transition-all group text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-yellow-100 rounded-lg group-hover:bg-yellow-200 transition-colors"><BarChart3 className="w-5 h-5 text-yellow-600" /></div>
-                    <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-yellow-700">Geral dos Jogos</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Vitórias, Derrotas e Gols</span>
-                    </div>
-                  </div>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
+                <button onClick={generateGameGeneralReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-yellow-50 border border-gray-100 hover:border-yellow-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-yellow-100 rounded-lg group-hover:bg-yellow-200 transition-colors"><BarChart3 className="w-5 h-5 text-yellow-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-yellow-700">Geral dos Jogos</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Vitórias, Derrotas e Gols</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-orange-500" />
                 </button>
-
-                <button 
-                  onClick={generateStudentStatsReport}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 rounded-xl transition-all group text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div>
-                    <div>
-                      <span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span>
-                    </div>
-                  </div>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
+                <button onClick={generateStudentStatsReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
                 </button>
               </div>
             </div>
-            
-            <div className="flex justify-end mt-8">
-              <button onClick={() => setShowReportModal(false)} className="px-6 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
-            </div>
+            <div className="flex justify-end mt-8"><button onClick={() => setShowReportModal(false)} className="px-6 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button></div>
           </div>
         </div>
       )}
@@ -729,54 +611,19 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {/* MODAL ENCERRAR JOGO (RESULTADO) */}
       {showFinishModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3>
-                  <button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
-                </div>
-
+             <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button></div>
                 <form onSubmit={handleFinishMatchSubmit} className="space-y-6">
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                       <p className="text-xs font-bold text-gray-400 uppercase mb-3 text-center tracking-widest">Placar Final</p>
                       <div className="flex items-center gap-4">
-                          <div className="flex-1 text-center">
-                            <label className="block text-[10px] font-black text-primary-600 mb-1 uppercase">Garotos</label>
-                            <input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-primary-500 outline-none transition-all" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} />
-                          </div>
+                          <div className="flex-1 text-center"><label className="block text-[10px] font-black text-primary-600 mb-1 uppercase">Garotos</label><input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-primary-500 outline-none transition-all" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} /></div>
                           <div className="text-2xl font-light text-gray-300 pt-4">X</div>
-                          <div className="flex-1 text-center">
-                            <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase truncate">{newActivity.opponent || 'Visitante'}</label>
-                            <input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-gray-400 outline-none transition-all" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} />
-                          </div>
+                          <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1 uppercase truncate">{newActivity.opponent || 'Visitante'}</label><input type="number" min="0" className="w-20 mx-auto border-2 border-gray-200 rounded-xl p-3 text-center text-3xl font-black focus:border-gray-400 outline-none transition-all" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
                       </div>
                     </div>
-
-                    {(newActivity.homeScore || 0) > 0 && (
-                      <div className="space-y-3">
-                        <label className="block text-xs font-black text-gray-500 uppercase tracking-wider">Artilheiros (Garotos)</label>
-                        <div className="max-h-48 overflow-y-auto pr-2 space-y-2">
-                           {Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (
-                             <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                               <span className="text-[10px] font-black text-primary-600 w-8">GOL {idx + 1}</span>
-                               <select 
-                                 className="flex-1 border rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-primary-500"
-                                 value={newActivity.scorers?.[idx] || ''} 
-                                 onChange={e => updateScorer(idx, e.target.value)}
-                                 required
-                               >
-                                 <option value="">Quem marcou?</option>
-                                 {getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                               </select>
-                             </div>
-                           ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-3 pt-4 border-t">
-                        <button type="submit" className="w-full py-4 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all uppercase tracking-tighter">SALVAR RESULTADO</button>
-                        <button type="button" onClick={() => setShowFinishModal(false)} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Voltar</button>
-                    </div>
+                    {(newActivity.homeScore || 0) > 0 && (<div className="space-y-3"><label className="block text-xs font-black text-gray-500 uppercase tracking-wider">Artilheiros (Garotos)</label><div className="max-h-48 overflow-y-auto pr-2 space-y-2">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100"><span className="text-[10px] font-black text-primary-600 w-8">GOL {idx + 1}</span><select className="flex-1 border rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-primary-500" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Quem marcou?</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div></div>)}
+                    <div className="flex flex-col gap-3 pt-4 border-t"><button type="submit" className="w-full py-4 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all uppercase tracking-tighter">SALVAR RESULTADO</button><button type="button" onClick={() => setShowFinishModal(false)} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Voltar</button></div>
                 </form>
              </div>
         </div>
@@ -785,25 +632,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 overflow-y-auto max-h-[90vh] animate-in zoom-in duration-200">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Editar Atividade' : 'Novo Agendamento'}</h3>
-                  <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
-                </div>
-
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900">{editingId ? 'Editar Atividade' : 'Novo Agendamento'}</h3><button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button></div>
                 <form onSubmit={handleSubmit} className="space-y-5">
-                    <div className="flex gap-4">
-                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}>
-                        <input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> 
-                        <Zap className="w-4 h-4" /> Treino
-                      </label>
-                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}>
-                        <input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> 
-                        <Trophy className="w-4 h-4" /> Jogo
-                      </label>
-                    </div>
-
+                    <div className="flex gap-4"><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> <Zap className="w-4 h-4" /> Treino</label><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> <Trophy className="w-4 h-4" /> Jogo</label></div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Título da Atividade</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Treino Técnico, Amistoso..." required value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} /></div>
-                    
                     {newActivity.type === 'GAME' && (<div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 space-y-4">
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Equipe Adversária</label><input type="text" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" placeholder="Nome do time..." value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} /></div>
                              <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-yellow-100 shadow-sm">
@@ -811,56 +643,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                  <div className="text-2xl font-light text-gray-300">X</div>
                                  <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
                              </div>
-                             {(newActivity.homeScore || 0) > 0 && (<div className="space-y-2 pt-2 border-t border-yellow-100">{Array.from({ length: Math.min(newActivity.homeScore || 0, 20) }).map((_, idx) => (<div key={idx} className="flex items-center gap-2"><span className="text-[10px] font-black text-yellow-700 w-12 uppercase">Gol {idx + 1}:</span><select className="flex-1 border border-yellow-200 rounded-lg p-2 bg-white text-xs outline-none focus:ring-2 focus:ring-primary-500" value={newActivity.scorers?.[idx] || ''} onChange={e => updateScorer(idx, e.target.value)} required><option value="">Selecione o artilheiro...</option>{getAttendeesList(newActivity).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>))}</div>)}
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
                         </div>)}
-
                     <div className="grid grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Data</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="date" required value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} /></div>
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Início</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="time" required value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
                     </div>
-
-                    {newActivity.type === 'TRAINING' && (
-                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                        <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-                          <Repeat className="w-4 h-4 text-primary-600" />
-                          Recorrência
-                        </label>
-                        <select 
-                          className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer text-sm"
-                          value={newActivity.recurrence}
-                          onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as any})}
-                        >
-                          <option value="none">Evento Único</option>
-                          <option value="weekly">Semanalmente (até o fim do ano)</option>
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="bg-gray-50 p-4 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2">
-                        <input type="checkbox" id="modal-has-fee" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer" />
-                        <label htmlFor="modal-has-fee" className="text-sm font-bold text-gray-700 cursor-pointer">Possui taxa extra?</label>
-                      </div>
-                      {hasFee && (
-                        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                          <label className="block text-[10px] font-black text-primary-600 uppercase mb-1 tracking-wider">Valor da Taxa (R$)</label>
-                          <input type="number" step="0.01" className="w-full border border-primary-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-primary-500 font-bold" placeholder="0,00" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} />
-                        </div>
-                      )}
-                    </div>
-
+                    {newActivity.type === 'TRAINING' && (<div className="animate-in fade-in slide-in-from-top-1 duration-200"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><Repeat className="w-4 h-4 text-primary-600" />Recorrência</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer text-sm" value={newActivity.recurrence} onChange={e => setNewActivity({...newActivity, recurrence: e.target.value as any})}><option value="none">Evento Único</option><option value="weekly">Semanalmente (até o fim do ano)</option></select></div>)}
+                    <div className="bg-gray-50 p-4 rounded-xl space-y-3"><div className="flex items-center gap-2"><input type="checkbox" id="modal-has-fee" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer" /><label htmlFor="modal-has-fee" className="text-sm font-bold text-gray-700 cursor-pointer">Possui taxa extra?</label></div>{hasFee && (<div className="animate-in fade-in slide-in-from-top-1 duration-200"><label className="block text-[10px] font-black text-primary-600 uppercase mb-1 tracking-wider">Valor da Taxa (R$)</label><input type="number" step="0.01" className="w-full border border-primary-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-primary-500 font-bold" placeholder="0,00" value={newActivity.fee} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} /></div>)}</div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Quadra 01, Estádio Municipal..." value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
                       {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
                     </div>
-
-                    <div className="flex justify-end gap-3 pt-6 border-t mt-6">
-                        <button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                        <button type="submit" className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all">SALVAR AGENDAMENTO</button>
-                    </div>
+                    <div className="flex justify-end gap-3 pt-6 border-t mt-6"><button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all">SALVAR AGENDAMENTO</button></div>
                 </form>
              </div>
         </div>
