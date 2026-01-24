@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
 import { StudentsPage } from './pages/StudentsPage';
@@ -60,49 +61,9 @@ function App() {
     return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
   };
 
-  // --- BACKGROUND RECONCILIATION ---
-  useEffect(() => {
-    if (!isAuthenticated || transactions.length === 0) return;
-
-    const reconcilePayments = async () => {
-        const pendingWithRefs = transactions.filter(t => 
-            t.status === PaymentStatus.PENDING && 
-            t.externalReference && 
-            !checkingRefs.current.has(t.externalReference)
-        );
-
-        if (pendingWithRefs.length === 0) return;
-
-        for (const tx of pendingWithRefs) {
-            const ref = tx.externalReference!;
-            checkingRefs.current.add(ref);
-            
-            try {
-                const status = await checkMPPaymentStatus(ref);
-                if (status === 'approved') {
-                    await handleUpdateTransaction({
-                        id: tx.id,
-                        status: PaymentStatus.PAID,
-                        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
-                        paymentDate: new Date().toISOString().split('T')[0]
-                    });
-                }
-            } catch (e) {
-                console.error("Erro na reconciliação:", e);
-            } finally {
-                setTimeout(() => checkingRefs.current.delete(ref), 10000);
-            }
-        }
-    };
-
-    // Frequência aumentada para 2 minutos para garantir baixa rápida das taxas de jogo
-    const interval = setInterval(reconcilePayments, 2 * 60 * 1000); 
-    return () => clearInterval(interval);
-  }, [isAuthenticated, transactions]);
-
-  // --- DATA FETCHING ---
-  const fetchData = async () => {
-    setIsLoading(true);
+  // --- DATA FETCHING (Encapsulado para Reuso) ---
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
@@ -244,15 +205,79 @@ function App() {
     } catch (error) {
         console.error("Error fetching data:", error);
     } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
     }
-  };
+  }, [currentUser]);
 
+  // --- REALTIME SUBSCRIPTION ---
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Função de tratamento para qualquer mudança no banco
+    const handleChanges = () => {
+        fetchData(true); // Faz o fetch "silencioso" para não mostrar loader a cada pequena mudança
+    };
+
+    const channel = supabase
+      .channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, fetchData]);
+
+  // --- BACKGROUND RECONCILIATION ---
+  useEffect(() => {
+    if (!isAuthenticated || transactions.length === 0) return;
+
+    const reconcilePayments = async () => {
+        const pendingWithRefs = transactions.filter(t => 
+            t.status === PaymentStatus.PENDING && 
+            t.externalReference && 
+            !checkingRefs.current.has(t.externalReference)
+        );
+
+        if (pendingWithRefs.length === 0) return;
+
+        for (const tx of pendingWithRefs) {
+            const ref = tx.externalReference!;
+            checkingRefs.current.add(ref);
+            
+            try {
+                const status = await checkMPPaymentStatus(ref);
+                if (status === 'approved') {
+                    await handleUpdateTransaction({
+                        id: tx.id,
+                        status: PaymentStatus.PAID,
+                        paymentMethod: PaymentMethod.PIX_MERCADO_PAGO,
+                        paymentDate: new Date().toISOString().split('T')[0]
+                    });
+                }
+            } catch (e) {
+                console.error("Erro na reconciliação:", e);
+            } finally {
+                setTimeout(() => checkingRefs.current.delete(ref), 10000);
+            }
+        }
+    };
+
+    const interval = setInterval(reconcilePayments, 2 * 60 * 1000); 
+    return () => clearInterval(interval);
+  }, [isAuthenticated, transactions]);
+
+  // --- INITIAL FETCH ---
   useEffect(() => {
     if (isAuthenticated) {
         fetchData();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchData]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -402,7 +427,6 @@ function App() {
       }
 
       if (newTransactionsPayload.length > 0) {
-          // FIX PGRST204: Uso de select explícito para evitar tentar selecionar colunas inexistentes do cache de esquema
           const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select(TX_SELECT_FIELDS);
           if (data && !error) {
               const mapped = data.map((t: any) => ({
@@ -643,7 +667,6 @@ function App() {
 
                if (txsPayload.length > 0) {
                    await supabase.from('transactions').insert(txsPayload);
-                   await fetchData(); 
                }
            }
       }
@@ -770,8 +793,6 @@ function App() {
       const { error } = await supabase.from('activities').update({ fee_payments: next }).eq('id', aid);
       if(!error) {
           setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: next } : a));
-          
-          // Sincronização Agenda -> Financeiro (Bi-direcional)
           const targetRef = `game_fee_${aid}_${sid}`;
           const linkedTx = transactions.find(t => t.externalReference === targetRef);
           
@@ -840,16 +861,14 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preferenceId)
+              preference_id: safeVal(t.preference_id)
           });
       }
 
       const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select(TX_SELECT_FIELDS);
       
       if(error) {
-          console.error("Supabase Detailed Error:", error);
-          const errorMessage = `Erro ${error.code}: ${error.message} ${error.details ? `(${error.details})` : ''}`;
-          alert(`Erro ao salvar transação: ${errorMessage}`);
+          alert(`Erro ao salvar transação: ${error.message}`);
           return;
       }
 
@@ -873,17 +892,14 @@ function App() {
           setTransactions(prev => [...prev, ...mapped]);
       }
     } catch (err: any) {
-        console.error("Critical Exception in handleAddTransaction:", err);
-        alert(`Erro inesperado ao registrar transação. Verifique os dados e tente novamente.`);
+        alert(`Erro inesperado ao registrar transação.`);
     }
   };
   
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
-      
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
-
       const originalTx = transactions.find(x => x.id === t.id);
       
       if (t.status === PaymentStatus.PAID) {
@@ -895,12 +911,10 @@ function App() {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
                       const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
-                      const sent = await sendZApiMessage(student.guardian.phone, msg);
-                      if (sent) alert(`Recibo automático enviado com sucesso para ${student.guardian.name}!`);
+                      sendZApiMessage(student.guardian.phone, msg);
                   }
               }
 
-              // Lógica de Baixa Automática em Taxas de Jogo (Game Fee) (Financeiro -> Agenda)
               const currentExtRef = t.externalReference || originalTx.externalReference;
               if (currentExtRef?.startsWith('game_fee_')) {
                   const parts = currentExtRef.split('_');
@@ -914,7 +928,6 @@ function App() {
                           if (!currentFeePayments.includes(studentId)) {
                               const nextFeePayments = [...currentFeePayments, studentId];
                               await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
-                              setActivities(prev => prev.map(a => a.id === activityId ? { ...a, feePayments: nextFeePayments } : a));
                           }
                       }
                   }
@@ -938,9 +951,7 @@ function App() {
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
       if(error) {
-          console.error("Supabase Detailed Error (Update):", error);
-          const errorMessage = `Erro ${error.code}: ${error.message}`;
-          alert(`Erro ao atualizar transação: ${errorMessage}`);
+          alert(`Erro ao atualizar transação: ${error.message}`);
       } else {
           setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));
       }
