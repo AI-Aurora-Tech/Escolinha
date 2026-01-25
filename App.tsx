@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -589,7 +590,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.plan_id, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -706,7 +707,7 @@ function App() {
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
           home_score: a.homeScore ?? 0, 
-          away_score: a.away_score, 
+          away_score: a.awayScore ?? 0, 
           scorers: a.scorers || [] 
       };
       
@@ -876,8 +877,7 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              // Correcting preference_id to use preferenceId from input t
-              preference_id: safeVal(t.preferenceId)
+              preference_id: safeVal(t.preference_id)
           });
       }
 
@@ -926,11 +926,7 @@ function App() {
               if (originalTx.studentId) {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
-                      // Verifica se é taxa de jogo para ajustar o encerramento da mensagem
-                      const isGameFee = originalTx.description.includes('[Taxa de Jogo]') || originalTx.externalReference?.startsWith('game_fee_');
-                      const footerText = isGameFee ? 'Obrigado!' : 'Agradecemos a parceria! Sua mensalidade está em dia.';
-                      
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerText}`;
+                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
                       sendZApiMessage(student.guardian.phone, msg);
                   }
               }
@@ -964,11 +960,8 @@ function App() {
       if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
-      // Fix: Use t.paymentLink instead of t.payment_link
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
-      // Fix: Use t.externalReference instead of t.external_reference
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
-      // Correcting property access error where preference_id was used instead of preferenceId on a Partial<Transaction> type.
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
