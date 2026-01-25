@@ -293,7 +293,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
                     return (
                       <div key={game.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-50 bg-gray-50/30 hover:bg-white hover:shadow-sm transition-all group">
                         <div className="flex-1 min-w-0">
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">{formatDate(game.date)}</p>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">{formatDate(game.date)} • {game.title}</p>
                           <h5 className="text-sm font-bold text-gray-700 truncate group-hover:text-primary-600 transition-colors">vs {game.opponent || 'Indefinido'}</h5>
                         </div>
                         <div className="flex items-center gap-3">
