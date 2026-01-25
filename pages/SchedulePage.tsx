@@ -18,10 +18,11 @@ interface SchedulePageProps {
   onUpdateFeePayment?: (activityId: string, studentId: string) => void; 
   onDeleteActivity?: (activityId: string) => void;
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  onUpdateTransaction: (transaction: Partial<Transaction>) => void;
   currentUser?: User | null;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -148,6 +149,21 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       id: editingId,
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
+
+    // REGRA DE NEGÓCIO: Cancelar taxa de atletas ausentes
+    if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
+      const participants = getAttendeesList(activityData);
+      participants.forEach(student => {
+        const isPresent = (activityData.attendance || []).includes(student.id);
+        if (!isPresent) {
+          const targetRef = `game_fee_${editingId}_${student.id}`;
+          const linkedTx = transactions.find(t => t.externalReference === targetRef && t.status === PaymentStatus.PENDING);
+          if (linkedTx) {
+            onUpdateTransaction({ id: linkedTx.id, status: PaymentStatus.CANCELLED });
+          }
+        }
+      });
+    }
 
     onUpdateActivity(activityData);
     setShowFinishModal(false);
