@@ -190,7 +190,7 @@ function App() {
                  presentationTime: a.presentation_time || '', 
                  opponent: a.opponent || '', 
                  homeScore: a.home_score, 
-                 away_score: a.away_score, 
+                 awayScore: a.away_score, 
                  scorers: a.scorers || [], 
                  groupId: a.group_id,
                  participants: a.participants || [],
@@ -652,7 +652,11 @@ function App() {
                startTime: newItem.start_time, 
                endTime: newItem.end_time, 
                attendance: newItem.attendance || [], 
-               feePayments: newItem.fee_payments || [] 
+               feePayments: newItem.fee_payments || [],
+               homeScore: newItem.home_score,
+               awayScore: newItem.away_score,
+               scorers: newItem.scorers || [],
+               presentationTime: newItem.presentation_time
            }));
            setActivities(prev => [...prev, ...mapped]);
            
@@ -875,8 +879,8 @@ function App() {
               student_id: safeVal(t.studentId), 
               plan_id: safeVal(t.planId), 
               payment_method: safeVal(t.paymentMethod), 
-              payment_link: safeVal(t.paymentLink), 
-              external_reference: safeVal(t.externalReference),
+              payment_link: safeVal(t.payment_link), 
+              external_reference: safeVal(t.external_reference),
               preference_id: safeVal(t.preference_id)
           });
       }
@@ -961,6 +965,7 @@ function App() {
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
+      // Fixed: use camelCase from the Transaction partial object 't'
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
