@@ -104,7 +104,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
     setEditingId(activity.id);
-    setNewActivity({ ...activity, scorers: activity.scorers || [] });
+    // Se o placar for null (não finalizado), inicia com 0. Se já for 0 ou mais, mantém o valor.
+    setNewActivity({ 
+      ...activity, 
+      homeScore: typeof activity.homeScore === 'number' ? activity.homeScore : 0,
+      awayScore: typeof activity.awayScore === 'number' ? activity.awayScore : 0,
+      scorers: activity.scorers || [] 
+    });
     setShowFinishModal(true);
   };
 
@@ -491,7 +497,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     const g = groups.find(x => x.id === a.groupId); 
                     const attendeesCount = getAttendeesList(a).length;
                     const presenceCount = a.attendance.length;
-                    const isFinished = a.type === 'GAME' && (a.homeScore! > 0 || a.awayScore! > 0 || (a.scorers && a.scorers.length > 0));
+                    const isFinished = a.type === 'GAME' && typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
 
                     return (
                       <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100 hover:border-primary-200'}`} onClick={() => setSelectedActivityId(a.id)}>

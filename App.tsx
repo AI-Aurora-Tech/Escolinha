@@ -627,7 +627,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
       if (a.recurrence === 'weekly') {
@@ -710,8 +710,8 @@ function App() {
           fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
-          home_score: a.homeScore ?? 0, 
-          away_score: a.awayScore ?? 0, 
+          home_score: (typeof a.homeScore === 'number') ? a.homeScore : null, 
+          away_score: (typeof a.awayScore === 'number') ? a.awayScore : null, 
           scorers: a.scorers || [] 
       };
       
@@ -1006,7 +1006,7 @@ function App() {
   
   const handleUpdatePlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
-      const { data, error } = await supabase.from('plans').update(payload).eq('id', p.id);
+      const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
       if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };
   
