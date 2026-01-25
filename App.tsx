@@ -923,14 +923,19 @@ function App() {
       const originalTx = transactions.find(x => x.id === t.id);
       
       if (t.status === PaymentStatus.PAID) {
-          if (originalTx && !originalTx.description.includes("(Pago em")) {
+          if (originalTx) {
               const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
-              payload.description = `${originalTx.description} (Pago em ${formatFriendlyDate(pDate)})`;
+              // Limpa qualquer menção anterior de pagamento para evitar duplicidade ou travamento por string
+              const cleanDescription = originalTx.description.split(' (Pago em')[0];
+              payload.description = `${cleanDescription} (Pago em ${formatFriendlyDate(pDate)})`;
               
               if (originalTx.studentId) {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
+                      const isGameFee = cleanDescription.includes("[Taxa de Jogo]");
+                      const footerMsg = isGameFee ? "Obrigado por apoiar nossos atletas nos jogos!" : "Agradecemos a parceria! Sua mensalidade está em dia.";
+                      
+                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
                       sendZApiMessage(student.guardian.phone, msg);
                   }
               }
@@ -965,7 +970,6 @@ function App() {
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
-      // Fixed: use camelCase from the Transaction partial object 't'
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
@@ -1002,7 +1006,7 @@ function App() {
   
   const handleUpdatePlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
-      const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
+      const { data, error } = await supabase.from('plans').update(payload).eq('id', p.id);
       if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };
   
