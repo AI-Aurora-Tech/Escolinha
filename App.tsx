@@ -190,7 +190,7 @@ function App() {
                  presentationTime: a.presentation_time || '', 
                  opponent: a.opponent || '', 
                  homeScore: a.home_score, 
-                 away_score: a.away_score, 
+                 awayScore: a.away_score, 
                  scorers: a.scorers || [], 
                  groupId: a.group_id,
                  participants: a.participants || [],
@@ -590,6 +590,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
+      // Fixed: changed updatedStudent.plan_id to updatedStudent.planId
       const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
@@ -627,7 +628,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.awayScore ?? 0, scorers: a.scorers || [] };
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? 0, away_score: a.away_score ?? 0, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
       if (a.recurrence === 'weekly') {
@@ -652,7 +653,12 @@ function App() {
                startTime: newItem.start_time, 
                endTime: newItem.end_time, 
                attendance: newItem.attendance || [], 
-               feePayments: newItem.fee_payments || [] 
+               feePayments: newItem.fee_payments || [],
+               opponent: newItem.opponent,
+               homeScore: newItem.home_score,
+               awayScore: newItem.away_score,
+               scorers: newItem.scorers || [],
+               presentationTime: newItem.presentation_time
            }));
            setActivities(prev => [...prev, ...mapped]);
            
@@ -706,8 +712,8 @@ function App() {
           fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
-          home_score: a.homeScore ?? 0, 
-          away_score: a.awayScore ?? 0, 
+          home_score: a.home_score ?? 0, 
+          away_score: a.away_score ?? 0, 
           scorers: a.scorers || [] 
       };
       
@@ -877,7 +883,7 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preference_id)
+              preference_id: safeVal(t.preferenceId)
           });
       }
 
