@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -704,10 +703,10 @@ function App() {
           recurrence: a.recurrence, 
           attendance: a.attendance || [], 
           fee_payments: a.feePayments || [], 
-          presentation_time: a.presentation_time, 
+          presentation_time: a.presentationTime, 
           opponent: a.opponent, 
           home_score: a.homeScore ?? 0, 
-          away_score: a.awayScore ?? 0, 
+          away_score: a.away_score, 
           scorers: a.scorers || [] 
       };
       
@@ -965,7 +964,9 @@ function App() {
       if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
+      // Fix: Use t.paymentLink instead of t.payment_link
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
+      // Fix: Use t.externalReference instead of t.external_reference
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       // Correcting property access error where preference_id was used instead of preferenceId on a Partial<Transaction> type.
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
