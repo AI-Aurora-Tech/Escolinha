@@ -590,7 +590,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.plan_id, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -704,7 +704,7 @@ function App() {
           recurrence: a.recurrence, 
           attendance: a.attendance || [], 
           fee_payments: a.feePayments || [], 
-          presentation_time: a.presentationTime, 
+          presentation_time: a.presentation_time, 
           opponent: a.opponent, 
           home_score: a.homeScore ?? 0, 
           away_score: a.awayScore ?? 0, 
@@ -877,7 +877,8 @@ function App() {
               payment_method: safeVal(t.paymentMethod), 
               payment_link: safeVal(t.paymentLink), 
               external_reference: safeVal(t.externalReference),
-              preference_id: safeVal(t.preference_id)
+              // Correcting preference_id to use preferenceId from input t
+              preference_id: safeVal(t.preferenceId)
           });
       }
 
@@ -926,7 +927,11 @@ function App() {
               if (originalTx.studentId) {
                   const student = students.find(s => s.id === originalTx.studentId);
                   if (student && student.guardian.phone) {
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\nAgradecemos a parceria! Sua mensalidade está em dia.`;
+                      // Verifica se é taxa de jogo para ajustar o encerramento da mensagem
+                      const isGameFee = originalTx.description.includes('[Taxa de Jogo]') || originalTx.externalReference?.startsWith('game_fee_');
+                      const footerText = isGameFee ? 'Obrigado!' : 'Agradecemos a parceria! Sua mensalidade está em dia.';
+                      
+                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${originalTx.description}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerText}`;
                       sendZApiMessage(student.guardian.phone, msg);
                   }
               }
@@ -962,6 +967,7 @@ function App() {
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
+      // Correcting property access error where preference_id was used instead of preferenceId on a Partial<Transaction> type.
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
