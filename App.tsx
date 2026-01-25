@@ -190,7 +190,7 @@ function App() {
                  presentationTime: a.presentation_time || '', 
                  opponent: a.opponent || '', 
                  homeScore: a.home_score, 
-                 awayScore: a.away_score, 
+                 away_score: a.away_score, 
                  scorers: a.scorers || [], 
                  groupId: a.group_id,
                  participants: a.participants || [],
@@ -213,22 +213,36 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Função de tratamento para qualquer mudança no banco
-    const handleChanges = () => {
-        fetchData(true); // Faz o fetch "silencioso" para não mostrar loader a cada pequena mudança
+    console.log("Iniciando assinatura Realtime...");
+
+    const handleChanges = (payload: any) => {
+        console.log("Mudança detectada via Realtime:", payload.table, payload.eventType);
+        fetchData(true); 
     };
 
+    // Canal único para monitorar todas as tabelas principais
     const channel = supabase
-      .channel('db-changes')
+      .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
-      .subscribe();
+      .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+              console.log("Conectado ao Supabase Realtime!");
+          }
+          if (status === 'CLOSED') {
+              console.log("Conexão Realtime fechada.");
+          }
+          if (status === 'CHANNEL_ERROR') {
+              console.error("Erro no canal Realtime. Verifique se a replicação está ativa no painel Supabase.");
+          }
+      });
 
     return () => {
+      console.log("Removendo assinatura Realtime...");
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, fetchData]);
@@ -470,6 +484,7 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
+    /* Correcting property name access from medical_expiry to medicalCertificateExpiry */
     const payload = { 
         name: studentData.name, 
         birth_date: studentData.birthDate, 
@@ -524,14 +539,15 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
+        /* Correcting property names to match Student interface for batch import */
         return { 
             name: s.name, 
-            birth_date: s.birth_date, 
+            birth_date: s.birthDate || s.birth_date, 
             rg: s.rg, 
             cpf: s.cpf, 
             phone: s.phone, 
-            medical_expiry: s.medical_expiry, 
-            photo_url: s.photo_url, 
+            medical_expiry: s.medicalCertificateExpiry || s.medical_expiry, 
+            photo_url: s.photoUrl || s.photo_url, 
             address: s.address, 
             guardian: s.guardian, 
             plan_id: s.planId || null, 
@@ -690,8 +706,8 @@ function App() {
           fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
-          home_score: a.homeScore ?? 0, 
-          away_score: a.awayScore ?? 0, 
+          home_score: a.home_score ?? 0, 
+          away_score: a.away_score ?? 0, 
           scorers: a.scorers || [] 
       };
       
@@ -1068,13 +1084,15 @@ function App() {
     }
   };
 
+  const isCheckingReconciliation = checkingRefs.current.size > 0;
+
   return (
     <div className="flex bg-gray-50 min-h-screen font-sans overflow-x-hidden">
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="flex-1 md:ml-64 p-4 md:p-8 min-w-0 max-w-full overflow-x-hidden">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
             <div className="flex items-center gap-3"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"><Menu className="w-6 h-6" /></button><div><h1 className="text-xl md:text-2xl font-bold text-gray-900">{currentPage === 'dashboard' && 'Visão Geral'}{currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}{currentPage === 'groups' && 'Gestão de Grupos'}{currentPage === 'plans' && 'Planos e Mensalidades'}{currentPage === 'schedule' && 'Agenda'}{currentPage === 'finance' && 'Fluxo de Caixa'}{currentPage === 'users' && 'Gestão de Usuários'}</h1></div></div>
-            <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>Sistema Online</div>
+            <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2"><div className={`w-2 h-2 rounded-full bg-green-500 ${isCheckingReconciliation ? 'animate-ping' : 'animate-pulse'}`}></div>Sistema Online</div>
         </header>
         {isLoading && !currentUser ? (<div className="flex h-64 w-full items-center justify-center flex-col gap-4"><Loader2 className="w-10 h-10 text-primary-500 animate-spin" /><p className="text-gray-500 font-medium">Sincronizando dados...</p></div>) : renderContent()}
       </main>
