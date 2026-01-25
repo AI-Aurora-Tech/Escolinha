@@ -213,36 +213,36 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    console.log("Iniciando assinatura Realtime...");
+    console.log("[Realtime] Tentando conectar...");
 
     const handleChanges = (payload: any) => {
-        console.log("Mudança detectada via Realtime:", payload.table, payload.eventType);
+        console.log(`[Realtime] Mudança em ${payload.table}:`, payload.eventType);
         fetchData(true); 
     };
 
-    // Canal único para monitorar todas as tabelas principais
+    // Canal dedicado para o esquema public
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel('public-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
-      .subscribe((status) => {
+      .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') {
-              console.log("Conectado ao Supabase Realtime!");
-          }
-          if (status === 'CLOSED') {
-              console.log("Conexão Realtime fechada.");
+              console.log("[Realtime] Conectado e ouvindo mudanças!");
           }
           if (status === 'CHANNEL_ERROR') {
-              console.error("Erro no canal Realtime. Verifique se a replicação está ativa no painel Supabase.");
+              console.error("[Realtime] Erro de conexão. Verifique o script SQL de publicação.", err);
+          }
+          if (status === 'TIMED_OUT') {
+              console.warn("[Realtime] Conexão expirou. Tentando reconectar...");
           }
       });
 
     return () => {
-      console.log("Removendo assinatura Realtime...");
+      console.log("[Realtime] Removendo ouvintes...");
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, fetchData]);
@@ -706,8 +706,8 @@ function App() {
           fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
-          home_score: a.home_score ?? 0, 
-          away_score: a.away_score ?? 0, 
+          home_score: a.homeScore ?? 0, 
+          away_score: a.awayScore ?? 0, 
           scorers: a.scorers || [] 
       };
       

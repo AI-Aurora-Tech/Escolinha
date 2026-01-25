@@ -1,21 +1,27 @@
 
--- Habilitar o Realtime para as tabelas do sistema Garotos do Martinica
--- Execute este script no SQL Editor do seu projeto Supabase
+-- 1. Garantir que a publicação para Realtime existe
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        CREATE PUBLICATION supabase_realtime;
+    END IF;
+END $$;
 
-begin;
-  -- Remove as tabelas se já existirem na publicação para evitar erros de duplicidade
-  alter publication supabase_realtime drop table if exists students;
-  alter publication supabase_realtime drop table if exists activities;
-  alter publication supabase_realtime drop table if exists transactions;
-  alter publication supabase_realtime drop table if exists groups;
-  alter publication supabase_realtime drop table if exists plans;
-  alter publication supabase_realtime drop table if exists app_users;
+-- 2. Configurar a Identidade de Réplica (FULL garante que todos os campos sejam enviados no evento)
+ALTER TABLE public.students REPLICA IDENTITY FULL;
+ALTER TABLE public.activities REPLICA IDENTITY FULL;
+ALTER TABLE public.transactions REPLICA IDENTITY FULL;
+ALTER TABLE public.groups REPLICA IDENTITY FULL;
+ALTER TABLE public.plans REPLICA IDENTITY FULL;
+ALTER TABLE public.app_users REPLICA IDENTITY FULL;
 
-  -- Adiciona as tabelas à publicação de realtime
-  alter publication supabase_realtime add table students;
-  alter publication supabase_realtime add table activities;
-  alter publication supabase_realtime add table transactions;
-  alter publication supabase_realtime add table groups;
-  alter publication supabase_realtime add table plans;
-  alter publication supabase_realtime add table app_users;
-commit;
+-- 3. Limpar a publicação atual (evita erros de "já existe")
+ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS students, activities, transactions, groups, plans, app_users;
+
+-- 4. Adicionar tabelas à publicação para habilitar o Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE students;
+ALTER PUBLICATION supabase_realtime ADD TABLE activities;
+ALTER PUBLICATION supabase_realtime ADD TABLE transactions;
+ALTER PUBLICATION supabase_realtime ADD TABLE groups;
+ALTER PUBLICATION supabase_realtime ADD TABLE plans;
+ALTER PUBLICATION supabase_realtime ADD TABLE app_users;
