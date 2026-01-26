@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -32,6 +32,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
+
+  // Use local time for YYYY-MM-DD comparison
+  const todayStr = useMemo(() => {
+    return new Date().toLocaleDateString('en-CA');
+  }, []);
 
   // --- AUTO FOCUS ON NEXT ACTIVITY FOR GUARDIANS ---
   useEffect(() => {
@@ -74,9 +79,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const dailyActivities = activities.filter(a => a.date === selectedDate).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   const allSortedActivities = [...activities].sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   
-  const filteredStudents = students.filter(s => s.active && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
+  const filteredStudents = useMemo(() => {
+    return students
+      .filter(s => s.active && (
+        s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+        s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase())
+      ))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, studentSearch]);
 
-  const formatDate = (dateString: string) => {
+  const formatFriendlyDate = (dateString: string) => {
       if (!dateString) return ''; const parts = dateString.split('-');
       return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
   };
@@ -104,6 +116,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
+
+    // Validação de horário: não permitir finalizar jogos futuros ou antes de 30 minutos de jogo
+    const matchStartTime = new Date(`${activity.date}T${activity.startTime}`);
+    const now = new Date();
+    const minFinishTime = new Date(matchStartTime.getTime() + 30 * 60 * 1000); // Início + 30 min
+
+    if (now < minFinishTime) {
+        const timeDiff = Math.ceil((minFinishTime.getTime() - now.getTime()) / (60 * 1000));
+        alert(`Não é possível encerrar esta partida agora.\n\nO jogo está agendado para as ${activity.startTime} do dia ${formatFriendlyDate(activity.date)}.\nVocê poderá lançar o placar apenas 30 minutos após o início (aproximadamente daqui a ${timeDiff} minutos).`);
+        return;
+    }
+
     setEditingId(activity.id);
     setNewActivity({ 
       ...activity, 
@@ -124,11 +148,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
+      
+      const currentAttendees = getAttendeesList(newActivity);
+      const isFinishing = newActivity.type === 'GAME' && typeof newActivity.homeScore === 'number';
+
       const activityData = { 
           ...newActivity, 
           fee: hasFee ? (newActivity.fee || 0) : 0, 
           groupId: targetType === 'GROUP' ? newActivity.groupId : undefined, 
-          participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [], 
+          participants: (targetType === 'INDIVIDUAL' || isFinishing) ? currentAttendees.map(s => s.id) : (newActivity.participants || []), 
           scorers: newActivity.type === 'GAME' ? (newActivity.scorers || []).slice(0, newActivity.homeScore || 0) : [] 
       };
       
@@ -143,15 +171,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
+    const currentAttendees = getAttendeesList(newActivity);
+
     const activityData = {
       ...newActivity,
       id: editingId,
+      participants: currentAttendees.map(s => s.id), 
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
 
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
-      const participants = getAttendeesList(activityData);
-      participants.forEach(student => {
+      currentAttendees.forEach(student => {
         const isPresent = (activityData.attendance || []).includes(student.id);
         if (!isPresent) {
           const targetRef = `game_fee_${editingId}_${student.id}`;
@@ -165,24 +195,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
     onUpdateActivity(activityData);
     setShowFinishModal(false);
-
-    if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
-        if (confirm("Resultado salvo!\nDeseja realizar a cobrança via WhatsApp das taxas de jogo para os atletas PRESENTES que ainda não pagaram?")) {
-            const participants = getAttendeesList(activityData);
-            const debtors = participants.filter(s => (activityData.attendance || []).includes(s.id) && !(activityData.feePayments || []).includes(s.id));
-            if (debtors.length > 0) { setNotifyActivity(activityData); setNotifyQueue(debtors); setNotifyCurrentIndex(0); setNotifyIsFeeCharging(true); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyLogs([`Iniciando cobrança de taxas para ${debtors.length} atletas PRESENTES com pendência...`]); setNotifyCountdown(1); } else { alert("Nenhuma taxa pendente para os atletas que compareceram ao jogo."); }
-        }
-    } else if (confirm("Resultado salvo!\nDeseja disparar o comunicado do resultado via WhatsApp para os responsáveis?")) {
-        const targetStudents = getAttendeesList(activityData);
-        if (targetStudents.length > 0) { setNotifyActivity(activityData); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsFeeCharging(false); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyLogs([`Iniciando envio de resultados para ${targetStudents.length} atletas...`]); setNotifyCountdown(1); }
-    }
   };
 
   const getAttendeesList = (activity: Partial<Activity>) => {
-      let list: Student[] = [];
-      if (activity.groupId) { list = students.filter(s => (s.groupIds || []).includes(activity.groupId!) && s.active); } 
-      else if (activity.participants?.length) { list = students.filter(s => activity.participants?.includes(s.id)); }
-      return list.sort((a, b) => a.name.localeCompare(b.name));
+      const unifiedIds = new Set<string>();
+      
+      (activity.participants || []).forEach(id => unifiedIds.add(id));
+      (activity.attendance || []).forEach(id => unifiedIds.add(id));
+      (activity.feePayments || []).forEach(id => unifiedIds.add(id));
+      (activity.scorers || []).forEach(id => unifiedIds.add(id));
+
+      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number';
+      if (!isFinished && activity.groupId && unifiedIds.size === 0) {
+          students
+            .filter(s => s.active && (s.groupIds || []).includes(activity.groupId!))
+            .forEach(s => unifiedIds.add(s.id));
+      }
+
+      return students.filter(s => unifiedIds.has(s.id)).sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
@@ -191,10 +221,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino no período.");
       const doc = new jsPDF(); 
       doc.text('Relatório de Frequência - TREINOS', 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`, 14, 28);
-      const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
-      const rows = sortedStudents.map(s => {
+      const rows = students.filter(s => s.active).map(s => {
           const rel = training.filter(a => (a.groupId && (s.groupIds || []).includes(a.groupId)) || a.participants?.includes(s.id));
           if (!rel.length) return null;
           const pres = rel.filter(a => a.attendance.includes(s.id)).length;
@@ -202,55 +229,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }).filter(Boolean);
       autoTable(doc, { startY: 35, head: [['Atleta', 'Treinos', 'Presenças', '%']], body: rows as any[], headStyles: { fillColor: [249, 115, 22] } });
       doc.save(`Frequencia_Treinos_${reportStartDate}.pdf`);
-  };
-
-  const generateGameAttendanceAndPaymentReport = () => {
-    const games = reportSelectedGameId === 'ALL' ? getFilteredActivitiesForReport('GAME') : activities.filter(a => a.id === reportSelectedGameId);
-    if (!games.length) return alert("Nenhum jogo encontrado para os critérios selecionados.");
-    const doc = new jsPDF();
-    doc.text('Relatório de Presença e Taxas - JOGOS', 14, 20);
-    const tableData: any[] = [];
-    games.forEach(game => {
-      const attendees = getAttendeesList(game);
-      attendees.forEach(student => {
-        const isPresent = game.attendance.includes(student.id);
-        const isPaid = game.feePayments?.includes(student.id);
-        const fee = game.fee || 0;
-        const groupName = groups.find(g => g.id === game.groupId)?.name || 'Lista Avulsa';
-        tableData.push([formatFriendlyDate(game.date), game.title, student.name, groupName, isPresent ? 'PRESENTE' : 'AUSENTE', fee > 0 ? (isPaid ? `PAGO` : `PENDENTE`) : '-']);
-      });
-    });
-    autoTable(doc, { startY: 35, head: [['Data', 'Jogo', 'Atleta', 'Grupo', 'Presença', 'Status Taxa']], body: tableData, headStyles: { fillColor: [249, 115, 22] } });
-    doc.save(`Relatorio_Jogos_${new Date().toISOString().split('T')[0]}.pdf`);
-  };
-
-  const formatFriendlyDate = (dateString: string) => {
-    if (!dateString) return ''; const parts = dateString.split('-');
-    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
-  };
-
-  const generateGameGeneralReport = () => {
-    const games = getFilteredActivitiesForReport('GAME'); if (!games.length) return alert("Nenhum jogo no período.");
-    const doc = new jsPDF();
-    doc.text('Relatório Geral de JOGOS', 14, 20);
-    const tableData = games.map(a => [formatDate(a.date), a.title, a.opponent || '-', `${a.homeScore || 0} x ${a.awayScore || 0}`]);
-    autoTable(doc, { startY: 35, head: [['Data', 'Atividade', 'Adversário', 'Placar']], body: tableData, headStyles: { fillColor: [249, 115, 22] } });
-    doc.save(`Relatorio_Geral_Jogos_${reportStartDate}.pdf`);
-  };
-
-  const generateStudentStatsReport = () => {
-    const games = getFilteredActivitiesForReport('GAME'); if (!games.length) return alert("Nenhum jogo no período.");
-    const doc = new jsPDF();
-    doc.text('Estatísticas dos Atletas (Alfabética)', 14, 20);
-    const sortedStudents = [...students].filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
-    const stats = sortedStudents.map(s => {
-        const goals = games.reduce((acc, g) => acc + (g.scorers?.filter(id => id === s.id).length || 0), 0);
-        const matches = games.filter(g => g.attendance.includes(s.id)).length;
-        if (goals === 0 && matches === 0) return null;
-        return [s.name, matches, goals];
-    }).filter(Boolean);
-    autoTable(doc, { startY: 35, head: [['Atleta', 'Jogos Disputados', 'Gols Marcados']], body: stats as any[], headStyles: { fillColor: [249, 115, 22] } });
-    doc.save(`Estatisticas_Alfabeticas_${reportStartDate}.pdf`);
   };
 
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
@@ -264,25 +242,42 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   useEffect(() => {
       if (!notifyModalOpen || !notifyIsRunning || !notifyActivity) return;
       if (notifyCurrentIndex >= notifyQueue.length) { setNotifyIsRunning(false); setNotifyLogs(prev => ["✅ Todos os comunicados enviados!", ...prev]); return; }
-      if (notifyCountdown > 0) { notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000); } else { processNotifyItem(notifyQueue[notifyCurrentIndex]); }
+      if (notifyCountdown > 0) {
+          notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
+      } else {
+          processNotifyItem(notifyQueue[notifyCurrentIndex]);
+      }
       return () => { if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current); };
   }, [notifyModalOpen, notifyIsRunning, notifyCountdown, notifyCurrentIndex, notifyActivity, notifyQueue]);
 
   const processNotifyItem = async (student: Student) => {
       if (!notifyActivity) return;
       const phone = student.guardian.phone.replace(/\D/g, '');
-      const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
       if (phone) {
-          let msg = '';
-          if (notifyIsFeeCharging) { msg = `⚽ *COBRANÇA DE TAXA*\n\nOlá *${student.guardian.name}*! A taxa referente ao jogo *${notifyActivity.title}* do atleta *${student.name}* ainda não foi regularizada.\n💰 Valor: R$ ${notifyActivity.fee?.toFixed(2)}`; } 
-          else { msg = `Olá ${student.guardian.name}, comunicado da Garotos do Martinica!\n\n📌 Atividade: *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n⏰ Horário: ${notifyActivity.startTime}`; }
+          const msg = `Olá *${student.guardian.name}*! Comunicado da Garotos do Martinica.\n\n📌 Atividade: *${notifyActivity.title}*\n📅 Data: ${formatFriendlyDate(notifyActivity.date)}\n⏰ Horário: ${notifyActivity.startTime}\n📍 Local: ${notifyActivity.location || 'Escola'}\n\nContamos com a presença do atleta *${student.name}*!`;
           const sent = await sendZApiMessage(phone, msg);
           setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
       }
-      setNotifyCurrentIndex(prev => prev + 1); setNotifyCountdown(10);
+      setNotifyCurrentIndex(prev => prev + 1); 
+      setNotifyCountdown(5);
   };
 
-  const gamesForSelect = activities.filter(a => a.type === 'GAME' && a.date >= reportStartDate && a.date <= reportEndDate).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const generateGameAttendanceAndPaymentReport = () => {
+    const games = reportSelectedGameId === 'ALL' ? getFilteredActivitiesForReport('GAME') : activities.filter(a => a.id === reportSelectedGameId);
+    if (!games.length) return alert("Nenhum jogo encontrado.");
+    const doc = new jsPDF();
+    doc.text('Relatório de Presença e Taxas - JOGOS', 14, 20);
+    const tableData: any[] = [];
+    games.forEach(game => {
+      getAttendeesList(game).forEach(student => {
+        const isPresent = game.attendance.includes(student.id);
+        const isPaid = game.feePayments?.includes(student.id);
+        tableData.push([formatFriendlyDate(game.date), game.title, student.name, isPresent ? 'PRESENTE' : 'AUSENTE', isPaid ? 'PAGO' : 'PENDENTE']);
+      });
+    });
+    autoTable(doc, { startY: 35, head: [['Data', 'Jogo', 'Atleta', 'Presença', 'Taxa']], body: tableData, headStyles: { fillColor: [249, 115, 22] } });
+    doc.save(`Relatorio_Jogos_${new Date().getTime()}.pdf`);
+  };
 
   return (
     <div className="space-y-6">
@@ -301,9 +296,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               <button onClick={() => handleNavigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronLeft /></button>
               <div className="relative group flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-50 px-4 py-2 rounded-lg border cursor-pointer overflow-hidden transition-colors hover:bg-gray-100">
                   <CalendarIcon className="w-4 h-4 text-primary-600 pointer-events-none" />
-                  <span className="text-gray-800 font-bold text-sm pointer-events-none">{formatDate(selectedDate)}</span>
+                  <span className="text-gray-800 font-bold text-sm pointer-events-none">{formatFriendlyDate(selectedDate)}</span>
                   <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none" />
-                  <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" value={selectedDate} onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} />
+                  <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" value={selectedDate} title="Mudar Data" onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setSelectedActivityId(null); } }} />
               </div>
               <button onClick={() => handleNavigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"><ChevronRight /></button>
           </div>
@@ -328,9 +323,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                   {a.fee ? <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 uppercase">Taxa: R$ {a.fee}</span> : null}
                                   {isFinished && <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded-full font-black ml-2 uppercase border border-green-200">Finalizado</span>}
                                 </h4>
-                                {a.type === 'GAME' && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
-                                    <div className="font-bold text-sm mb-2 text-gray-600 uppercase tracking-tight">{a.opponent || 'Adversário não informado'}</div>
-                                    <div className="flex items-center gap-4"><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">GAROTOS</span><span className="text-2xl font-black text-primary-600">{a.homeScore}</span></div><span className="text-gray-300 font-bold text-lg">X</span><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">VISITANTE</span><span className="text-2xl font-black text-gray-700">{a.awayScore}</span></div></div>
+                                {a.type === 'GAME' && !isFinished && a.opponent && (
+                                    <p className="text-sm text-gray-500 font-semibold mt-0.5">vs {a.opponent}</p>
+                                )}
+                                {a.type === 'GAME' && isFinished && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100 w-fit">
+                                    <div className="flex items-center gap-4"><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">GAROTOS</span><span className="text-2xl font-black text-primary-600">{a.homeScore}</span></div><span className="text-gray-300 font-bold text-lg">X</span><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold uppercase truncate max-w-[100px]">{a.opponent || 'VISITANTE'}</span><span className="text-2xl font-black text-gray-700">{a.awayScore}</span></div></div>
                                 </div>)}
                                 <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
                                     <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span>
@@ -344,7 +341,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             </div>
                             {!isGuardian && (
                                 <div className="flex gap-2">
-                                    {a.type === 'GAME' && (
+                                    {a.type === 'GAME' && !isFinished && (
                                       <button onClick={(e) => handleOpenFinishMatch(e, a)} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Encerrar Partida (Lançar Placar)">
                                         <Flag className="w-4 h-4" />
                                       </button>
@@ -412,7 +409,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {showFinishModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
-                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button></div>
                 <form onSubmit={handleFinishMatchSubmit} className="space-y-6">
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                       <p className="text-xs font-bold text-gray-400 uppercase mb-3 text-center tracking-widest">Placar Final</p>
@@ -436,47 +433,63 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div className="flex gap-4"><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> <Zap className="w-4 h-4" /> Treino</label><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> <Trophy className="w-4 h-4" /> Jogo</label></div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Título da Atividade</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Treino Técnico, Amistoso..." required value={newActivity.title} onChange={e => setNewActivity({...newActivity, title: e.target.value})} /></div>
-                    {newActivity.type === 'GAME' && (<div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 space-y-4">
-                             <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Equipe Adversária (Visitante)</label><input type="text" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" placeholder="Nome do time..." value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} /></div>
-                             <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-yellow-100 shadow-sm">
-                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-primary-600 mb-1">GAROTOS</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} /></div>
-                                 <div className="text-2xl font-light text-gray-300">X</div>
-                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1 uppercase truncate">{newActivity.opponent || 'VISITANTE'}</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
-                             </div>
-                             <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
-                        </div>)}
+                    
+                    {newActivity.type === 'GAME' && (
+                        <>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-bold text-gray-700 mb-1">Adversário</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Nome do Time" value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} /></div>
+                                <div><label className="block text-sm font-bold text-gray-700 mb-1">Apresentação</label><input type="time" className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={hasFee} onChange={e => setHasFee(e.target.checked)} className="rounded text-primary-600 w-4 h-4" />
+                                    <span className="text-sm font-bold text-orange-800">Cobrar Taxa de Jogo?</span>
+                                </label>
+                                {hasFee && (
+                                    <div className="flex-1 flex items-center gap-2">
+                                        <span className="text-xs font-bold text-orange-400">R$</span>
+                                        <input type="number" step="0.01" className="w-full border-orange-200 rounded-lg p-1.5 text-sm focus:ring-orange-500 outline-none" placeholder="0,00" value={newActivity.fee || ''} onChange={e => setNewActivity({...newActivity, fee: parseFloat(e.target.value) || 0})} />
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Data</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="date" required value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} /></div>
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Início</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="time" required value={newActivity.startTime} onChange={e => setNewActivity({...newActivity, startTime: e.target.value})} /></div>
                     </div>
-                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Local" value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
+                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Local" value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
-                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (
+                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
+                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (
                         <div className="space-y-2">
-                          <label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label>
-                          <div className="relative mb-2">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <label className="block text-sm font-bold text-gray-700">Alunos ({selectedStudentIds.size} selecionados)</label>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input 
                               type="text" 
-                              placeholder="Pesquisar atleta..." 
                               className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" 
+                              placeholder="Buscar atleta..." 
                               value={studentSearch} 
-                              onChange={(e) => setStudentSearch(e.target.value)} 
+                              onChange={e => setStudentSearch(e.target.value)} 
                             />
                           </div>
-                          <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                          <div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
                             {filteredStudents.length > 0 ? filteredStudents.map(s => (
                               <div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">
                                 {selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}
-                                <span className="text-sm font-medium">{s.name}</span>
+                                <span className="text-sm">{s.name}</span>
                               </div>
-                            )) : <p className="text-xs text-center text-gray-400 py-2">Nenhum atleta encontrado.</p>}
+                            )) : (
+                              <p className="text-xs text-center text-gray-400 py-2">Nenhum atleta encontrado.</p>
+                            )}
                           </div>
                         </div>
                       )}
                     </div>
-                    <div className="flex justify-end gap-3 pt-6 border-t mt-6"><button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all">SALVAR AGENDAMENTO</button></div>
+                    <div className="flex justify-end gap-3 pt-6 border-t mt-6"><button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg hover:bg-primary-700 transition-all">SALVAR AGENDAMENTO</button></div>
                 </form>
              </div>
         </div>
