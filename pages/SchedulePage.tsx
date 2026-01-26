@@ -108,9 +108,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenEdit = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation(); setEditingId(activity.id);
+      
+      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number';
+      
       setNewActivity({ ...activity, type: activity.type || 'TRAINING', scorers: activity.scorers || [] });
-      if (activity.participants?.length) { setTargetType('INDIVIDUAL'); setSelectedStudentIds(new Set(activity.participants)); } 
-      else { setTargetType('GROUP'); setSelectedStudentIds(new Set()); }
+      
+      // Se o jogo está finalizado, tratamos como lista manual para garantir que o snapshot seja exibido
+      if (activity.participants?.length || isFinished) { 
+          setTargetType('INDIVIDUAL'); 
+          setSelectedStudentIds(new Set(activity.participants || [])); 
+      } else { 
+          setTargetType('GROUP'); 
+          setSelectedStudentIds(new Set()); 
+      }
+      
       setHasFee(!!activity.fee && activity.fee > 0); setStudentSearch(''); setShowAddModal(true);
   };
 
@@ -171,17 +182,19 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
-    const currentAttendees = getAttendeesList(newActivity);
+    // Realiza o Snapshot dos participantes no momento exato do encerramento
+    // Isso garante que se o grupo mudar no futuro, a lista deste jogo não mudará.
+    const currentAttendeesSnapshot = getAttendeesList(newActivity);
 
     const activityData = {
       ...newActivity,
       id: editingId,
-      participants: currentAttendees.map(s => s.id), 
+      participants: currentAttendeesSnapshot.map(s => s.id), 
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
 
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
-      currentAttendees.forEach(student => {
+      currentAttendeesSnapshot.forEach(student => {
         const isPresent = (activityData.attendance || []).includes(student.id);
         if (!isPresent) {
           const targetRef = `game_fee_${editingId}_${student.id}`;
@@ -200,13 +213,19 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const getAttendeesList = (activity: Partial<Activity>) => {
       const unifiedIds = new Set<string>();
       
+      // 1. Inicia com quem já está explicitamente na lista (Snapshot ou Manual)
       (activity.participants || []).forEach(id => unifiedIds.add(id));
+      
+      // 2. Garante a inclusão de quem tem registro de presença, pagamento ou gol (segurança de histórico)
       (activity.attendance || []).forEach(id => unifiedIds.add(id));
       (activity.feePayments || []).forEach(id => unifiedIds.add(id));
       (activity.scorers || []).forEach(id => unifiedIds.add(id));
 
       const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number';
-      if (!isFinished && activity.groupId && unifiedIds.size === 0) {
+      
+      // 3. Fallback dinâmico para membros do grupo APENAS se o jogo NÃO estiver finalizado
+      // E não houver uma lista de participantes já definida (Snapshot).
+      if (!isFinished && activity.groupId && (activity.participants || []).length === 0) {
           students
             .filter(s => s.active && (s.groupIds || []).includes(activity.groupId!))
             .forEach(s => unifiedIds.add(s.id));
@@ -409,7 +428,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {showFinishModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
-                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
                 <form onSubmit={handleFinishMatchSubmit} className="space-y-6">
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                       <p className="text-xs font-bold text-gray-400 uppercase mb-3 text-center tracking-widest">Placar Final</p>
