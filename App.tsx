@@ -213,14 +213,10 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    console.log("[Realtime] Tentando conectar...");
-
     const handleChanges = (payload: any) => {
-        console.log(`[Realtime] Mudança em ${payload.table}:`, payload.eventType);
         fetchData(true); 
     };
 
-    // Canal dedicado para o esquema public
     const channel = supabase
       .channel('public-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
@@ -229,20 +225,9 @@ function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
-      .subscribe((status, err) => {
-          if (status === 'SUBSCRIBED') {
-              console.log("[Realtime] Conectado e ouvindo mudanças!");
-          }
-          if (status === 'CHANNEL_ERROR') {
-              console.error("[Realtime] Erro de conexão. Verifique o script SQL de publicação.", err);
-          }
-          if (status === 'TIMED_OUT') {
-              console.warn("[Realtime] Conexão expirou. Tentando reconectar...");
-          }
-      });
+      .subscribe();
 
     return () => {
-      console.log("[Realtime] Removendo ouvintes...");
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, fetchData]);
@@ -294,89 +279,69 @@ function App() {
   }, [isAuthenticated, fetchData]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setIsLoggingIn(true);
-      setLoginError('');
-      try {
-          const { data, error } = await supabase
-            .from('app_users')
-            .select('*')
-            .eq('email', loginEmail)
-            .eq('password', loginPassword)
-            .single();
-          if (error || !data) {
-              setLoginError('Email ou senha inválidos.');
-              setIsLoggingIn(false);
-              return;
-          }
-          const user: User = {
-              id: data.id,
-              name: data.name,
-              email: data.email,
-              role: data.role as UserRole,
-              avatar: data.avatar || `https://ui-avatars.com/api/?name=${data.name}`,
-              cpf: data.cpf
-          };
-          setCurrentUser(user);
-          setIsAuthenticated(true);
-      } catch (err) {
-          setLoginError('Erro ao conectar ao servidor.');
-      } finally {
-          setIsLoggingIn(false);
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('email', loginEmail)
+        .eq('password', loginPassword)
+        .single();
+
+      if (error || !data) {
+        setLoginError('Credenciais inválidas.');
+      } else {
+        const user: User = {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          role: data.role as UserRole,
+          avatar: data.avatar,
+          cpf: data.cpf
+        };
+        setCurrentUser(user);
+        setIsAuthenticated(true);
       }
+    } catch (err) {
+      setLoginError('Erro ao realizar login.');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
-  const handleCpfCheck = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setIsLoggingIn(true);
-      setLoginError('');
-      const cleanCpf = loginCpf.replace(/\D/g, ''); 
-      try {
-          const { data: existingUser } = await supabase
-            .from('app_users')
-            .select('*')
-            .eq('cpf', loginCpf) 
-            .maybeSingle();
-          if (existingUser) {
-               if (loginPassword) {
-                   if (existingUser.password === loginPassword) {
-                        const user: User = { id: existingUser.id, name: existingUser.name, email: existingUser.email, role: existingUser.role as UserRole, avatar: existingUser.avatar || `https://ui-avatars.com/api/?name=${existingUser.name}`, cpf: existingUser.cpf };
-                        setCurrentUser(user);
-                        setIsAuthenticated(true);
-                        setIsLoggingIn(false);
-                        return;
-                   } else {
-                       setLoginError('Senha incorreta.');
-                       setIsLoggingIn(false);
-                       return;
-                   }
-               } else {
-                   setLoginError('Por favor, digite sua senha.');
-                   setIsLoggingIn(false);
-                   return;
-               }
-          }
-          const { data: studentsData } = await supabase.from('students').select('guardian');
-          if (studentsData) {
-              const matchedStudent = studentsData.find((s: any) => {
-                  const gCpf = s.guardian?.cpf?.replace(/\D/g, '');
-                  return gCpf === cleanCpf;
-              });
-              if (matchedStudent) {
-                  setIsFirstAccess(true);
-                  setTempGuardianName(matchedStudent.guardian.name);
-                  setTempGuardianEmail(matchedStudent.guardian.email || `${cleanCpf}@temp.com`);
-                  setLoginError('');
-                  setIsLoggingIn(false);
-                  return;
-              }
-          }
-          setLoginError('CPF não encontrado como responsável cadastrado. Entre em contato com a secretaria.');
-      } catch (err) {
-          setLoginError('Erro ao validar CPF.');
-      } finally {
-          setIsLoggingIn(false);
+  const handleCpfLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const cleanCpf = loginCpf.replace(/\D/g, '');
+      const { data, error } = await supabase
+        .from('students')
+        .select('guardian')
+        .filter('guardian->>cpf', 'eq', cleanCpf)
+        .limit(1);
+
+      if (error || !data || data.length === 0) {
+        setLoginError('Responsável não encontrado para este CPF.');
+      } else {
+        const guardian = data[0].guardian;
+        setCurrentUser({
+          id: cleanCpf,
+          name: guardian.name,
+          email: guardian.email || '',
+          role: UserRole.RESPONSAVEL,
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(guardian.name)}&background=random`,
+          cpf: cleanCpf
+        });
+        setIsAuthenticated(true);
       }
+    } catch (err) {
+      setLoginError('Erro ao validar CPF.');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   const handleCreatePassword = async (e: React.FormEvent) => {
@@ -484,7 +449,6 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-    /* Correcting property name access from medical_expiry to medicalCertificateExpiry */
     const payload = { 
         name: studentData.name, 
         birth_date: studentData.birthDate, 
@@ -539,7 +503,6 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        /* Correcting property names to match Student interface for batch import */
         return { 
             name: s.name, 
             birth_date: s.birthDate || s.birth_date, 
@@ -627,9 +590,37 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
+
+      // Snapshot inicial: Captura todos os atletas ativos do grupo NO MOMENTO do agendamento
+      // Isso impede que mudanças futuras no grupo alterem quem deveria estar no jogo hoje.
+      let initialParticipants = a.participants || [];
+      if (a.groupId && initialParticipants.length === 0) {
+          initialParticipants = students
+            .filter(s => s.active && (s.groupIds || []).includes(a.groupId))
+            .map(s => s.id);
+      }
+
+      const basePayload = { 
+          title: a.title, 
+          activity_type: a.type, 
+          fee: a.fee || 0, 
+          location: a.location || '', 
+          group_id: a.groupId || null, 
+          participants: initialParticipants, 
+          start_time: a.startTime, 
+          end_time: a.endTime, 
+          recurrence: a.recurrence, 
+          attendance: a.attendance || [], 
+          fee_payments: a.fee_payments || [], 
+          presentation_time: a.presentationTime, 
+          opponent: a.opponent, 
+          home_score: a.homeScore ?? null, 
+          away_score: a.awayScore ?? null, 
+          scorers: a.scorers || [] 
+      };
+
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
@@ -659,42 +650,11 @@ function App() {
                presentationTime: newItem.presentation_time
            }));
            setActivities(prev => [...prev, ...mapped]);
-           
-           if (a.type === 'GAME' && a.fee > 0) {
-               const txsPayload: any[] = [];
-               const participantsList = a.groupId 
-                   ? students.filter(s => s.groupIds?.includes(a.groupId))
-                   : students.filter(s => a.participants?.includes(s.id));
-               
-               data.forEach((insertedAct: any) => {
-                   const d = new Date(insertedAct.date + 'T12:00:00');
-                   d.setDate(d.getDate() - 1);
-                   const dueDate = d.toISOString().split('T')[0];
-                   
-                   participantsList.forEach(student => {
-                       txsPayload.push({
-                           description: `[Taxa de Jogo] ${insertedAct.title} - Atleta: ${student.name}`,
-                           amount: a.fee,
-                           type: TransactionType.INCOME,
-                           date: dueDate,
-                           status: PaymentStatus.PENDING,
-                           student_id: student.id,
-                           payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                           external_reference: `game_fee_${insertedAct.id}_${student.id}`
-                       });
-                   });
-               });
-
-               if (txsPayload.length > 0) {
-                   await supabase.from('transactions').insert(txsPayload);
-               }
-           }
       }
       setIsLoading(false);
   };
   
   const handleUpdateActivity = async (a: Activity) => { 
-      const original = activities.find(act => act.id === a.id);
       const basePayload: any = { 
           title: a.title, 
           activity_type: a.type, 
@@ -716,92 +676,20 @@ function App() {
       };
       
       const { error } = await supabase.from('activities').update(basePayload).eq('id', a.id);
-      if (error) return;
-
-      if (original && original.recurrence === 'weekly') {
-          let query = supabase.from('activities').select('*').eq('recurrence', 'weekly').eq('title', original.title).eq('start_time', (original as any).startTime || original.startTime).gt('date', original.date);
-           if (original.groupId) query = query.eq('group_id', original.groupId); else query = query.is('group_id', null);
-           const { data: futureEvents } = await query;
-           
-           if (futureEvents && futureEvents.length > 0) {
-               const dayDiff = Math.round((new Date(a.date).getTime() - new Date(original.date).getTime()) / (1000 * 3600 * 24));
-               const updates = futureEvents.map((evt: any) => {
-                   let nextDateStr = evt.date;
-                   if (dayDiff !== 0) { 
-                       const evtD = new Date(evt.date); 
-                       evtD.setDate(evtD.getDate() + dayDiff); 
-                       nextDateStr = evtD.toISOString().split('T')[0]; 
-                   }
-                   return { 
-                       id: evt.id, 
-                       title: basePayload.title, 
-                       activity_type: basePayload.activity_type, 
-                       fee: basePayload.fee, 
-                       location: basePayload.location, 
-                       group_id: basePayload.group_id, 
-                       participants: basePayload.participants, 
-                       start_time: basePayload.start_time, 
-                       end_time: basePayload.end_time, 
-                       presentation_time: basePayload.presentation_time, 
-                       opponent: basePayload.opponent, 
-                       recurrence: basePayload.recurrence, 
-                       date: nextDateStr, 
-                       attendance: evt.attendance, 
-                       fee_payments: evt.fee_payments, 
-                       home_score: evt.home_score, 
-                       away_score: evt.away_score, 
-                       scorers: evt.scorers 
-                   } as any;
-               });
-               
-               await supabase.from('activities').upsert(updates);
-               const updatesMap = new Map(updates.map((u: any) => [u.id, u]));
-               
-               setActivities(prev => prev.map(act => {
-                   if (act.id === a.id) return a; 
-                   if (updatesMap.has(act.id)) {
-                       const up = updatesMap.get(act.id) as any;
-                       return { 
-                           ...act, 
-                           title: up.title, 
-                           type: up.activity_type, 
-                           fee: up.fee, 
-                           location: up.location, 
-                           startTime: up.start_time, 
-                           endTime: up.end_time, 
-                           presentationTime: up.presentation_time, 
-                           opponent: up.opponent, 
-                           recurrence: up.recurrence, 
-                           groupId: up.group_id, 
-                           participants: up.participants, 
-                           date: up.date, 
-                           homeScore: up.home_score, 
-                           awayScore: up.away_score, 
-                           scorers: up.scorers,
-                           attendance: up.attendance || [],
-                           feePayments: up.fee_payments || []
-                       } as Activity;
-                   }
-                   return act;
-               }));
-               return; 
-           }
-      }
-      setActivities(prev => prev.map(act => act.id === a.id ? a : act));
+      if (!error) fetchData(true);
   };
 
-  const handleDeleteActivity = async (id: string) => {
-      setIsLoading(true);
-      const { error } = await supabase.from('activities').delete().eq('id', id);
-      if (!error) setActivities(prev => prev.filter(a => a.id !== id));
-      setIsLoading(false);
-  };
-  
   const handleUpdateAttendance = async (aid: string, sid: string) => { 
       const activity = activities.find(a => a.id === aid); if(!activity) return;
       const newAttendance = activity.attendance.includes(sid) ? activity.attendance.filter(id => id !== sid) : [...activity.attendance, sid];
-      const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
-      if(!error) setActivities(prev => prev.map(a => a.id === aid ? { ...a, attendance: newAttendance } : a));
+      
+      const updates: any = { attendance: newAttendance };
+      // Se o aluno interagiu (presença), garante que ele esteja "ancorado" no snapshot de participantes
+      if (!activity.participants?.includes(sid)) {
+          updates.participants = [...(activity.participants || []), sid];
+      }
+      const { error } = await supabase.from('activities').update(updates).eq('id', aid);
+      if(!error) setActivities(prev => prev.map(a => a.id === aid ? { ...a, ...updates } : a));
   };
 
   const handleUpdateFeePayment = async (aid: string, sid: string) => {
@@ -810,12 +698,16 @@ function App() {
       const isPaidNow = !current.includes(sid);
       const next = isPaidNow ? [...current, sid] : current.filter(id => id !== sid);
       
-      const { error } = await supabase.from('activities').update({ fee_payments: next }).eq('id', aid);
+      const updates: any = { fee_payments: next };
+      // Garante ancoragem no snapshot se houver pagamento
+      if (!activity.participants?.includes(sid)) {
+          updates.participants = [...(activity.participants || []), sid];
+      }
+      const { error } = await supabase.from('activities').update(updates).eq('id', aid);
       if(!error) {
-          setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: next } : a));
+          setActivities(prev => prev.map(a => a.id === aid ? { ...a, ...updates } : a));
           const targetRef = `game_fee_${aid}_${sid}`;
           const linkedTx = transactions.find(t => t.externalReference === targetRef);
-          
           if (linkedTx) {
               await handleUpdateTransaction({
                   id: linkedTx.id,
@@ -827,283 +719,99 @@ function App() {
       }
   };
 
-  const handleAddTransaction = async (t: any) => { 
-    try {
-      const transactionsToAdd = [];
-      const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
-      
-      const baseCategory = t.category || 'Geral';
-      const baseDescription = baseCategory !== 'Outros' && baseCategory !== 'Geral' 
-          ? `[${baseCategory}] ${t.description}` 
-          : t.description;
-
-      if (t.type === TransactionType.EXPENSE && t.recurrence === 'MONTHLY') {
-          const startDate = new Date(t.date + 'T00:00:00');
-          const monthsCount = t.recurrenceMonths || 12;
-          for (let i = 0; i < monthsCount; i++) {
-              const d = new Date(startDate);
-              d.setMonth(startDate.getMonth() + i);
-              const dueDateStr = d.toISOString().split('T')[0];
-              
-              let finalDesc = `${baseDescription} (${i+1}/${monthsCount})`;
-              if (i === 0 && t.status === PaymentStatus.PAID && t.paymentDate) {
-                  finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
-              }
-
-              transactionsToAdd.push({
-                  description: finalDesc,
-                  amount: Number(t.amount),
-                  type: t.type,
-                  date: dueDateStr,
-                  status: i === 0 ? t.status : PaymentStatus.PENDING,
-                  student_id: null,
-                  plan_id: null,
-                  payment_method: i === 0 ? safeVal(t.paymentMethod) : null,
-                  payment_link: null,
-                  external_reference: null,
-                  preference_id: null
-              });
-          }
-      } else {
-          let finalDesc = baseDescription;
-          if (t.status === PaymentStatus.PAID && t.paymentDate) {
-              finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
-          }
-
-          transactionsToAdd.push({ 
-              description: finalDesc, 
-              amount: Number(t.amount), 
-              type: t.type, 
-              date: t.date, 
-              status: t.status, 
-              student_id: safeVal(t.studentId), 
-              plan_id: safeVal(t.planId), 
-              payment_method: safeVal(t.paymentMethod), 
-              payment_link: safeVal(t.payment_link), 
-              external_reference: safeVal(t.external_reference),
-              preference_id: safeVal(t.preference_id)
-          });
-      }
-
-      const { data, error } = await supabase.from('transactions').insert(transactionsToAdd).select(TX_SELECT_FIELDS);
-      
-      if(error) {
-          alert(`Erro ao salvar transação: ${error.message}`);
-          return;
-      }
-
-      if(data) {
-          const mapped = data.map((newTx: any) => ({
-              id: newTx.id,
-              description: newTx.description,
-              category: newTx.description.startsWith('[') ? newTx.description.split(']')[0].substring(1) : 'Geral',
-              amount: newTx.amount,
-              type: newTx.type,
-              date: newTx.date,
-              paymentDate: (newTx.description.includes('(Pago em ') ? newTx.description.split('(Pago em ')[1].replace(')', '') : undefined),
-              status: newTx.status,
-              studentId: newTx.student_id,
-              planId: newTx.plan_id,
-              paymentMethod: newTx.payment_method,
-              paymentLink: newTx.payment_link,
-              externalReference: newTx.external_reference,
-              preferenceId: newTx.preference_id
-          }));
-          setTransactions(prev => [...prev, ...mapped]);
-      }
-    } catch (err: any) {
-        alert(`Erro inesperado ao registrar transação.`);
-    }
+  const handleDeleteActivity = async (id: string) => {
+      setIsLoading(true);
+      const { error } = await supabase.from('activities').delete().eq('id', id);
+      if (!error) setActivities(prev => prev.filter(a => a.id !== id));
+      setIsLoading(false);
   };
-  
+
+  const handleAddTransaction = async (t: any) => { 
+    const { error } = await supabase.from('transactions').insert([t]);
+    if (!error) fetchData(true);
+  };
+
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
-      const payload: any = {};
-      const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
-      const originalTx = transactions.find(x => x.id === t.id);
-      
-      if (t.status === PaymentStatus.PAID) {
-          if (originalTx) {
-              const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
-              // Limpa qualquer menção anterior de pagamento para evitar duplicidade ou travamento por string
-              const cleanDescription = originalTx.description.split(' (Pago em')[0];
-              payload.description = `${cleanDescription} (Pago em ${formatFriendlyDate(pDate)})`;
-              
-              if (originalTx.studentId) {
-                  const student = students.find(s => s.id === originalTx.studentId);
-                  if (student && student.guardian.phone) {
-                      const isGameFee = cleanDescription.includes("[Taxa de Jogo]");
-                      const footerMsg = isGameFee ? "Obrigado por apoiar nossos atletas nos jogos!" : "Agradecemos a parceria! Sua mensalidade está em dia.";
-                      
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
-                      sendZApiMessage(student.guardian.phone, msg);
-                  }
-              }
-
-              const currentExtRef = t.externalReference || originalTx.externalReference;
-              if (currentExtRef?.startsWith('game_fee_')) {
-                  const parts = currentExtRef.split('_');
-                  const activityId = parts[2];
-                  const studentId = parts[3];
-                  
-                  if (activityId && studentId) {
-                      const activity = activities.find(act => act.id === activityId);
-                      if (activity) {
-                          const currentFeePayments = activity.feePayments || [];
-                          if (!currentFeePayments.includes(studentId)) {
-                              const nextFeePayments = [...currentFeePayments, studentId];
-                              await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
-                          }
-                      }
-                  }
-              }
-          }
-      } else if (t.description !== undefined) {
-          payload.description = t.description;
-      }
-
-      if (t.amount !== undefined) payload.amount = Number(t.amount);
-      if (t.type !== undefined) payload.type = t.type;
-      if (t.date !== undefined) payload.date = t.date;
-      if (t.status !== undefined) payload.status = t.status;
-      if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
-      if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
-      if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
-      if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
-      if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
-      if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
-
-      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
-      
-      if(error) {
-          alert(`Erro ao atualizar transação: ${error.message}`);
-      } else {
-          setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));
-      }
+      const { error } = await supabase.from('transactions').update(t).eq('id', t.id);
+      if (!error) fetchData(true);
   };
 
   const handleAddGroup = async (g: any): Promise<string | null> => { 
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select().single();
-      if(data && !error) { setGroups(prev => [...prev, { ...g, id: data.id }]); return data.id; }
+      if(data && !error) { fetchData(true); return data.id; }
       return null;
   };
   
   const handleUpdateGroup = async (g: any) => { 
       const { error } = await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
-      if(!error) setGroups(prev => prev.map(gr => gr.id === g.id ? g : gr));
+      if(!error) fetchData(true);
   };
   
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
-      if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+      if(!error) fetchData(true);
   };
-  
-  const handleAddPlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
-      const { data, error } = await supabase.from('plans').insert([payload]).select().single();
-      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
-  };
-  
-  const handleUpdatePlan = async (p: any) => { 
-      const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
-      const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
-      if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
-  };
-  
-  const handleDeletePlan = async (id: string) => { 
-      const { error } = await supabase.from('plans').delete().eq('id', id);
-      if(!error) setPlans(prev => prev.filter(p => p.id !== id));
-  };
-  
-  const handleAddUser = async (u: any) => { 
-      const { data, error } = await supabase.from('app_users').insert([u]).select().single();
-      if(data && !error) setSystemUsers(prev => [...prev, { ...u, id: data.id, cpf: u.cpf }]);
-  };
-  
-  const handleUpdateUser = async (u: any) => { 
-      const payload: any = { name: u.name, email: u.email, role: u.role, avatar: u.avatar };
-      if(u.password) payload.password = u.password;
-      const { error } = await supabase.from('app_users').update(payload).eq('id', u.id);
-      if(!error) setSystemUsers(prev => prev.map(us => us.id === u.id ? u : us));
-  };
-  
-  const handleDeleteUser = async (id: string) => { 
-      const { error } = await supabase.from('app_users').delete().eq('id', id);
-      if(!error) setSystemUsers(prev => prev.filter(u => u.id !== id));
-  };
-  
+
+  const handleLogoutAdmin = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
   if (!isAuthenticated) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-md overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
                   <div className="bg-primary-600 p-8 text-center relative">
-                      <div className="inline-flex bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm">
-                          <img src="/logo.svg" alt="Logo" className="w-16 h-16" />
-                      </div>
                       <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
                       <p className="text-primary-100">Portal do Aluno e Gestão</p>
                   </div>
                   <div className="flex border-b border-gray-100">
-                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => { setActiveLoginTab('EMAIL'); setLoginError(''); setIsFirstAccess(false); }}>Admin / Professor</button>
-                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'CPF' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => { setActiveLoginTab('CPF'); setLoginError(''); setIsFirstAccess(false); }}>Sou Responsável</button>
+                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'EMAIL' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`} onClick={() => setActiveLoginTab('EMAIL')}>Admin / Professor</button>
+                      <button className={`flex-1 py-4 text-sm font-semibold transition-colors ${activeLoginTab === 'CPF' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500'}`} onClick={() => setActiveLoginTab('CPF')}>Responsável</button>
                   </div>
                   <div className="p-8">
-                      {isFirstAccess ? (
-                           <form onSubmit={handleCreatePassword} className="space-y-4">
-                               <div className="text-center mb-4"><h3 className="font-bold text-gray-800">Primeiro Acesso</h3><p className="text-sm text-gray-500">Olá, <strong>{tempGuardianName}</strong>. Crie uma senha para acessar o portal.</p></div>
-                               <div><label className="block text-sm font-medium text-gray-700 mb-1">Nova Senha</label><input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
-                               <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label><input type="password" required className="w-full border rounded-lg p-3" placeholder="******" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} /></div>
-                               {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                               <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="animate-spin" /> : 'Criar Senha e Entrar'}</button>
-                           </form>
-                      ) : activeLoginTab === 'EMAIL' ? (
+                      {activeLoginTab === 'EMAIL' ? (
                         <form onSubmit={handleEmailLogin} className="space-y-4">
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><div className="relative"><UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="email" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="seu@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} /></div></div>
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha</label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
-                            {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Entrar no Sistema'}</button>
+                            <input type="email" required className="w-full p-3 border rounded-lg" placeholder="Email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
+                            <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Senha" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+                            {loginError && <div className="text-red-600 text-sm">{loginError}</div>}
+                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                                {isLoggingIn ? <Loader2 className="animate-spin" /> : 'Entrar'}
+                            </button>
                         </form>
                       ) : (
-                        <form onSubmit={handleCpfCheck} className="space-y-4">
-                             <div><label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável</label><div className="relative"><UsersIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="000.000.000-00" value={loginCpf} onChange={(e) => setLoginCpf(e.target.value)} /></div></div>
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" placeholder="••••••" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
-                            {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
-                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar / Primeiro Acesso'}</button>
+                        <form onSubmit={handleCpfLogin} className="space-y-4">
+                            <input type="text" required className="w-full p-3 border rounded-lg" placeholder="Seu CPF (Somente números)" value={loginCpf} onChange={e => setLoginCpf(e.target.value)} />
+                            {loginError && <div className="text-red-600 text-sm">{loginError}</div>}
+                            <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                                {isLoggingIn ? <Loader2 className="animate-spin" /> : 'Acessar Portal'}
+                            </button>
                         </form>
                       )}
-                      <div className="mt-6 text-center text-xs text-gray-400">© 2024 Garotos do Martinica.</div>
                   </div>
               </div>
           </div>
       );
   }
 
-  const renderContent = () => {
-    switch (currentPage) {
-      case 'dashboard': return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
-      case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={handleBatchAddStudents} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} />;
-      case 'groups': if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
-      case 'plans': if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
-      case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />;
-      case 'finance': return (currentUser!.role === UserRole.ADMIN) ? <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito</div>;
-      case 'users': return currentUser!.role === UserRole.ADMIN ? <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} /> : <div className="p-10 text-center text-gray-500">Acesso Restrito ao Administrador</div>;
-      default: return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
-    }
-  };
-
-  const isCheckingReconciliation = checkingRefs.current.size > 0;
-
   return (
     <div className="flex bg-gray-50 min-h-screen font-sans overflow-x-hidden">
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
-      <main className="flex-1 md:ml-64 p-4 md:p-8 min-w-0 max-w-full overflow-x-hidden">
-        <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-            <div className="flex items-center gap-3"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"><Menu className="w-6 h-6" /></button><div><h1 className="text-xl md:text-2xl font-bold text-gray-900">{currentPage === 'dashboard' && 'Visão Geral'}{currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}{currentPage === 'groups' && 'Gestão de Grupos'}{currentPage === 'plans' && 'Planos e Mensalidades'}{currentPage === 'schedule' && 'Agenda'}{currentPage === 'finance' && 'Fluxo de Caixa'}{currentPage === 'users' && 'Gestão de Usuários'}</h1></div></div>
-            <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2"><div className={`w-2 h-2 rounded-full bg-green-500 ${isCheckingReconciliation ? 'animate-ping' : 'animate-pulse'}`}></div>Sistema Online</div>
+      <main className="flex-1 md:ml-64 p-4 md:p-8">
+        <header className="mb-8 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg border text-gray-700"><Menu /></button>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">Garotos do Martinica</h1>
+            </div>
         </header>
-        {isLoading && !currentUser ? (<div className="flex h-64 w-full items-center justify-center flex-col gap-4"><Loader2 className="w-10 h-10 text-primary-500 animate-spin" /><p className="text-gray-500 font-medium">Sincronizando dados...</p></div>) : renderContent()}
+        {isLoading ? (<div className="flex h-64 w-full items-center justify-center"><Loader2 className="animate-spin" /></div>) : (
+            <>
+                {currentPage === 'dashboard' && <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />}
+                {currentPage === 'students' && <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={handleBatchAddStudents} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} />}
+                {currentPage === 'groups' && <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />}
+                {currentPage === 'schedule' && <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />}
+                {currentPage === 'finance' && <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />}
+            </>
+        )}
       </main>
     </div>
   );
