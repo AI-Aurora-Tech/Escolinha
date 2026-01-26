@@ -204,6 +204,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     }
   };
 
+  const handleManualSearchChange = (val: string) => {
+    setStudentSearch(val);
+  };
+
   const getAttendeesList = (activity: Partial<Activity>) => {
       let list: Student[] = [];
       if (activity.groupId) {
@@ -668,7 +672,32 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Localização</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" placeholder="Ex: Quadra 01, Estádio Municipal..." value={newActivity.location} onChange={e => setNewActivity({...newActivity, location: e.target.value})} /></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
-                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (<div><label className="block text-sm font-bold text-gray-700 mb-1">Alunos ({selectedStudentIds.size} selecionados)</label><div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">{filteredStudents.map(s => (<div key={s.id} onClick={() => toggleStudentSelection(s.id)} className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-white rounded transition-colors">{selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}<span className="text-sm font-medium">{s.name}</span></div>))}</div></div>)}
+                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1 flex justify-between items-center">
+                            <span>Alunos ({selectedStudentIds.size})</span>
+                            {selectedStudentIds.size > 0 && <button type="button" onClick={() => setSelectedStudentIds(new Set())} className="text-[10px] text-red-500 hover:underline uppercase font-black">Limpar</button>}
+                          </label>
+                          <div className="relative mb-2">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                              type="text" 
+                              placeholder="Buscar atleta por nome..." 
+                              className="w-full pl-9 pr-4 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 outline-none shadow-sm"
+                              value={studentSearch}
+                              onChange={e => handleManualSearchChange(e.target.value)}
+                            />
+                          </div>
+                          <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-1 bg-gray-50 shadow-inner">
+                            {filteredStudents.length > 0 ? filteredStudents.map(s => (
+                              <div key={s.id} onClick={() => toggleStudentSelection(s.id)} className={`flex items-center gap-2 p-2 cursor-pointer rounded transition-colors mb-1 last:border-0 ${selectedStudentIds.has(s.id) ? 'bg-primary-50 text-primary-900 border border-primary-100' : 'hover:bg-white text-gray-700'}`}>
+                                {selectedStudentIds.has(s.id) ? <CheckSquare className="text-primary-600 w-4 h-4" /> : <Square className="text-gray-300 w-4 h-4" />}
+                                <span className={`text-xs font-bold ${selectedStudentIds.has(s.id) ? 'font-black' : ''}`}>{s.name}</span>
+                              </div>
+                            )) : <div className="p-4 text-center text-xs text-gray-400 italic">Nenhum atleta ativo encontrado.</div>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-end gap-3 pt-6 border-t mt-6"><button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all">SALVAR AGENDAMENTO</button></div>
                 </form>
