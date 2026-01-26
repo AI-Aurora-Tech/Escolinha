@@ -67,7 +67,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
-      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: 0, awayScore: 0, scorers: []
+      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
   });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
@@ -90,7 +90,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenAdd = () => {
       setEditingId(null);
-      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: 0, awayScore: 0, scorers: [] });
+      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: [] });
       setTargetType('GROUP'); setSelectedStudentIds(new Set()); setStudentSearch(''); setHasFee(false); setShowAddModal(true);
   }
 
@@ -105,7 +105,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
     setEditingId(activity.id);
-    // Se o placar for null (não finalizado), inicia com 0. Se já for 0 ou mais, mantém o valor.
     setNewActivity({ 
       ...activity, 
       homeScore: typeof activity.homeScore === 'number' ? activity.homeScore : 0,
@@ -172,10 +171,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
         if (confirm("Resultado salvo!\nDeseja realizar a cobrança via WhatsApp das taxas de jogo para os atletas PRESENTES que ainda não pagaram?")) {
             const participants = getAttendeesList(activityData);
-            
-            // CONDIÇÃO REFINADA: 
-            // 1. Estar no array de presença (attendance)
-            // 2. NÃO estar no array de pagamentos (feePayments)
             const debtors = participants.filter(s => 
                 (activityData.attendance || []).includes(s.id) && 
                 !(activityData.feePayments || []).includes(s.id)
@@ -429,10 +424,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           let msg = '';
           
           if (notifyIsFeeCharging) {
-              // MENSAGEM DE COBRANÇA DE TAXA ATRASADA (PÓS JOGO) - REFINADA
               msg = `⚽ *COBRANÇA DE TAXA - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Notamos que a taxa referente ao jogo *${notifyActivity.title}* do atleta *${student.name}* (presente na partida) ainda não foi regularizada.\n\n💰 Valor: *R$ ${notifyActivity.fee?.toFixed(2)}*\n\n*Pagamento via PIX (Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento para mantermos o histórico financeiro em dia. Caso já tenha pago, favor desconsiderar.`;
           } else if (notifyLogs.some(l => l.includes('resultados'))) {
-              // MENSAGEM DE RESULTADO
               msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
               if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
                   msg += `\n⚽ *NOSSOS GOLS:*`;
@@ -444,7 +437,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               }
               msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
           } else {
-              // MENSAGEM DE CONVOCAÇÃO (PADRÃO)
               const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
               const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
               msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
@@ -525,7 +517,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                   {a.fee ? <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 uppercase">Taxa: R$ {a.fee}</span> : null}
                                   {isFinished && <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded-full font-black ml-2 uppercase border border-green-200">Finalizado</span>}
                                 </h4>
-                                {a.type === 'GAME' && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+                                {a.type === 'GAME' && isFinished && (<div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
                                     <div className="font-bold text-sm mb-2 text-gray-600 uppercase tracking-tight">{a.opponent || 'Adversário não informado'}</div>
                                     <div className="flex items-center gap-4"><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">GAROTOS</span><span className="text-2xl font-black text-primary-600">{a.homeScore}</span></div><span className="text-gray-300 font-bold text-lg">X</span><div className="text-center"><span className="text-[10px] text-gray-400 block font-bold">VISITANTE</span><span className="text-2xl font-black text-gray-700">{a.awayScore}</span></div></div>
                                 </div>)}
@@ -661,9 +653,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     {newActivity.type === 'GAME' && (<div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 space-y-4">
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Equipe Adversária</label><input type="text" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" placeholder="Nome do time..." value={newActivity.opponent} onChange={e => setNewActivity({...newActivity, opponent: e.target.value})} /></div>
                              <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-yellow-100 shadow-sm">
-                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-primary-600 mb-1">GAROTOS</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.homeScore} onChange={e => setNewActivity({...newActivity, homeScore: parseInt(e.target.value) || 0})} /></div>
+                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-primary-600 mb-1">GAROTOS</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.homeScore ?? ''} onChange={e => setNewActivity({...newActivity, homeScore: e.target.value === '' ? undefined : parseInt(e.target.value)})} /></div>
                                  <div className="text-2xl font-light text-gray-300">X</div>
-                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore} onChange={e => setNewActivity({...newActivity, awayScore: parseInt(e.target.value) || 0})} /></div>
+                                 <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore ?? ''} onChange={e => setNewActivity({...newActivity, awayScore: e.target.value === '' ? undefined : parseInt(e.target.value)})} /></div>
                              </div>
                              <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
                         </div>)}
