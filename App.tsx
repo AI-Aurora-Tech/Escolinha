@@ -627,36 +627,9 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
-
-      // Ancoragem automática do roster do grupo na criação
-      let initialParticipants = a.participants || [];
-      if (a.groupId && initialParticipants.length === 0) {
-          initialParticipants = students
-            .filter(s => s.active && (s.groupIds || []).includes(a.groupId))
-            .map(s => s.id);
-      }
-
-      const basePayload = { 
-          title: a.title, 
-          activity_type: a.type, 
-          fee: a.fee || 0, 
-          location: a.location || '', 
-          group_id: a.groupId || null, 
-          participants: initialParticipants, 
-          start_time: a.startTime, 
-          end_time: a.endTime, 
-          recurrence: a.recurrence, 
-          attendance: a.attendance || [], 
-          fee_payments: a.fee_payments || [], 
-          presentation_time: a.presentationTime, 
-          opponent: a.opponent, 
-          home_score: a.homeScore ?? null, 
-          away_score: a.awayScore ?? null, 
-          scorers: a.scorers || [] 
-      };
-
       if (a.recurrence === 'weekly') {
           const current = new Date(startDate);
           while (current.getFullYear() === startYear) {
@@ -689,7 +662,9 @@ function App() {
            
            if (a.type === 'GAME' && a.fee > 0) {
                const txsPayload: any[] = [];
-               const participantsList = students.filter(s => initialParticipants.includes(s.id));
+               const participantsList = a.groupId 
+                   ? students.filter(s => s.groupIds?.includes(a.groupId))
+                   : students.filter(s => a.participants?.includes(s.id));
                
                data.forEach((insertedAct: any) => {
                    const d = new Date(insertedAct.date + 'T12:00:00');
@@ -825,15 +800,8 @@ function App() {
   const handleUpdateAttendance = async (aid: string, sid: string) => { 
       const activity = activities.find(a => a.id === aid); if(!activity) return;
       const newAttendance = activity.attendance.includes(sid) ? activity.attendance.filter(id => id !== sid) : [...activity.attendance, sid];
-      
-      const updates: any = { attendance: newAttendance };
-      // Se o aluno não está no snapshot de participantes, ancora-o agora
-      if (!activity.participants?.includes(sid)) {
-          updates.participants = [...(activity.participants || []), sid];
-      }
-
-      const { error } = await supabase.from('activities').update(updates).eq('id', aid);
-      if(!error) setActivities(prev => prev.map(a => a.id === aid ? { ...a, ...updates } : a));
+      const { error } = await supabase.from('activities').update({ attendance: newAttendance }).eq('id', aid);
+      if(!error) setActivities(prev => prev.map(a => a.id === aid ? { ...a, attendance: newAttendance } : a));
   };
 
   const handleUpdateFeePayment = async (aid: string, sid: string) => {
@@ -842,15 +810,9 @@ function App() {
       const isPaidNow = !current.includes(sid);
       const next = isPaidNow ? [...current, sid] : current.filter(id => id !== sid);
       
-      const updates: any = { fee_payments: next };
-      // Garante ancoragem histórica
-      if (!activity.participants?.includes(sid)) {
-          updates.participants = [...(activity.participants || []), sid];
-      }
-
-      const { error } = await supabase.from('activities').update(updates).eq('id', aid);
+      const { error } = await supabase.from('activities').update({ fee_payments: next }).eq('id', aid);
       if(!error) {
-          setActivities(prev => prev.map(a => a.id === aid ? { ...a, ...updates } : a));
+          setActivities(prev => prev.map(a => a.id === aid ? { ...a, feePayments: next } : a));
           const targetRef = `game_fee_${aid}_${sid}`;
           const linkedTx = transactions.find(t => t.externalReference === targetRef);
           
@@ -917,8 +879,8 @@ function App() {
               student_id: safeVal(t.studentId), 
               plan_id: safeVal(t.planId), 
               payment_method: safeVal(t.paymentMethod), 
-              payment_link: safeVal(t.paymentLink), 
-              external_reference: safeVal(t.externalReference),
+              payment_link: safeVal(t.payment_link), 
+              external_reference: safeVal(t.external_reference),
               preference_id: safeVal(t.preference_id)
           });
       }
