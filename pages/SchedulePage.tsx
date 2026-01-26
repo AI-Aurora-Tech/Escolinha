@@ -71,7 +71,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
-      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: 0, awayScore: 0, scorers: []
+      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
   });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
@@ -102,18 +102,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenAdd = () => {
       setEditingId(null);
-      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: 0, awayScore: 0, scorers: [] });
+      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: [] });
       setTargetType('GROUP'); setSelectedStudentIds(new Set()); setStudentSearch(''); setHasFee(false); setShowAddModal(true);
   }
 
   const handleOpenEdit = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation(); setEditingId(activity.id);
       
-      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number';
+      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number' && activity.homeScore !== null;
       
       setNewActivity({ ...activity, type: activity.type || 'TRAINING', scorers: activity.scorers || [] });
       
-      // Se o jogo está finalizado, tratamos como lista manual para garantir que o snapshot seja exibido
       if (activity.participants?.length || isFinished) { 
           setTargetType('INDIVIDUAL'); 
           setSelectedStudentIds(new Set(activity.participants || [])); 
@@ -128,10 +127,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
 
-    // Validação de horário: não permitir finalizar jogos futuros ou antes de 30 minutos de jogo
     const matchStartTime = new Date(`${activity.date}T${activity.startTime}`);
     const now = new Date();
-    const minFinishTime = new Date(matchStartTime.getTime() + 30 * 60 * 1000); // Início + 30 min
+    const minFinishTime = new Date(matchStartTime.getTime() + 30 * 60 * 1000); 
 
     if (now < minFinishTime) {
         const timeDiff = Math.ceil((minFinishTime.getTime() - now.getTime()) / (60 * 1000));
@@ -161,7 +159,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       e.preventDefault();
       
       const currentAttendees = getAttendeesList(newActivity);
-      const isFinishing = newActivity.type === 'GAME' && typeof newActivity.homeScore === 'number';
+      const isFinishing = newActivity.type === 'GAME' && typeof newActivity.homeScore === 'number' && newActivity.homeScore !== null;
 
       const activityData = { 
           ...newActivity, 
@@ -182,8 +180,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
-    // Realiza o Snapshot dos participantes no momento exato do encerramento
-    // Isso garante que se o grupo mudar no futuro, a lista deste jogo não mudará.
     const currentAttendeesSnapshot = getAttendeesList(newActivity);
 
     const activityData = {
@@ -213,18 +209,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const getAttendeesList = (activity: Partial<Activity>) => {
       const unifiedIds = new Set<string>();
       
-      // 1. Inicia com quem já está explicitamente na lista (Snapshot ou Manual)
       (activity.participants || []).forEach(id => unifiedIds.add(id));
-      
-      // 2. Garante a inclusão de quem tem registro de presença, pagamento ou gol (segurança de histórico)
       (activity.attendance || []).forEach(id => unifiedIds.add(id));
       (activity.feePayments || []).forEach(id => unifiedIds.add(id));
       (activity.scorers || []).forEach(id => unifiedIds.add(id));
 
-      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number';
+      const isFinished = activity.type === 'GAME' && typeof activity.homeScore === 'number' && activity.homeScore !== null;
       
-      // 3. Fallback dinâmico para membros do grupo APENAS se o jogo NÃO estiver finalizado
-      // E não houver uma lista de participantes já definida (Snapshot).
       if (!isFinished && activity.groupId && (activity.participants || []).length === 0) {
           students
             .filter(s => s.active && (s.groupIds || []).includes(activity.groupId!))
@@ -330,7 +321,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     const g = groups.find(x => x.id === a.groupId); 
                     const attendeesCount = getAttendeesList(a).length;
                     const presenceCount = a.attendance.length;
-                    const isFinished = a.type === 'GAME' && typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
+                    const isFinished = a.type === 'GAME' && typeof a.homeScore === 'number' && a.homeScore !== null;
 
                     return (
                       <div key={a.id} className={`bg-white p-5 rounded-xl border transition-all cursor-pointer ${selectedActivityId === a.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-gray-100 hover:border-primary-200'}`} onClick={() => setSelectedActivityId(a.id)}>
@@ -428,7 +419,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       {showFinishModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200">
-                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Flag className="text-orange-600" /> Encerrar Partida</h3><button onClick={() => setShowFinishModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button></div>
                 <form onSubmit={handleFinishMatchSubmit} className="space-y-6">
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                       <p className="text-xs font-bold text-gray-400 uppercase mb-3 text-center tracking-widest">Placar Final</p>

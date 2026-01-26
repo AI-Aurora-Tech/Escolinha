@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
+// Fix: Correct import path for DashboardPage
 import { DashboardPage } from './pages/DashboardPage';
 import { StudentsPage } from './pages/StudentsPage';
 import { GroupsPage } from './pages/GroupsPage';
@@ -48,7 +48,7 @@ function App() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plans, setPositions] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
 
   // Ref para evitar múltiplas verificações simultâneas do mesmo pagamento
@@ -145,7 +145,7 @@ function App() {
 
         if (groupsData) setGroups(groupsData);
         if (plansData) {
-            setPlans(plansData.map((p: any) => ({
+            setPositions(plansData.map((p: any) => ({
                 id: p.id,
                 name: p.name,
                 price: p.price,
@@ -223,7 +223,7 @@ function App() {
     // Canal dedicado para o esquema public
     const channel = supabase
       .channel('public-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
+      .on(' postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
@@ -627,7 +627,25 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
+      // Garantimos que novos jogos nasçam com placar nulo para evitar o status finalizado precocemente
+      const basePayload = { 
+          title: a.title, 
+          activity_type: a.type, 
+          fee: a.fee || 0, 
+          location: a.location || '', 
+          group_id: a.groupId || null, 
+          participants: a.participants || [], 
+          start_time: a.startTime, 
+          end_time: a.endTime, 
+          recurrence: a.recurrence, 
+          attendance: a.attendance || [], 
+          fee_payments: a.fee_payments || [], 
+          presentation_time: a.presentationTime, 
+          opponent: a.opponent, 
+          home_score: (a.homeScore !== undefined && a.homeScore !== null) ? a.homeScore : null, 
+          away_score: (a.awayScore !== undefined && a.awayScore !== null) ? a.awayScore : null, 
+          scorers: a.scorers || [] 
+      };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
       if (a.recurrence === 'weekly') {
@@ -710,8 +728,8 @@ function App() {
           fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
-          home_score: (typeof a.homeScore === 'number') ? a.homeScore : null, 
-          away_score: (typeof a.awayScore === 'number') ? a.awayScore : null, 
+          home_score: (typeof a.homeScore === 'number' && a.homeScore !== null) ? a.homeScore : null, 
+          away_score: (typeof a.awayScore === 'number' && a.awayScore !== null) ? a.awayScore : null, 
           scorers: a.scorers || [] 
       };
       
@@ -879,9 +897,10 @@ function App() {
               student_id: safeVal(t.studentId), 
               plan_id: safeVal(t.planId), 
               payment_method: safeVal(t.paymentMethod), 
-              payment_link: safeVal(t.payment_link), 
-              external_reference: safeVal(t.external_reference),
-              preference_id: safeVal(t.preference_id)
+              // Fix: Use correct property names from Transaction interface
+              payment_link: safeVal(t.paymentLink), 
+              external_reference: safeVal(t.externalReference), 
+              preference_id: safeVal(t.preferenceId)
           });
       }
 
@@ -969,6 +988,7 @@ function App() {
       if (t.studentId !== undefined) payload.student_id = safeVal(t.studentId); 
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
+      // Fix: Use correct property name 'paymentLink' from Transaction type
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
@@ -1001,18 +1021,18 @@ function App() {
   const handleAddPlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { data, error } = await supabase.from('plans').insert([payload]).select().single();
-      if(data && !error) setPlans(prev => [...prev, { ...p, id: data.id }]);
+      if(data && !error) setPositions(prev => [...prev, { ...p, id: data.id }]);
   };
   
   const handleUpdatePlan = async (p: any) => { 
       const payload = { name: p.name, price: p.price, due_day: p.due_day, description: p.description };
       const { error } = await supabase.from('plans').update(payload).eq('id', p.id);
-      if(!error) setPlans(prev => prev.map(pl => pl.id === p.id ? p : pl));
+      if(!error) setPositions(prev => prev.map(pl => pl.id === p.id ? p : pl));
   };
   
   const handleDeletePlan = async (id: string) => { 
       const { error } = await supabase.from('plans').delete().eq('id', id);
-      if(!error) setPlans(prev => prev.filter(p => p.id !== id));
+      if(!error) setPositions(prev => prev.filter(p => p.id !== id));
   };
   
   const handleAddUser = async (u: any) => { 
