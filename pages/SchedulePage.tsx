@@ -105,7 +105,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const handleOpenFinishMatch = (e: React.MouseEvent, activity: Activity) => {
     e.stopPropagation();
     setEditingId(activity.id);
-    // Se o placar for null (não finalizado), inicia com 0. Se já for 0 ou mais, mantém o valor.
     setNewActivity({ 
       ...activity, 
       homeScore: typeof activity.homeScore === 'number' ? activity.homeScore : 0,
@@ -125,11 +124,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
+      
+      // Captura snapshot se for um jogo finalizado
+      const currentAttendees = getAttendeesList(newActivity);
+      const isFinishing = newActivity.type === 'GAME' && typeof newActivity.homeScore === 'number';
+
       const activityData = { 
           ...newActivity, 
           fee: hasFee ? (newActivity.fee || 0) : 0, 
           groupId: targetType === 'GROUP' ? newActivity.groupId : undefined, 
-          participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [], 
+          participants: isFinishing ? currentAttendees.map(s => s.id) : (targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : []), 
           scorers: newActivity.type === 'GAME' ? (newActivity.scorers || []).slice(0, newActivity.homeScore || 0) : [] 
       };
       
@@ -144,16 +148,17 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
+    const currentAttendees = getAttendeesList(newActivity);
+
     const activityData = {
       ...newActivity,
       id: editingId,
+      participants: currentAttendees.map(s => s.id), 
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
 
-    // REGRA DE NEGÓCIO: Cancelar taxa de atletas ausentes
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
-      const participants = getAttendeesList(activityData);
-      participants.forEach(student => {
+      currentAttendees.forEach(student => {
         const isPresent = (activityData.attendance || []).includes(student.id);
         if (!isPresent) {
           const targetRef = `game_fee_${editingId}_${student.id}`;
@@ -168,14 +173,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     onUpdateActivity(activityData);
     setShowFinishModal(false);
 
-    // Fluxo de cobrança de taxas pós-jogo
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
         if (confirm("Resultado salvo!\nDeseja realizar a cobrança via WhatsApp das taxas de jogo para os atletas PRESENTES que ainda não pagaram?")) {
             const participants = getAttendeesList(activityData);
-            
-            // CONDIÇÃO REFINADA: 
-            // 1. Estar no array de presença (attendance)
-            // 2. NÃO estar no array de pagamentos (feePayments)
             const debtors = participants.filter(s => 
                 (activityData.attendance || []).includes(s.id) && 
                 !(activityData.feePayments || []).includes(s.id)
@@ -210,11 +210,27 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   };
 
   const getAttendeesList = (activity: Partial<Activity>) => {
+      // Unifica IDs de participantes (snapshot), presença, artilharia e pagamento
+      // Isso garante que se um aluno tiver QUALQUER registro na atividade, ele apareça
+      // mesmo que saia do grupo futuramente.
+      const unifiedIds = new Set<string>(activity.participants || []);
+      (activity.attendance || []).forEach(id => unifiedIds.add(id));
+      (activity.feePayments || []).forEach(id => unifiedIds.add(id));
+      (activity.scorers || []).forEach(id => unifiedIds.add(id));
+
       let list: Student[] = [];
-      if (activity.groupId) {
+      if (unifiedIds.size > 0) {
+          list = students.filter(s => unifiedIds.has(s.id));
+          
+          // Se o jogo NÃO estiver finalizado, ainda queremos mostrar o resto do grupo também para chamada
+          if (activity.groupId && typeof activity.homeScore !== 'number') {
+             const groupStudents = students.filter(s => (s.groupIds || []).includes(activity.groupId!) && s.active);
+             groupStudents.forEach(s => {
+                 if (!list.find(item => item.id === s.id)) list.push(s);
+             });
+          }
+      } else if (activity.groupId) {
           list = students.filter(s => (s.groupIds || []).includes(activity.groupId!) && s.active);
-      } else if (activity.participants?.length) {
-          list = students.filter(s => activity.participants?.includes(s.id));
       }
       return list.sort((a, b) => a.name.localeCompare(b.name));
   };
@@ -429,10 +445,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           let msg = '';
           
           if (notifyIsFeeCharging) {
-              // MENSAGEM DE COBRANÇA DE TAXA ATRASADA (PÓS JOGO) - REFINADA
               msg = `⚽ *COBRANÇA DE TAXA - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Notamos que a taxa referente ao jogo *${notifyActivity.title}* do atleta *${student.name}* (presente na partida) ainda não foi regularizada.\n\n💰 Valor: *R$ ${notifyActivity.fee?.toFixed(2)}*\n\n*Pagamento via PIX (Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento para mantermos o histórico financeiro em dia. Caso já tenha pago, favor desconsiderar.`;
           } else if (notifyLogs.some(l => l.includes('resultados'))) {
-              // MENSAGEM DE RESULTADO
               msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
               if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
                   msg += `\n⚽ *NOSSOS GOLS:*`;
@@ -444,7 +458,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               }
               msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
           } else {
-              // MENSAGEM DE CONVOCAÇÃO (PADRÃO)
               const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
               const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
               msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
