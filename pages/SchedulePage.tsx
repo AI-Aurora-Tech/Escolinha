@@ -143,11 +143,21 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
+    // Clonamos os dados atuais para o payload de atualização
     const activityData = {
       ...newActivity,
       id: editingId,
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
+
+    // REGRA DE HISTÓRICO: Se o jogo pertencia a um grupo, agora que acabou,
+    // capturamos quem eram os atletas e transformamos em lista individual (estática).
+    // Isso evita que mudanças futuras no grupo alterem o histórico deste jogo finalizado.
+    if (activityData.groupId) {
+        const currentGroupMembers = students.filter(s => (s.groupIds || []).includes(activityData.groupId!) && s.active);
+        activityData.participants = currentGroupMembers.map(s => s.id);
+        activityData.groupId = undefined; // Remove a ligação dinâmica com o grupo
+    }
 
     // REGRA DE NEGÓCIO: Cancelar taxa de atletas ausentes
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
@@ -649,7 +659,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
       {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 overflow-y-auto max-h-[90vh] animate-in zoom-in duration-200">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-lg p-6 overflow-y-auto max-h-[90vh] animate-in zoom-in duration-200">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900">{editingId ? 'Editar Atividade' : 'Novo Agendamento'}</h3><button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button></div>
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div className="flex gap-4"><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'TRAINING' ? 'bg-primary-50 border-primary-500 text-primary-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'TRAINING'} onChange={() => setNewActivity({...newActivity, type: 'TRAINING'})} className="hidden" /> <Zap className="w-4 h-4" /> Treino</label><label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer font-bold ${newActivity.type === 'GAME' ? 'bg-yellow-50 border-yellow-500 text-yellow-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400 hover:border-primary-200'}`}><input type="radio" checked={newActivity.type === 'GAME'} onChange={() => setNewActivity({...newActivity, type: 'GAME'})} className="hidden" /> <Trophy className="w-4 h-4" /> Jogo</label></div>
