@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
 // Add Banknote as CashIcon to the imports from lucide-react to fix the "Cannot find name 'CashIcon'" error.
@@ -264,7 +265,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           const phone = student.guardian.phone.replace(/\D/g, '');
 
           if (phone) {
-              const message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nConstatamos que o atleta *${student.name}* possui *${overdueTxs.length} mensalidade(s) em aberto*, totalizando *R$ ${totalDebt.toFixed(2)}*.\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento via Portal do Aluno ou procure a secretaria para regularizar a situação.\n\nAgradecemos a confiança e parceria de sempre!`;
+              let message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nIdentificamos as seguintes pendências para o atleta *${student.name}*:\n\n`;
+              
+              overdueTxs.forEach(t => {
+                  message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
+              });
+              
+              message += `\n*TOTAL: R$ ${totalDebt.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria para regularizar a situação. Caso já tenha pago, favor desconsiderar.\n\nAgradecemos a confiança e parceria de sempre!`;
               
               const sent = await sendZApiMessage(phone, message);
               if (sent) successCount++;
@@ -377,7 +384,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
+    else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
@@ -1090,6 +1097,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                              <div>
                                                  <p className="font-bold text-gray-900">{tx.description}</p>
                                                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                                     {/* Fix: use tx.date instead of t.date */}
                                                      <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
                                                      {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
                                                      {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
