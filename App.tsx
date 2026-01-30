@@ -385,73 +385,69 @@ function App() {
   };
 
   const handleGenerateGlobalTuitions = async () => {
-      const activeStudents = students.filter(s => s.active && s.planId);
-      const currentYear = new Date().getFullYear();
-      
-      // REQUISITO: Gerar mensalidade do ano inteiro (Fevereiro a Dezembro)
-      const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; 
-      const newTransactionsPayload = [];
+      setIsLoading(true);
+      try {
+        const activeStudents = students.filter(s => s.active && s.planId);
+        const currentYear = new Date().getFullYear();
+        
+        // REQUISITO: Gerar mensalidade do ano inteiro (Fevereiro a Dezembro)
+        const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; 
+        const newTransactionsPayload = [];
 
-      for (const monthIdx of monthsToGenerate) {
-          const monthPrefix = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
-          
-          for (const student of activeStudents) {
-              const plan = plans.find(p => p.id === student.planId);
-              
-              // REQUISITO: Alunos com plano bolsista (valor 0.00) não devem ter mensalidades criadas
-              if (!plan || plan.price <= 0) continue;
+        for (const monthIdx of monthsToGenerate) {
+            const monthPrefix = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
+            
+            for (const student of activeStudents) {
+                const plan = plans.find(p => p.id === student.planId);
+                
+                // REQUISITO: Alunos com plano bolsista (valor 0.00) não devem ter mensalidades criadas
+                if (!plan || Number(plan.price) <= 0) continue;
 
-              const alreadyExists = transactions.some(t => 
-                  t.studentId === student.id && 
-                  t.type === TransactionType.INCOME && 
-                  t.date.startsWith(monthPrefix)
-              );
+                // Verificação aprimorada para evitar duplicidade verificando descrição e prefixo de data
+                const alreadyExists = transactions.some(t => 
+                    t.studentId === student.id && 
+                    t.type === TransactionType.INCOME && 
+                    t.description.includes('[Mensalidade]') &&
+                    t.date.startsWith(monthPrefix)
+                );
 
-              if (!alreadyExists) {
-                  const targetDay = plan.dueDay;
-                  const dateStr = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
-                  
-                  const monthName = new Date(currentYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
-                  const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                  const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+                if (!alreadyExists) {
+                    const targetDay = plan.dueDay || 10;
+                    const dateStr = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
+                    
+                    const monthName = new Date(currentYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
+                    const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                    const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
 
-                  const externalReference = crypto.randomUUID();
-                  newTransactionsPayload.push({
-                      description: description,
-                      amount: plan.price,
-                      type: TransactionType.INCOME,
-                      date: dateStr,
-                      status: PaymentStatus.PENDING,
-                      student_id: student.id,
-                      plan_id: plan.id,
-                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                      external_reference: externalReference
-                  });
-              }
-          }
-      }
+                    const externalReference = crypto.randomUUID();
+                    newTransactionsPayload.push({
+                        description: description,
+                        amount: plan.price,
+                        type: TransactionType.INCOME,
+                        date: dateStr,
+                        status: PaymentStatus.PENDING,
+                        student_id: student.id,
+                        plan_id: plan.id,
+                        payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                        external_reference: externalReference
+                    });
+                }
+            }
+        }
 
-      if (newTransactionsPayload.length > 0) {
-          const { data, error } = await supabase.from('transactions').insert(newTransactionsPayload).select(TX_SELECT_FIELDS);
-          if (data && !error) {
-              const mapped = data.map((t: any) => ({
-                  id: t.id, 
-                  description: t.description, 
-                  category: 'Mensalidade',
-                  amount: t.amount, 
-                  type: t.type, 
-                  date: t.date, 
-                  paymentDate: undefined,
-                  status: t.status, 
-                  studentId: t.student_id, 
-                  planId: t.plan_id, 
-                  paymentMethod: t.payment_method, 
-                  externalReference: t.external_reference,
-                  paymentLink: t.payment_link,
-                  preferenceId: t.preference_id
-              }));
-              setTransactions(prev => [...prev, ...mapped]);
-          }
+        if (newTransactionsPayload.length > 0) {
+            const { error } = await supabase.from('transactions').insert(newTransactionsPayload);
+            if (!error) {
+                await fetchData(true);
+                alert(`${newTransactionsPayload.length} mensalidades geradas com sucesso para o ano atual.`);
+            }
+        } else {
+            alert("Não foram encontradas novas mensalidades para gerar (todos os atletas já possuem lançamentos para o ano todo).");
+        }
+      } catch (err) {
+          console.error("Erro na geração global:", err);
+      } finally {
+          setIsLoading(false);
       }
   };
 
@@ -485,7 +481,7 @@ function App() {
         photo_url: finalPhotoUrl, 
         address: studentData.address, 
         guardian: studentData.guardian, 
-        plan_id: studentData.plan_id, 
+        plan_id: studentData.planId, 
         group_ids: studentData.groupIds, 
         group_id: primaryGroupId, 
         active: studentData.active, 
@@ -576,7 +572,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.plan_id, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -957,7 +953,6 @@ function App() {
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
-      // Fixed property access on t (Partial<Transaction>) to fix the reported error
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
