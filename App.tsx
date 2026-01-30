@@ -388,22 +388,21 @@ function App() {
       setIsLoading(true);
       try {
         const activeStudents = students.filter(s => s.active && s.planId);
-        const currentYear = new Date().getFullYear();
-        
-        // REQUISITO: Gerar mensalidade do ano inteiro (Fevereiro a Dezembro)
-        const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; 
+        // REQUISITO: Gerar mensalidade do ano inteiro de 2026 (fevereiro a dezembro)
+        const targetYear = 2026;
+        const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; // Fev (1) a Dez (11)
         const newTransactionsPayload = [];
 
         for (const monthIdx of monthsToGenerate) {
-            const monthPrefix = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
+            const monthPrefix = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
             
             for (const student of activeStudents) {
                 const plan = plans.find(p => p.id === student.planId);
                 
-                // REQUISITO: Alunos com plano bolsista (valor 0.00) não devem ter mensalidades criadas
+                // REQUISITO: Alunos com o plano bolsista valor 0.00 não devem ter mensalidades criadas
                 if (!plan || Number(plan.price) <= 0) continue;
 
-                // Verificação aprimorada para evitar duplicidade verificando descrição e prefixo de data
+                // Verificação de duplicidade para o ano/mês específico
                 const alreadyExists = transactions.some(t => 
                     t.studentId === student.id && 
                     t.type === TransactionType.INCOME && 
@@ -413,11 +412,11 @@ function App() {
 
                 if (!alreadyExists) {
                     const targetDay = plan.dueDay || 10;
-                    const dateStr = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
+                    const dateStr = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
                     
-                    const monthName = new Date(currentYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
+                    const monthName = new Date(targetYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
                     const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                    const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+                    const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${targetYear}`;
 
                     const externalReference = crypto.randomUUID();
                     newTransactionsPayload.push({
@@ -439,10 +438,10 @@ function App() {
             const { error } = await supabase.from('transactions').insert(newTransactionsPayload);
             if (!error) {
                 await fetchData(true);
-                alert(`${newTransactionsPayload.length} mensalidades geradas com sucesso para o ano atual.`);
+                alert(`${newTransactionsPayload.length} mensalidades de 2026 geradas com sucesso.`);
             }
         } else {
-            alert("Não foram encontradas novas mensalidades para gerar (todos os atletas já possuem lançamentos para o ano todo).");
+            alert("Nenhuma nova mensalidade pendente de geração para 2026.");
         }
       } catch (err) {
           console.error("Erro na geração global:", err);
@@ -1083,7 +1082,7 @@ function App() {
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="flex-1 md:ml-64 p-4 md:p-8 min-w-0 max-w-full overflow-x-hidden">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-            <div className="flex items-center gap-3"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"><Menu className="w-6 h-6" /></button><div><h1 className="text-xl md:text-2xl font-bold text-gray-900">{currentPage === 'dashboard' && 'Visão Geral'}{currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}{currentPage === 'groups' && 'Gestão de Grupos'}{currentPage === 'plans' && 'Planos e Mensalidades'}{currentPage === 'schedule' && 'Agenda'}{currentPage === 'finance' && 'Fluxo de Caixa'}{currentPage === 'users' && 'Gestão de Usuários'}</h1></div></div>
+            <div className="flex items-center gap-3"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:bg-gray-50"><Menu className="w-6 h-6" /></button><div><h1 className="text-xl md:text-2xl font-bold text-gray-900">{currentPage === 'dashboard' && 'Visão Geral'}{currentPage === 'students' && (currentUser?.role === UserRole.RESPONSAVEL ? 'Meus Filhos' : 'Gestão de Alunos')}{currentPage === 'groups' && 'Gestão de Grupos'}{currentPage === 'plans' && 'Planos e Mensalidades'}{currentPage === 'schedule' && 'Agenda'}{currentPage === 'finance' && 'Fluxo de Caixa'}{currentPage === 'users' && (currentUser?.role === UserRole.ADMIN ? 'Gestão de Usuários' : 'Acesso Restrito')}</h1></div></div>
             <div className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full border border-orange-200 w-fit self-start md:self-auto flex items-center gap-2"><div className={`w-2 h-2 rounded-full bg-green-500 ${isCheckingReconciliation ? 'animate-ping' : 'animate-pulse'}`}></div>Sistema Online</div>
         </header>
         {isLoading && !currentUser ? (<div className="flex h-64 w-full items-center justify-center flex-col gap-4"><Loader2 className="w-10 h-10 text-primary-500 animate-spin" /><p className="text-gray-500 font-medium">Sincronizando dados...</p></div>) : renderContent()}
