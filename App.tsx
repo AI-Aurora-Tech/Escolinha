@@ -389,7 +389,6 @@ function App() {
       const currentYear = new Date().getFullYear();
       
       // REQUISITO: Gerar mensalidade do ano inteiro (Fevereiro a Dezembro)
-      // Fevereiro é index 1, Dezembro é index 11
       const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; 
       const newTransactionsPayload = [];
 
@@ -486,7 +485,7 @@ function App() {
         photo_url: finalPhotoUrl, 
         address: studentData.address, 
         guardian: studentData.guardian, 
-        plan_id: studentData.planId, 
+        plan_id: studentData.plan_id, 
         group_ids: studentData.groupIds, 
         group_id: primaryGroupId, 
         active: studentData.active, 
@@ -577,7 +576,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.plan_id, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -958,6 +957,7 @@ function App() {
       if (t.planId !== undefined) payload.plan_id = safeVal(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = safeVal(t.paymentMethod);
       if (t.paymentLink !== undefined) payload.payment_link = safeVal(t.paymentLink);
+      // Fixed property access on t (Partial<Transaction>) to fix the reported error
       if (t.externalReference !== undefined) payload.external_reference = safeVal(t.externalReference);
       if (t.preferenceId !== undefined) payload.preference_id = safeVal(t.preferenceId);
 
@@ -1056,7 +1056,7 @@ function App() {
                       ) : (
                         <form onSubmit={handleCpfCheck} className="space-y-4">
                              <div><label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável</label><div className="relative"><UsersIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" required className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" placeholder="000.000.000-00" value={loginCpf} onChange={(e) => setLoginCpf(e.target.value)} /></div></div>
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" placeholder="••••••" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Senha <span className="text-gray-400 font-normal text-xs">(Deixe em branco no 1º acesso)</span></label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="password" placeholder="••••••" className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500" value={loginCpf.length > 0 ? loginPassword : ''} onChange={(e) => setLoginPassword(e.target.value)} /></div></div>
                             {loginError && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg text-center">{loginError}</div>}
                             <button type="submit" disabled={isLoggingIn} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">{isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar / Primeiro Acesso'}</button>
                         </form>
