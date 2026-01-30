@@ -59,10 +59,27 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
 
   const nextActivity = useMemo(() => {
     const now = new Date();
+    
+    // Para responsáveis, precisamos filtrar apenas o que o filho dele está convocado
+    const studentIds = students.map(s => s.id);
+    const studentGroupIds = students.flatMap(s => s.groupIds || []);
+
     return activities
-        .filter(a => new Date(a.date + 'T' + a.startTime) > now)
+        .filter(a => {
+            const isFuture = new Date(a.date + 'T' + a.startTime) > now;
+            if (!isFuture) return false;
+
+            // Se for responsável, filtra pela convocação do aluno
+            if (role === UserRole.RESPONSAVEL) {
+                const isInGroup = a.groupId && studentGroupIds.includes(a.groupId);
+                const isIndividualParticipant = a.participants && a.participants.some(pId => studentIds.includes(pId));
+                return isInGroup || isIndividualParticipant;
+            }
+
+            return true;
+        })
         .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime())[0];
-  }, [activities]);
+  }, [activities, students, role]);
 
   const formatDate = (dateString: string) => {
       if (!dateString) return '';
