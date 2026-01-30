@@ -386,42 +386,49 @@ function App() {
 
   const handleGenerateGlobalTuitions = async () => {
       const activeStudents = students.filter(s => s.active && s.planId);
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      const currentMonth = today.getMonth(); // 0-11
-      const monthPrefix = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`;
+      const currentYear = new Date().getFullYear();
+      
+      // REQUISITO: Gerar mensalidade do ano inteiro (Fevereiro a Dezembro)
+      // Fevereiro é index 1, Dezembro é index 11
+      const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; 
       const newTransactionsPayload = [];
 
-      for (const student of activeStudents) {
-          const plan = plans.find(p => p.id === student.planId);
-          if (!plan) continue;
-
-          const alreadyExists = transactions.some(t => 
-              t.studentId === student.id && 
-              t.type === TransactionType.INCOME && 
-              t.date.startsWith(monthPrefix)
-          );
-
-          if (!alreadyExists) {
-              const targetDay = plan.dueDay;
-              const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
+      for (const monthIdx of monthsToGenerate) {
+          const monthPrefix = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
+          
+          for (const student of activeStudents) {
+              const plan = plans.find(p => p.id === student.planId);
               
-              const monthName = new Date(currentYear, currentMonth, 1).toLocaleString('pt-BR', { month: 'long' });
-              const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-              const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+              // REQUISITO: Alunos com plano bolsista (valor 0.00) não devem ter mensalidades criadas
+              if (!plan || plan.price <= 0) continue;
 
-              const externalReference = crypto.randomUUID();
-              newTransactionsPayload.push({
-                  description: description,
-                  amount: plan.price,
-                  type: TransactionType.INCOME,
-                  date: dateStr,
-                  status: PaymentStatus.PENDING,
-                  student_id: student.id,
-                  plan_id: plan.id,
-                  payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                  external_reference: externalReference
-              });
+              const alreadyExists = transactions.some(t => 
+                  t.studentId === student.id && 
+                  t.type === TransactionType.INCOME && 
+                  t.date.startsWith(monthPrefix)
+              );
+
+              if (!alreadyExists) {
+                  const targetDay = plan.dueDay;
+                  const dateStr = `${currentYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
+                  
+                  const monthName = new Date(currentYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
+                  const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                  const description = `[Mensalidade] ${student.name.split(' ')[0]} - ${capitalizedMonth} / ${currentYear}`;
+
+                  const externalReference = crypto.randomUUID();
+                  newTransactionsPayload.push({
+                      description: description,
+                      amount: plan.price,
+                      type: TransactionType.INCOME,
+                      date: dateStr,
+                      status: PaymentStatus.PENDING,
+                      student_id: student.id,
+                      plan_id: plan.id,
+                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                      external_reference: externalReference
+                  });
+              }
           }
       }
 
@@ -524,12 +531,12 @@ function App() {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
         return { 
             name: s.name, 
-            birth_date: s.birthDate || s.birth_date, 
+            birth_date: s.birthDate, 
             rg: s.rg, 
             cpf: s.cpf, 
             phone: s.phone, 
-            medical_expiry: s.medicalCertificateExpiry || s.medical_expiry, 
-            photo_url: s.photoUrl || s.photo_url, 
+            medical_expiry: s.medicalCertificateExpiry, 
+            photo_url: s.photoUrl, 
             address: s.address, 
             guardian: s.guardian, 
             plan_id: s.planId || null, 
@@ -570,7 +577,7 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birth_date, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
@@ -685,7 +692,7 @@ function App() {
           end_time: a.endTime, 
           recurrence: a.recurrence, 
           attendance: a.attendance || [], 
-          fee_payments: a.fee_payments || [], 
+          fee_payments: a.feePayments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
           home_score: (typeof a.homeScore === 'number') ? a.homeScore : null, 
@@ -848,7 +855,6 @@ function App() {
               finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
           }
 
-          // DO fix snake_case usage on object t.
           transactionsToAdd.push({ 
               description: finalDesc, 
               amount: Number(t.amount), 
@@ -900,11 +906,10 @@ function App() {
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
       
-      // Buscamos a transação atual do estado para ter os dados originais
       const originalTx = transactions.find(x => x.id === t.id);
       if (!originalTx) return;
 
-      // Se o status está mudando para PAGO, enviamos a confirmação via Z-API
+      // REQUISITO: Enviar confirmação via WhatsApp se status mudou para PAGO
       if (t.status === PaymentStatus.PAID && originalTx.status !== PaymentStatus.PAID) {
           const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
           const cleanDescription = originalTx.description.split(' (Pago em')[0];
@@ -922,7 +927,6 @@ function App() {
                   sendZApiMessage(student.guardian.phone, msg);
               }
 
-              // Lógica de sincronização automática com a lista de presença (taxas de jogo)
               const currentExtRef = t.externalReference || originalTx.externalReference;
               if (currentExtRef?.startsWith('game_fee_')) {
                   const parts = currentExtRef.split('_');
