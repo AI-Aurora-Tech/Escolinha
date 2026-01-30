@@ -388,7 +388,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
-      onUpdateTransaction({ id, status: PaymentStatus.PAID, paymentMethod: method });
+      // Incluímos paymentDate para garantir que o trigger de WhatsApp receba a data correta
+      onUpdateTransaction({ 
+          id, 
+          status: PaymentStatus.PAID, 
+          paymentMethod: method, 
+          paymentDate: new Date().toISOString().split('T')[0] 
+      });
   };
 
   const handleCancelTransaction = (tx: Transaction) => {

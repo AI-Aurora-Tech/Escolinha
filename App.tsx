@@ -213,14 +213,10 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    console.log("[Realtime] Tentando conectar...");
-
     const handleChanges = (payload: any) => {
-        console.log(`[Realtime] Mudança em ${payload.table}:`, payload.eventType);
         fetchData(true); 
     };
 
-    // Canal dedicado para o esquema public
     const channel = supabase
       .channel('public-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleChanges)
@@ -229,20 +225,9 @@ function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
-      .subscribe((status, err) => {
-          if (status === 'SUBSCRIBED') {
-              console.log("[Realtime] Conectado e ouvindo mudanças!");
-          }
-          if (status === 'CHANNEL_ERROR') {
-              console.error("[Realtime] Erro de conexão. Verifique o script SQL de publicação.", err);
-          }
-          if (status === 'TIMED_OUT') {
-              console.warn("[Realtime] Conexão expirou. Tentando reconectar...");
-          }
-      });
+      .subscribe();
 
     return () => {
-      console.log("[Realtime] Removendo ouvintes...");
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, fetchData]);
@@ -484,7 +469,6 @@ function App() {
         finalPhotoUrl = await uploadPhoto(studentData.photoUrl, studentData.name);
     }
     const primaryGroupId = (studentData.groupIds && studentData.groupIds.length > 0) ? studentData.groupIds[0] : null;
-    /* Correcting property name access from medical_expiry to medicalCertificateExpiry */
     const payload = { 
         name: studentData.name, 
         birth_date: studentData.birthDate, 
@@ -524,8 +508,7 @@ function App() {
         
         if (studentData.guardian.phone) {
             const msg = `Seja bem-vindo(a) à Garotos do Martinica! ⚽\n\nOlá *${studentData.guardian.name}*, confirmamos a matrícula do(a) atleta *${studentData.name}*.\n\nFicamos felizes em tê-los conosco! Utilize o CPF do responsável para acessar o Portal do Aluno em nosso site.\n\nQualquer dúvida, estamos à disposição.`;
-            const sent = await sendZApiMessage(studentData.guardian.phone, msg);
-            if (sent) alert(`Mensagem de boas-vindas enviada para ${studentData.guardian.name}!`);
+            sendZApiMessage(studentData.guardian.phone, msg);
         }
 
         await handleGenerateGlobalTuitions();
@@ -539,7 +522,6 @@ function App() {
       setIsLoading(true);
       const payload = studentsData.map(s => {
         const primaryGroupId = (s.groupIds && s.groupIds.length > 0) ? s.groupIds[0] : null;
-        /* Correcting property names to match Student interface for batch import */
         return { 
             name: s.name, 
             birth_date: s.birthDate || s.birth_date, 
@@ -577,8 +559,6 @@ function App() {
           }));
           setStudents(prev => [...prev, ...mapped]);
           await handleGenerateGlobalTuitions();
-      } else if (error) {
-          alert(`Erro na importação em lote: ${error.message}`);
       }
       setIsLoading(false);
   };
@@ -590,12 +570,10 @@ function App() {
           finalPhotoUrl = await uploadPhoto(updatedStudent.photoUrl, updatedStudent.name);
       }
       const primaryGroupId = (updatedStudent.groupIds && updatedStudent.groupIds.length > 0) ? updatedStudent.groupIds[0] : null;
-      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birthDate, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
+      const payload = { name: updatedStudent.name, birth_date: updatedStudent.birth_date, rg: updatedStudent.rg, cpf: updatedStudent.cpf, phone: updatedStudent.phone, medical_expiry: updatedStudent.medicalCertificateExpiry, photo_url: finalPhotoUrl, address: updatedStudent.address, guardian: updatedStudent.guardian, plan_id: updatedStudent.planId, group_ids: updatedStudent.groupIds, group_id: primaryGroupId, active: updatedStudent.active, documents: updatedStudent.documents };
       const { error } = await supabase.from('students').update(payload).eq('id', updatedStudent.id);
       if (!error) { 
           setStudents(students.map(s => s.id === updatedStudent.id ? { ...updatedStudent, photoUrl: finalPhotoUrl } : s)); 
-      } else {
-          alert(`Erro ao atualizar aluno: ${error.message}`);
       }
       setIsLoading(false);
   };
@@ -627,7 +605,7 @@ function App() {
   const handleAddActivity = async (a: any) => { 
       setIsLoading(true);
       const payloadList = [];
-      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
+      const basePayload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', group_id: a.groupId || null, participants: a.participants || [], start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance || [], fee_payments: a.fee_payments || [], presentation_time: a.presentation_time, opponent: a.opponent, home_score: a.homeScore ?? null, away_score: a.awayScore ?? null, scorers: a.scorers || [] };
       const startDate = new Date(a.date + 'T00:00:00'); 
       const startYear = startDate.getFullYear();
       if (a.recurrence === 'weekly') {
@@ -707,7 +685,7 @@ function App() {
           end_time: a.endTime, 
           recurrence: a.recurrence, 
           attendance: a.attendance || [], 
-          fee_payments: a.feePayments || [], 
+          fee_payments: a.fee_payments || [], 
           presentation_time: a.presentationTime, 
           opponent: a.opponent, 
           home_score: (typeof a.homeScore === 'number') ? a.homeScore : null, 
@@ -870,6 +848,7 @@ function App() {
               finalDesc += ` (Pago em ${formatFriendlyDate(t.paymentDate)})`;
           }
 
+          // DO fix snake_case usage on object t.
           transactionsToAdd.push({ 
               description: finalDesc, 
               amount: Number(t.amount), 
@@ -879,9 +858,9 @@ function App() {
               student_id: safeVal(t.studentId), 
               plan_id: safeVal(t.planId), 
               payment_method: safeVal(t.paymentMethod), 
-              payment_link: safeVal(t.payment_link), 
-              external_reference: safeVal(t.external_reference),
-              preference_id: safeVal(t.preference_id)
+              payment_link: safeVal(t.paymentLink), 
+              external_reference: safeVal(t.externalReference),
+              preference_id: safeVal(t.preferenceId)
           });
       }
 
@@ -920,26 +899,30 @@ function App() {
       if (!t.id) return;
       const payload: any = {};
       const safeVal = (v: any) => (v === '' || v === undefined || v === 'null') ? null : v;
-      const originalTx = transactions.find(x => x.id === t.id);
       
-      if (t.status === PaymentStatus.PAID) {
-          if (originalTx) {
-              const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
-              // Limpa qualquer menção anterior de pagamento para evitar duplicidade ou travamento por string
-              const cleanDescription = originalTx.description.split(' (Pago em')[0];
-              payload.description = `${cleanDescription} (Pago em ${formatFriendlyDate(pDate)})`;
-              
-              if (originalTx.studentId) {
-                  const student = students.find(s => s.id === originalTx.studentId);
-                  if (student && student.guardian.phone) {
-                      const isGameFee = cleanDescription.includes("[Taxa de Jogo]");
-                      const footerMsg = isGameFee ? "Obrigado por apoiar nossos atletas nos jogos!" : "Agradecemos a parceria! Sua mensalidade está em dia.";
-                      
-                      const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
-                      sendZApiMessage(student.guardian.phone, msg);
-                  }
+      // Buscamos a transação atual do estado para ter os dados originais
+      const originalTx = transactions.find(x => x.id === t.id);
+      if (!originalTx) return;
+
+      // Se o status está mudando para PAGO, enviamos a confirmação via Z-API
+      if (t.status === PaymentStatus.PAID && originalTx.status !== PaymentStatus.PAID) {
+          const pDate = t.paymentDate || new Date().toISOString().split('T')[0];
+          const cleanDescription = originalTx.description.split(' (Pago em')[0];
+          payload.description = `${cleanDescription} (Pago em ${formatFriendlyDate(pDate)})`;
+          
+          if (originalTx.studentId) {
+              const student = students.find(s => s.id === originalTx.studentId);
+              if (student && student.guardian.phone) {
+                  const isGameFee = cleanDescription.includes("[Taxa de Jogo]") || cleanDescription.includes("[Taxa]");
+                  const footerMsg = isGameFee ? "Obrigado por apoiar nossos atletas nos jogos! 🏆" : "Agradecemos a parceria! Sua mensalidade está em dia. ✅";
+                  
+                  const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
+                  
+                  // Disparo da mensagem
+                  sendZApiMessage(student.guardian.phone, msg);
               }
 
+              // Lógica de sincronização automática com a lista de presença (taxas de jogo)
               const currentExtRef = t.externalReference || originalTx.externalReference;
               if (currentExtRef?.startsWith('game_fee_')) {
                   const parts = currentExtRef.split('_');
@@ -953,6 +936,7 @@ function App() {
                           if (!currentFeePayments.includes(studentId)) {
                               const nextFeePayments = [...currentFeePayments, studentId];
                               await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+                              setActivities(prev => prev.map(act => act.id === activityId ? { ...act, feePayments: nextFeePayments } : act));
                           }
                       }
                   }
