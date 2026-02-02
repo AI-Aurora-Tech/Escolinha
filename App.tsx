@@ -392,6 +392,7 @@ function App() {
         const targetYear = 2026;
         const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; // Fev (1) a Dez (11)
         const newTransactionsPayload = [];
+        const studentsToNotify = new Set<string>();
 
         for (const monthIdx of monthsToGenerate) {
             const monthPrefix = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
@@ -430,6 +431,7 @@ function App() {
                         payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                         external_reference: externalReference
                     });
+                    studentsToNotify.add(student.id);
                 }
             }
         }
@@ -438,13 +440,30 @@ function App() {
             const { error } = await supabase.from('transactions').insert(newTransactionsPayload);
             if (!error) {
                 await fetchData(true);
-                alert(`${newTransactionsPayload.length} mensalidades de 2026 geradas com sucesso.`);
+                alert(`${newTransactionsPayload.length} mensalidades de 2026 geradas com sucesso. Iniciando disparos de WhatsApp...`);
+                
+                // --- INICIO DA FILA DE NOTIFICAÇÕES (10s de intervalo) ---
+                const athleteIds = Array.from(studentsToNotify);
+                for (let i = 0; i < athleteIds.length; i++) {
+                    const student = students.find(s => s.id === athleteIds[i]);
+                    if (student && student.guardian.phone) {
+                        const msg = `⚽ *MENSALIDADES 2026 - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Informamos que as mensalidades de 2026 do atleta *${student.name}* foram geradas e já estão disponíveis no Portal do Aluno.\n\nVocê pode consultar os vencimentos e realizar o pagamento via PIX ou cartão diretamente pelo nosso site utilizando seu CPF.\n\nAgradecemos a confiança e parceria de sempre!`;
+                        await sendZApiMessage(student.guardian.phone, msg);
+                    }
+                    
+                    // Aguarda 10 segundos antes do próximo disparo (regra de SPAM)
+                    if (i < athleteIds.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 10000));
+                    }
+                }
+                alert("Processo de geração e notificação concluído!");
             }
         } else {
             alert("Nenhuma nova mensalidade pendente de geração para 2026.");
         }
       } catch (err) {
           console.error("Erro na geração global:", err);
+          alert("Houve um erro durante o processamento.");
       } finally {
           setIsLoading(false);
       }
