@@ -128,6 +128,14 @@ export interface Transaction {
   recurrence?: 'NONE' | 'MONTHLY'; // Novo campo
 }
 
+export interface Occurrence {
+  id: string;
+  studentId: string;
+  description: string;
+  date: string;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;

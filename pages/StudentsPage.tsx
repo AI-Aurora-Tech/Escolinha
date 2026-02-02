@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole } from '../types';
+import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
 // Add Banknote as CashIcon to the imports from lucide-react to fix the "Cannot find name 'CashIcon'" error.
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, CalendarCheck, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2 } from 'lucide-react';
+// Fix: Added CalendarCheck to the imports from lucide-react.
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -15,17 +16,19 @@ interface StudentsPageProps {
   plans: Plan[];
   transactions: Transaction[];
   activities: Activity[];
+  occurrences: Occurrence[];
   onAddStudent: (s: Omit<Student, 'id'>) => void;
   onBatchAddStudents: (s: Omit<Student, 'id'>[]) => void;
   onUpdateStudent: (s: Student) => void;
   onUpdateTransaction: (t: Partial<Transaction>) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
+  onAddOccurrence: (studentId: string, description: string, date: string) => Promise<boolean>;
   onGenerateTuitions: () => Promise<void>;
   initialFilter?: string;
   currentUser?: User | null;
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onGenerateTuitions, initialFilter, currentUser }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, occurrences, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onAddOccurrence, onGenerateTuitions, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const ageFilter = '';
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -39,7 +42,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE'>('DETAILS');
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE' | 'OCCURRENCES'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Filtros de presença
@@ -65,6 +68,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+
+  const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
+  const [newOccurrence, setNewOccurrence] = useState({ description: '', date: new Date().toISOString().split('T')[0], studentId: '' });
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -468,7 +474,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
   };
 
-  const sendBatchSelectedCharges = async () => {
+  const sendBatchSelectedCharges = async (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
       if (selectedFinanceIds.size === 0) return;
       
       const phone = studentForm.guardian.phone.replace(/\D/g, '');
@@ -507,7 +514,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
       let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
       let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
-      let mfinOk2 = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
       let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
       let mplan = planFilter === 'ALL' || s.planId === planFilter;
       return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
@@ -567,6 +573,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleOpenHistory = (student: Student) => { handleOpenEdit(student); setActiveTab('FINANCE'); };
   const handleOpenAttendance = (student: Student) => { handleOpenEdit(student); setActiveTab('ATTENDANCE'); };
+  const handleOpenOccurrences = (student: Student) => { handleOpenEdit(student); setActiveTab('OCCURRENCES'); };
+
+  const handleOpenAddOccurrence = (e: React.MouseEvent, student: Student) => {
+    e.stopPropagation();
+    setNewOccurrence({ description: '', date: new Date().toISOString().split('T')[0], studentId: student.id });
+    setShowOccurrenceModal(true);
+  };
+
+  const handleSaveOccurrence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newOccurrence.description && newOccurrence.studentId) {
+        const ok = await onAddOccurrence(newOccurrence.studentId, newOccurrence.description, newOccurrence.date);
+        if (ok) {
+            alert("Ocorrência registrada e enviada!");
+            setShowOccurrenceModal(false);
+        } else {
+            alert("Erro ao salvar ocorrência.");
+        }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); if(isGuardian) return; 
@@ -643,6 +669,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       return matchesMonth && matchesYear && isPast;
     });
   }, [studentActivities, attendanceMonth, attendanceYear, todayStr]);
+
+  const studentOccurrences = useMemo(() => {
+      return occurrences.filter(o => o.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [occurrences, editingId]);
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
       setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
@@ -803,11 +833,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                          <button onClick={() => handleGenerateContract(student)} className="flex-1 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 py-2.5 rounded-lg text-xs font-bold border border-gray-200"><Printer className="w-3.5 h-3.5" /> Contrato</button>
-                          <button onClick={() => handleOpenAttendance(student)} className="flex-1 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 py-2.5 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /> Freq.</button>
-                          <button onClick={() => handleOpenHistory(student)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /> Financ.</button>
-                          <button onClick={() => handleOpenEdit(student)} className="flex-1 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 py-2.5 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /> Editar</button>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                          <button onClick={() => handleGenerateContract(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Printer className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleOpenAttendance(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 p-2 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleOpenHistory(student)} className={`flex-shrink-0 flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /></button>
+                          {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-orange-50 text-orange-700 p-2 rounded-lg text-xs font-bold border border-orange-100"><MessageSquareWarning className="w-3.5 h-3.5" /></button>}
+                          <button onClick={() => handleOpenEdit(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /></button>
                       </div>
                   </div>
               );
@@ -910,9 +941,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <button onClick={() => handleGenerateContract(student)} className="text-gray-600 hover:text-gray-800 p-2 bg-gray-50 rounded-lg" title="Imprimir Contrato"><Printer className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg"><CalendarCheck className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-50 text-blue-600'}`}><History className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg"><Edit className="w-4 h-4" /></button>
+                        <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg" title="Frequência"><CalendarCheck className="w-4 h-4" /></button>
+                        <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-50 text-blue-600'}`} title="Financeiro"><History className="w-4 h-4" /></button>
+                        {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="text-orange-600 hover:text-orange-800 p-2 bg-orange-50 rounded-lg transition-colors" title="Enviar Ocorrência"><MessageSquareWarning className="w-4 h-4" /></button>}
+                        <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg" title="Editar"><Edit className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -930,22 +962,22 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               <div>
                   <h3 className="text-lg md:text-xl font-bold">{isGuardian ? 'Ficha do Atleta' : (editingId ? 'Editar Aluno' : 'Novo Aluno')}</h3>
                   {editingId && (
-                      <div className="flex gap-4 mt-4">
-                          <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>
-                          <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
-                          <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
+                      <div className="flex gap-4 mt-4 overflow-x-auto pb-1">
+                          <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>
+                          <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
+                          <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
+                          <button onClick={() => setActiveTab('OCCURRENCES')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'OCCURRENCES' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Ocorrências</button>
                       </div>
                   )}
               </div>
               <div className="flex items-center gap-3">
-                  {editingId && (
+                  {editingId && !isGuardian && (
                       <button 
-                          onClick={() => handleGenerateContract(students.find(s => s.id === editingId)!)}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
-                          title="Imprimir Contrato"
+                          onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 border border-orange-200 rounded-lg text-xs font-bold text-orange-700 hover:bg-orange-200 transition-colors shadow-sm"
                       >
-                          <Printer className="w-4 h-4" />
-                          <span>Contrato</span>
+                          <MessageSquareWarning className="w-4 h-4" />
+                          <span className="hidden sm:inline">Nova Ocorrência</span>
                       </button>
                   )}
                   <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
@@ -1077,7 +1109,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     {pixLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <QrCode className="w-6 h-6" />} PAGAR COM PIX
                                 </button>
                                 {!isGuardian && (
-                                    <button onClick={sendBatchSelectedCharges} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2">
+                                    <button onClick={(e) => sendBatchSelectedCharges(e)} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2">
                                         <MessageCircle className="w-5 h-5" /> ENVIAR COBRANÇA (WA)
                                     </button>
                                 )}
@@ -1103,7 +1135,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                              <div>
                                                  <p className="font-bold text-gray-900">{tx.description}</p>
                                                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                                     {/* Fix: use tx.date instead of t.date */}
                                                      <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
                                                      {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
                                                      {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
@@ -1130,7 +1161,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                          </div>
                     </div>
                 </div>
-            ) : (
+            ) : activeTab === 'ATTENDANCE' ? (
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
                     <div className="max-w-4xl mx-auto space-y-6">
                         {/* Filtros de Frequência */}
@@ -1229,6 +1260,43 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         </div>
                     </div>
                 </div>
+            ) : (
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
+                    <div className="max-w-4xl mx-auto space-y-6">
+                        <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
+                            <h4 className="font-bold text-gray-700 flex items-center gap-2">
+                                <MessageSquareWarning className="w-5 h-5 text-orange-600" /> Histórico de Comunicados
+                            </h4>
+                            {!isGuardian && (
+                                <button onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-xs font-black transition-colors shadow-sm flex items-center gap-2">
+                                    <Plus className="w-4 h-4" /> NOVO REGISTRO
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {studentOccurrences.map(occ => (
+                                <div key={occ.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="bg-orange-50 text-orange-700 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-orange-100">Comunicado WA</span>
+                                        <span className="text-xs text-gray-400 font-bold flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(occ.date)}</span>
+                                    </div>
+                                    <p className="text-sm text-gray-700 leading-relaxed italic">"{occ.description}"</p>
+                                    <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between text-[10px] text-gray-400 font-medium">
+                                        <span>Registrado em: {new Date(occ.createdAt).toLocaleString('pt-BR')}</span>
+                                        <span className="text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Enviado com sucesso</span>
+                                    </div>
+                                </div>
+                            ))}
+                            {studentOccurrences.length === 0 && (
+                                <div className="p-12 text-center text-gray-400 bg-white rounded-2xl border-2 border-dashed border-gray-100">
+                                    <MessageSquareWarning className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                                    <p>Nenhuma ocorrência registrada para este atleta.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
             
             <div className="p-4 md:p-6 border-t bg-gray-50 rounded-b-2xl flex justify-end gap-3">
@@ -1290,6 +1358,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label><input required type="date" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none" value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} /></div>
                 </div>
                 <div className="pt-4 flex gap-3"><button type="button" onClick={() => setShowChargeModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="flex-1 py-3 bg-gray-900 text-white rounded-xl font-black hover:bg-black transition-all">LANÇAR</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVA OCORRÊNCIA */}
+      {showOccurrenceModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter flex items-center gap-2">
+                    <MessageSquareWarning className="text-orange-600 w-5 h-5" /> Registrar Ocorrência
+                </h3>
+                <button onClick={() => setShowOccurrenceModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
+            </div>
+            <form onSubmit={handleSaveOccurrence} className="space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição do Ocorrido</label>
+                    <textarea required rows={4} className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none text-sm" 
+                        placeholder="Descreva o comportamento, atraso ou aviso para o responsável..."
+                        value={newOccurrence.description} onChange={e => setNewOccurrence({...newOccurrence, description: e.target.value})} />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data da Ocorrência</label>
+                    <input required type="date" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
+                        value={newOccurrence.date} onChange={e => setNewOccurrence({...newOccurrence, date: e.target.value})} />
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Ao salvar, uma mensagem será enviada automaticamente para o WhatsApp do responsável cadastrado.</p>
+                <div className="pt-4 flex gap-3">
+                    <button type="button" onClick={() => setShowOccurrenceModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
+                    <button type="submit" className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-black hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">SALVAR E ENVIAR</button>
+                </div>
             </form>
           </div>
         </div>

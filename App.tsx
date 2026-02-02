@@ -9,7 +9,7 @@ import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
 import { AICoachPage } from './pages/AICoachPage';
-import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod } from './types';
+import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { checkMPPaymentStatus } from './services/mercadoPago';
@@ -50,6 +50,7 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
+  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
 
   // Ref para evitar múltiplas verificações simultâneas do mesmo pagamento
   const checkingRefs = useRef<Set<string>>(new Set());
@@ -68,6 +69,7 @@ function App() {
         const { data: groupsData } = await supabase.from('groups').select('*');
         const { data: plansData } = await supabase.from('plans').select('*');
         const { data: activitiesData } = await supabase.from('activities').select('*');
+        const { data: occurrencesData } = await supabase.from('student_occurrences').select('*');
         
         let studentsData;
         let transactionsData;
@@ -154,6 +156,16 @@ function App() {
             })));
         }
 
+        if (occurrencesData) {
+            setOccurrences(occurrencesData.map((o: any) => ({
+                id: o.id,
+                studentId: o.student_id,
+                description: o.description,
+                date: o.date,
+                createdAt: o.created_at
+            })));
+        }
+
         if (transactionsData) {
              setTransactions(transactionsData.map((t: any) => {
                  const desc = t.description || '';
@@ -225,6 +237,7 @@ function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleChanges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, handleChanges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_occurrences' }, handleChanges)
       .subscribe();
 
     return () => {
@@ -480,6 +493,26 @@ function App() {
       } finally {
           setIsLoading(false);
       }
+  };
+
+  const handleAddOccurrence = async (studentId: string, description: string, date: string) => {
+    try {
+        const payload = { student_id: studentId, description, date };
+        const { data, error } = await supabase.from('student_occurrences').insert([payload]).select().single();
+        if (data && !error) {
+            const student = students.find(s => s.id === studentId);
+            if (student && student.guardian.phone) {
+                const msg = `⚽ *COMUNICADO DE OCORRÊNCIA - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Informamos um registro referente ao atleta *${student.name}* na data de ${formatFriendlyDate(date)}:\n\n"${description}"\n\nEste registro fica arquivado no histórico do aluno. Qualquer dúvida, estamos à disposição na secretaria.`;
+                await sendZApiMessage(student.guardian.phone, msg);
+            }
+            await fetchData(true);
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
   };
 
   const uploadPhoto = async (photoDataUrl: string, studentName: string): Promise<string | undefined> => {
@@ -1009,7 +1042,7 @@ function App() {
   
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
-      if(!error) setGroups(prev => prev.filter(gr => gr.id !== id));
+      if(!error) setGroups(prev => prev.filter(g => g.id !== id));
   };
   
   const handleAddPlan = async (p: any) => { 
@@ -1097,7 +1130,7 @@ function App() {
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard': return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
-      case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={handleBatchAddStudents} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} />;
+      case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={handleBatchAddStudents} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} occurrences={occurrences} onAddOccurrence={handleAddOccurrence} />;
       case 'groups': if (currentUser!.role === UserRole.RESPONSAVEL) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
       case 'plans': if (currentUser!.role !== UserRole.ADMIN) return <div className="p-10 text-center text-gray-500">Acesso Restrito</div>; return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
       case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />;
