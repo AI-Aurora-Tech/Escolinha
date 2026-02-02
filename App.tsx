@@ -417,8 +417,12 @@ function App() {
                 );
 
                 if (!alreadyExists) {
-                    const targetDay = plan.dueDay || 10;
-                    const dateStr = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${targetDay.toString().padStart(2, '0')}`;
+                    // CORREÇÃO: Validar o último dia do mês para evitar erro de data inválida (ex: 29/02/2026)
+                    const lastDayOfMonth = new Date(targetYear, monthIdx + 1, 0).getDate();
+                    const targetDayFromPlan = plan.dueDay || 10;
+                    const actualDay = Math.min(targetDayFromPlan, lastDayOfMonth);
+                    
+                    const dateStr = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}-${actualDay.toString().padStart(2, '0')}`;
                     
                     const monthName = new Date(targetYear, monthIdx, 1).toLocaleString('pt-BR', { month: 'long' });
                     const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -1005,7 +1009,7 @@ function App() {
   
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
-      if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+      if(!error) setGroups(prev => prev.filter(gr => gr.id !== id));
   };
   
   const handleAddPlan = async (p: any) => { 
