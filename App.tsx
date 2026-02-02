@@ -387,12 +387,17 @@ function App() {
   const handleGenerateGlobalTuitions = async () => {
       setIsLoading(true);
       try {
+        if (students.length === 0 || plans.length === 0) {
+            alert("Dados de alunos ou planos ainda não carregados. Tente novamente em instantes.");
+            setIsLoading(false);
+            return;
+        }
+
         const activeStudents = students.filter(s => s.active && s.planId);
-        // REQUISITO: Gerar mensalidade do ano inteiro de 2026 (fevereiro a dezembro)
         const targetYear = 2026;
         const monthsToGenerate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; // Fev (1) a Dez (11)
         const newTransactionsPayload = [];
-        const studentsToNotify = new Set<string>();
+        const studentIdsNotified = new Set<string>();
 
         for (const monthIdx of monthsToGenerate) {
             const monthPrefix = `${targetYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
@@ -403,7 +408,7 @@ function App() {
                 // REQUISITO: Alunos com o plano bolsista valor 0.00 não devem ter mensalidades criadas
                 if (!plan || Number(plan.price) <= 0) continue;
 
-                // Verificação de duplicidade para o ano/mês específico
+                // Verificação de duplicidade na lista de transações carregada
                 const alreadyExists = transactions.some(t => 
                     t.studentId === student.id && 
                     t.type === TransactionType.INCOME && 
@@ -422,7 +427,7 @@ function App() {
                     const externalReference = crypto.randomUUID();
                     newTransactionsPayload.push({
                         description: description,
-                        amount: plan.price,
+                        amount: Number(plan.price),
                         type: TransactionType.INCOME,
                         date: dateStr,
                         status: PaymentStatus.PENDING,
@@ -431,7 +436,7 @@ function App() {
                         payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                         external_reference: externalReference
                     });
-                    studentsToNotify.add(student.id);
+                    studentIdsNotified.add(student.id);
                 }
             }
         }
@@ -439,11 +444,13 @@ function App() {
         if (newTransactionsPayload.length > 0) {
             const { error } = await supabase.from('transactions').insert(newTransactionsPayload);
             if (!error) {
+                // Atualiza o estado local para refletir as novas transações
                 await fetchData(true);
-                alert(`${newTransactionsPayload.length} mensalidades de 2026 geradas com sucesso. Iniciando disparos de WhatsApp...`);
                 
-                // --- INICIO DA FILA DE NOTIFICAÇÕES (10s de intervalo) ---
-                const athleteIds = Array.from(studentsToNotify);
+                alert(`${newTransactionsPayload.length} mensalidades de 2026 foram geradas no sistema.\n\nIniciando agora o envio sequencial dos comunicados via WhatsApp (1 aluno a cada 10 segundos para sua segurança).`);
+                
+                // --- FILA DE NOTIFICAÇÃO ---
+                const athleteIds = Array.from(studentIdsNotified);
                 for (let i = 0; i < athleteIds.length; i++) {
                     const student = students.find(s => s.id === athleteIds[i]);
                     if (student && student.guardian.phone) {
@@ -451,19 +458,21 @@ function App() {
                         await sendZApiMessage(student.guardian.phone, msg);
                     }
                     
-                    // Aguarda 10 segundos antes do próximo disparo (regra de SPAM)
+                    // Delay de 10s se não for o último aluno
                     if (i < athleteIds.length - 1) {
                         await new Promise(resolve => setTimeout(resolve, 10000));
                     }
                 }
-                alert("Processo de geração e notificação concluído!");
+                alert("Processo de envio de WhatsApp finalizado!");
+            } else {
+                alert(`Erro ao inserir no banco: ${error.message}`);
             }
         } else {
             alert("Nenhuma nova mensalidade pendente de geração para 2026.");
         }
-      } catch (err) {
+      } catch (err: any) {
           console.error("Erro na geração global:", err);
-          alert("Houve um erro durante o processamento.");
+          alert("Houve um erro durante o processamento. Verifique o console.");
       } finally {
           setIsLoading(false);
       }
