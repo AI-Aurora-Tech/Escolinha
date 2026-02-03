@@ -990,8 +990,8 @@ function App() {
                   // Disparo da mensagem de texto (aguardando para garantir a ordem)
                   await sendZApiMessage(student.guardian.phone, msg);
 
-                  // Delay de 2 segundos para o servidor do WhatsApp processar a mensagem anterior antes do documento
-                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  // Aumentado o delay para 5 segundos conforme solicitado para garantir que o WhatsApp processe a mensagem anterior antes do documento
+                  await new Promise(resolve => setTimeout(resolve, 5000));
 
                   // --- GERAÇÃO E ENVIO DE RECIBO PDF ---
                   try {
@@ -1053,8 +1053,9 @@ function App() {
                       doc.text("Este recibo é digital e foi gerado automaticamente pelo sistema de gestão.", 105, 280, { align: 'center' });
                       doc.text("https://escolinha.martinicaoficial.com.br", 105, 285, { align: 'center' });
 
-                      // Gerar Base64 limpo do PDF
-                      const pdfBase64 = doc.output('datauristring').split('base64,')[1];
+                      // Gerar Base64 limpo do PDF (removendo prefixo de data uri se houver)
+                      const rawOutput = doc.output('datauristring');
+                      const pdfBase64 = rawOutput.includes('base64,') ? rawOutput.split('base64,')[1] : rawOutput;
                       
                       // Enviar documento (aguardando resposta)
                       await sendZApiDocument(student.guardian.phone, pdfBase64, `Recibo_Martinica_${student.name.split(' ')[0]}.pdf`);
