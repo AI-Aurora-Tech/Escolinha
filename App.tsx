@@ -13,7 +13,9 @@ import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentSta
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
 import { checkMPPaymentStatus } from './services/mercadoPago';
-import { sendZApiMessage } from './services/zapiService';
+import { sendZApiMessage, sendZApiDocument } from './services/zapiService';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Lista de colunas seguras para evitar erro PGRST204
 const TX_SELECT_FIELDS = 'id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
@@ -184,7 +186,7 @@ function App() {
                      status: t.status,
                      studentId: t.student_id,
                      planId: t.plan_id,
-                     paymentMethod: t.payment_method,
+                     payment_method: t.payment_method,
                      paymentLink: t.payment_link,
                      externalReference: t.external_reference, 
                      preferenceId: t.preference_id
@@ -985,8 +987,75 @@ function App() {
                   
                   const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
                   
-                  // Disparo da mensagem
+                  // Disparo da mensagem de texto
                   sendZApiMessage(student.guardian.phone, msg);
+
+                  // --- GERAÇÃO E ENVIO DE RECIBO PDF ---
+                  try {
+                      const doc = new jsPDF();
+                      const primaryColor = [249, 115, 22]; // Laranja
+                      
+                      // Cabeçalho Timbrado
+                      doc.setFillColor(249, 115, 22);
+                      doc.rect(0, 0, 210, 40, 'F');
+                      doc.setFontSize(22);
+                      doc.setTextColor(255, 255, 255);
+                      doc.setFont("helvetica", "bold");
+                      doc.text("GAROTOS DO MARTINICA", 105, 20, { align: 'center' });
+                      doc.setFontSize(10);
+                      doc.text("RECIBO DE PAGAMENTO", 105, 30, { align: 'center' });
+
+                      // Corpo do Recibo
+                      doc.setTextColor(50, 50, 50);
+                      doc.setFontSize(12);
+                      doc.setFont("helvetica", "normal");
+                      
+                      const bodyY = 60;
+                      doc.text(`Nº do Recibo: ${originalTx.id.substring(0, 8).toUpperCase()}`, 14, bodyY);
+                      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 140, bodyY);
+
+                      doc.setDrawColor(230, 230, 230);
+                      doc.line(14, bodyY + 5, 196, bodyY + 5);
+
+                      doc.setFont("helvetica", "bold");
+                      doc.text("DADOS DO PAGAMENTO:", 14, bodyY + 15);
+                      doc.setFont("helvetica", "normal");
+                      
+                      const paymentInfo = [
+                        ['Responsável:', student.guardian.name],
+                        ['Atleta:', student.name],
+                        ['Referente a:', cleanDescription],
+                        ['Valor Pago:', `R$ ${originalTx.amount.toFixed(2)}`],
+                        ['Data do Pagamento:', formatFriendlyDate(pDate)],
+                        ['Método:', t.paymentMethod || originalTx.paymentMethod || 'Dinheiro']
+                      ];
+
+                      autoTable(doc, {
+                        startY: bodyY + 20,
+                        body: paymentInfo,
+                        theme: 'plain',
+                        styles: { fontSize: 10, cellPadding: 2 },
+                        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } }
+                      });
+
+                      const finalY = (doc as any).lastAutoTable.finalY || bodyY + 80;
+                      
+                      doc.setFontSize(9);
+                      doc.setFont("helvetica", "italic");
+                      const decl = `Declaramos para os devidos fins que recebemos a importância acima citada, quitando a pendência mencionada neste documento.`;
+                      doc.text(doc.splitTextToSize(decl, 180), 105, finalY + 20, { align: 'center' });
+
+                      // Rodapé
+                      doc.setFont("helvetica", "normal");
+                      doc.setFontSize(8);
+                      doc.text("Este recibo é digital e foi gerado automaticamente pelo sistema de gestão.", 105, 280, { align: 'center' });
+                      doc.text("https://escolinha.martinicaoficial.com.br", 105, 285, { align: 'center' });
+
+                      const pdfBase64 = doc.output('datauristring').split(',')[1];
+                      sendZApiDocument(student.guardian.phone, pdfBase64, `Recibo_Martinica_${student.name.split(' ')[0]}.pdf`);
+                  } catch (pdfErr) {
+                      console.error("Falha ao gerar recibo:", pdfErr);
+                  }
               }
 
               const currentExtRef = t.externalReference || originalTx.externalReference;
