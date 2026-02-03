@@ -987,7 +987,7 @@ function App() {
                   
                   const msg = `Olá *${student.guardian.name}*! ⚽\n\nRecebemos o pagamento referente a:\n*${cleanDescription}*\nValor: *R$ ${originalTx.amount.toFixed(2)}*\nData: ${formatFriendlyDate(pDate)}\n\n${footerMsg}`;
                   
-                  // Disparo da mensagem de texto (aguardando para garantir a ordem)
+                  // Disparo da mensagem de texto
                   await sendZApiMessage(student.guardian.phone, msg);
 
                   // Aumentado o delay para 5 segundos conforme solicitado para garantir que o WhatsApp processe a mensagem anterior antes do documento
@@ -1053,12 +1053,15 @@ function App() {
                       doc.text("Este recibo é digital e foi gerado automaticamente pelo sistema de gestão.", 105, 280, { align: 'center' });
                       doc.text("https://escolinha.martinicaoficial.com.br", 105, 285, { align: 'center' });
 
-                      // Gerar Base64 limpo do PDF (removendo prefixo de data uri se houver)
-                      const rawOutput = doc.output('datauristring');
-                      const pdfBase64 = rawOutput.includes('base64,') ? rawOutput.split('base64,')[1] : rawOutput;
+                      // Gerar Base64 limpo do PDF (extraindo a parte correta após a vírgula do DataURI)
+                      const pdfDataUri = doc.output('datauristring');
+                      const pdfBase64 = pdfDataUri.split(',')[1];
                       
-                      // Enviar documento (aguardando resposta)
-                      await sendZApiDocument(student.guardian.phone, pdfBase64, `Recibo_Martinica_${student.name.split(' ')[0]}.pdf`);
+                      if (pdfBase64) {
+                        const safeFileName = `Recibo_${student.name.replace(/\s+/g, '_')}.pdf`;
+                        // Enviar documento (aguardando resposta da API)
+                        await sendZApiDocument(student.guardian.phone, pdfBase64, safeFileName);
+                      }
                   } catch (pdfErr) {
                       console.error("Falha ao gerar ou enviar recibo PDF:", pdfErr);
                   }
