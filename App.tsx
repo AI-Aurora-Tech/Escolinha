@@ -250,6 +250,7 @@ function App() {
     if (!isAuthenticated || transactions.length === 0) return;
 
     const reconcilePayments = async () => {
+        // Busca transações pendentes que tenham referência (Taxas ou Mensalidades)
         const pendingWithRefs = transactions.filter(t => 
             t.status === PaymentStatus.PENDING && 
             t.externalReference && 
@@ -275,12 +276,14 @@ function App() {
             } catch (e) {
                 console.error("Erro na reconciliação:", e);
             } finally {
-                setTimeout(() => checkingRefs.current.delete(ref), 10000);
+                // Remove da trava após um tempo seguro para permitir re-checagem se necessário
+                setTimeout(() => checkingRefs.current.delete(ref), 30000);
             }
         }
     };
 
-    const interval = setInterval(reconcilePayments, 2 * 60 * 1000); 
+    // Altera o intervalo para 5 minutos conforme solicitado
+    const interval = setInterval(reconcilePayments, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [isAuthenticated, transactions]);
 
@@ -594,7 +597,7 @@ function App() {
             rg: s.rg, 
             cpf: s.cpf, 
             phone: s.phone, 
-            medical_expiry: s.medicalCertificateExpiry, 
+            medical_expiry: s.medical_expiry, 
             photo_url: s.photoUrl, 
             address: s.address, 
             guardian: s.guardian, 
