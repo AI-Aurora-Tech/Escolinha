@@ -576,7 +576,7 @@ function App() {
         setStudents(prev => [...prev, newStudent]);
         
         if (studentData.guardian.phone) {
-            const msg = `Seja bem-vindo(a) à Garotos do Martinica! ⚽\n\nOlá *${studentData.guardian.name}*, confirmamos a matrícula do(a) atleta *${studentData.name}*.\n\nFicamos felizes em tê-los conosco! Utilize o CPF do responsável para acessar o Portal do Aluno em nosso site.\n\nQualquer dúvida, estamos à disposição.`;
+            const msg = `Seja bem-vindo(a) à Garotos do Martinica! ⚽\n\nOlá *${studentData.guardian.name}*, confirmamos a matrícula do(a) atleta *${studentData.name}*.\n\nFicamos felizes em tê-los conosco! Utilize o CPF do responsável para acessar o Portal do Aluno em nosso site:\nhttps://escolinha.martinicaoficial.com.br/\n\nQualquer dúvida, estamos à disposição.`;
             sendZApiMessage(studentData.guardian.phone, msg);
         }
 
