@@ -465,9 +465,6 @@ function App() {
       if(!error) setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t, description: payload.description || tx.description } : tx));
   };
 
-  /**
-   * Realiza o upload da foto do aluno para o Supabase Storage.
-   */
   const uploadPhoto = async (base64: string, name: string) => {
     try {
       const fileName = `${Date.now()}_${name.replace(/\s+/g, '_')}.jpg`;
@@ -483,7 +480,7 @@ function App() {
       return urlData.publicUrl;
     } catch (err) {
       console.error("Error uploading photo:", err);
-      return base64; // Fallback to base64 if upload fails
+      return base64; 
     }
   };
 
@@ -502,9 +499,6 @@ function App() {
     setIsLoading(false);
   };
 
-  /**
-   * Atualiza os dados de um aluno no banco de dados.
-   */
   const handleUpdateStudent = async (student: Student) => {
     setIsLoading(true);
     let finalPhotoUrl = student.photoUrl;
@@ -533,9 +527,6 @@ function App() {
     setIsLoading(false);
   };
 
-  /**
-   * Registra uma nova ocorrência para um aluno.
-   */
   const handleAddOccurrence = async (studentId: string, description: string, date: string): Promise<boolean> => {
     try {
       const { data, error } = await supabase.from('student_occurrences').insert([{
@@ -561,9 +552,6 @@ function App() {
     }
   };
 
-  /**
-   * Atribui um grupo a vários alunos de uma só vez.
-   */
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
     setIsLoading(true);
     try {
@@ -600,9 +588,6 @@ function App() {
       setIsLoading(false);
   };
 
-  /**
-   * Atualiza os dados de uma atividade (treino ou jogo).
-   */
   const handleUpdateActivity = async (a: Activity) => {
     setIsLoading(true);
     const payload = {
@@ -629,9 +614,6 @@ function App() {
     setIsLoading(false);
   };
 
-  /**
-   * Atualiza a lista de presença de uma atividade.
-   */
   const handleUpdateAttendance = async (activityId: string, studentId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity) return;
@@ -643,9 +625,6 @@ function App() {
     setActivities(prev => prev.map(a => a.id === activityId ? { ...a, attendance: nextAttendance } : a));
   };
 
-  /**
-   * Atualiza o status de pagamento de taxa de uma atividade para um aluno.
-   */
   const handleUpdateFeePayment = async (activityId: string, studentId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity || !activity.fee) return;
@@ -676,17 +655,11 @@ function App() {
     setActivities(prev => prev.map(a => a.id === activityId ? { ...a, feePayments: nextPayments } : a));
   };
 
-  /**
-   * Remove uma atividade do sistema.
-   */
   const handleDeleteActivity = async (id: string) => {
     const { error } = await supabase.from('activities').delete().eq('id', id);
     if (!error) setActivities(prev => prev.filter(a => a.id !== id));
   };
 
-  /**
-   * Registra um novo lançamento financeiro (receita ou despesa).
-   */
   const handleAddTransaction = async (t: Omit<Transaction, 'id'> & { recurrenceMonths?: number }) => {
     setIsLoading(true);
     try {
@@ -735,6 +708,75 @@ function App() {
   const handleDeleteGroup = async (id: string) => { 
       const { error } = await supabase.from('groups').delete().eq('id', id);
       if(!error) setGroups(prev => prev.filter(g => g.id !== id));
+  };
+
+  // --- PLANS HANDLERS ---
+  const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('plans').insert([{
+        name: p.name,
+        price: p.price,
+        due_day: p.dueDay,
+        description: p.description
+    }]).select().single();
+    if (!error && data) await fetchData(true);
+    setIsLoading(false);
+  };
+
+  const handleUpdatePlan = async (p: Plan) => {
+    setIsLoading(true);
+    const { error } = await supabase.from('plans').update({
+        name: p.name,
+        price: p.price,
+        due_day: p.dueDay,
+        description: p.description
+    }).eq('id', p.id);
+    if (!error) await fetchData(true);
+    setIsLoading(false);
+  };
+
+  const handleDeletePlan = async (id: string) => {
+    setIsLoading(true);
+    const { error } = await supabase.from('plans').delete().eq('id', id);
+    if (!error) await fetchData(true);
+    setIsLoading(false);
+  };
+
+  // --- USERS HANDLERS ---
+  const handleAddUser = async (u: Omit<User, 'id'>) => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('app_users').insert([{
+        name: u.name,
+        email: u.email,
+        password: u.password,
+        role: u.role,
+        avatar: u.avatar,
+        cpf: u.cpf
+    }]).select().single();
+    if (!error && data) await fetchData(true);
+    setIsLoading(false);
+  };
+
+  const handleUpdateUser = async (u: User) => {
+    setIsLoading(true);
+    const payload: any = {
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        avatar: u.avatar,
+        cpf: u.cpf
+    };
+    if (u.password) payload.password = u.password;
+    const { error } = await supabase.from('app_users').update(payload).eq('id', u.id);
+    if (!error) await fetchData(true);
+    setIsLoading(false);
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    setIsLoading(true);
+    const { error } = await supabase.from('app_users').delete().eq('id', id);
+    if (!error) await fetchData(true);
+    setIsLoading(false);
   };
 
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
@@ -787,16 +829,24 @@ function App() {
       case 'dashboard': return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
       case 'students': return <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} onAddStudent={handleAddStudent} onBatchAddStudents={() => {}} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} occurrences={occurrences} onAddOccurrence={handleAddOccurrence} />;
       case 'groups': return <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />;
-      case 'plans': return <PlansPage plans={plans} onAddPlan={() => {}} onUpdatePlan={() => {}} onDeletePlan={() => {}} />;
+      case 'plans': return <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />;
       case 'schedule': return <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />;
       case 'finance': return <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />;
-      case 'users': return <UsersPage users={systemUsers} onAddUser={async () => {}} onUpdateUser={async () => {}} onDeleteUser={async () => {}} />;
+      case 'users': return <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />;
       default: return <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />;
     }
   };
 
   return (
     <div className="flex bg-gray-50 min-h-screen font-sans overflow-x-hidden">
+      {isLoading && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+              <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
+                  <Loader2 className="w-10 h-10 text-primary-600 animate-spin" />
+                  <p className="font-bold text-gray-700 animate-pulse">Sincronizando dados...</p>
+              </div>
+          </div>
+      )}
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="flex-1 md:ml-64 p-4 md:p-8 min-w-0 max-w-full overflow-x-hidden">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
