@@ -1146,24 +1146,26 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                          <div className="space-y-3">
                              {studentTransactions.map(tx => {
                                  const isOverdue = tx.date < todayStr && tx.status === PaymentStatus.PENDING;
+                                 const isCancelled = tx.status === PaymentStatus.CANCELLED;
                                  const isSelected = selectedFinanceIds.has(tx.id);
                                  return (
-                                     <div key={tx.id} onClick={() => tx.status === PaymentStatus.PENDING && toggleFinanceSelection(tx.id)} className={`group relative flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${tx.status === PaymentStatus.PAID ? 'bg-gray-50 opacity-70' : isSelected ? 'bg-primary-50 border-primary-500 ring-2 ring-primary-500/20' : isOverdue ? 'bg-red-50 border-red-200' : 'bg-white hover:border-primary-300'}`}>
+                                     <div key={tx.id} onClick={() => tx.status === PaymentStatus.PENDING && toggleFinanceSelection(tx.id)} className={`group relative flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${tx.status === PaymentStatus.PAID || isCancelled ? 'bg-gray-50 opacity-70' : isSelected ? 'bg-primary-50 border-primary-500 ring-2 ring-primary-500/20' : isOverdue ? 'bg-red-50 border-red-200' : 'bg-white hover:border-primary-300'}`}>
                                          <div className="flex items-center gap-4">
-                                             <div className={`p-2 rounded-lg ${tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                                                 {isSelected ? <CheckSquare className="w-6 h-6 text-primary-600" /> : tx.status === PaymentStatus.PAID ? <CheckCircle className="w-6 h-6" /> : <Square className="w-6 h-6" />}
+                                             <div className={`p-2 rounded-lg ${tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-600' : isCancelled ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-400'}`}>
+                                                 {isSelected ? <CheckSquare className="w-6 h-6 text-primary-600" /> : tx.status === PaymentStatus.PAID ? <CheckCircle className="w-6 h-6" /> : isCancelled ? <XCircle className="w-6 h-6" /> : <Square className="w-6 h-6" />}
                                              </div>
                                              <div>
                                                  <p className="font-bold text-gray-900">{tx.description}</p>
                                                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
                                                      <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
                                                      {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
+                                                     {isCancelled && <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded font-black uppercase text-[9px]">Cancelado</span>}
                                                      {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
                                                  </div>
                                              </div>
                                          </div>
                                          <div className="text-right flex items-center gap-4">
-                                              <div className="font-black text-lg text-gray-800">R$ {tx.amount.toFixed(2)}</div>
+                                              <div className={`font-black text-lg ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>R$ {tx.amount.toFixed(2)}</div>
                                               {!isGuardian && tx.status === PaymentStatus.PENDING && (
                                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>

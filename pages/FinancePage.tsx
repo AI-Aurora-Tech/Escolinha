@@ -469,9 +469,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                     </p>
                                     <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase block mt-1 ${
                                         t.status === PaymentStatus.PAID ? 'bg-green-100 text-green-700' : 
+                                        t.status === PaymentStatus.CANCELLED ? 'bg-gray-100 text-gray-500' :
                                         isLate ? 'bg-orange-100 text-orange-700' : 'bg-yellow-50 text-yellow-600'
                                     }`}>
-                                        {t.status === PaymentStatus.PAID ? 'Pago' : (isLate ? 'Atrasada' : 'Pendente')}
+                                        {t.status === PaymentStatus.PAID ? 'Pago' : t.status === PaymentStatus.CANCELLED ? 'Cancelado' : (isLate ? 'Atrasada' : 'Pendente')}
                                     </span>
                                     <button onClick={() => handleOpenEditModal(t)} className="mt-2 text-primary-600"><Edit className="w-4 h-4" /></button>
                                 </div>
