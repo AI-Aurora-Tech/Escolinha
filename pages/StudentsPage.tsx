@@ -1,8 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
-// Add Banknote as CashIcon to the imports from lucide-react to fix the "Cannot find name 'CashIcon'" error.
-// Fix: Added CalendarCheck to the imports from lucide-react.
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -67,6 +65,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const photoUploadRef = useRef<HTMLInputElement>(null);
 
   const [showChargeModal, setShowChargeModal] = useState(false);
+  const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
   const [manualCharge, setManualCharge] = useState({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
 
   const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
@@ -605,9 +604,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleSaveManualCharge = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCharge.description && manualCharge.amount > 0 && editingId) {
-      onAddTransaction({ ...manualCharge, type: TransactionType.INCOME, status: PaymentStatus.PENDING, studentId: editingId, paymentMethod: PaymentMethod.CASH });
-      setShowChargeModal(false); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
+      if (editingChargeId) {
+        onUpdateTransaction({ 
+          id: editingChargeId, 
+          description: manualCharge.description, 
+          amount: manualCharge.amount, 
+          date: manualCharge.date 
+        });
+      } else {
+        onAddTransaction({ ...manualCharge, type: TransactionType.INCOME, status: PaymentStatus.PENDING, studentId: editingId, paymentMethod: PaymentMethod.CASH });
+      }
+      setShowChargeModal(false); 
+      setEditingChargeId(null);
+      setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
     }
+  };
+
+  const handleOpenEditCharge = (e: React.MouseEvent, tx: Transaction) => {
+      e.stopPropagation();
+      setEditingChargeId(tx.id);
+      setManualCharge({ 
+          description: tx.description, 
+          amount: tx.amount, 
+          date: tx.date 
+      });
+      setShowChargeModal(true);
   };
 
   const toggleFinanceSelection = (id: string) => {
@@ -645,7 +666,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
           } 
           else { alert("Erro ao gerar QR Code."); setShowPixModal(false); }
-      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setPixLoading(false); }
+      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setShowPixModal(false); setPixLoading(false); }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
@@ -1116,7 +1137,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             </div>
                         )}
                         {!isGuardian && (
-                            <button onClick={() => setShowChargeModal(true)} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
+                            <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
                                 <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
                             </button>
                         )}
@@ -1147,6 +1168,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança via WhatsApp"><Send className="w-4 h-4" /></button>
+                                                      <button onClick={(e) => { e.stopPropagation(); handleOpenEditCharge(e, tx); }} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200" title="Editar Cobrança"><Edit className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); handleCancelTransaction(tx); }} className="p-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300" title="Cancelar Cobrança"><Ban className="w-4 h-4" /></button>
                                                   </div>
                                               )}
@@ -1348,8 +1370,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Lançar Cobrança</h3>
-                <button onClick={() => setShowChargeModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">{editingChargeId ? 'Editar Cobrança' : 'Lançar Cobrança'}</h3>
+                <button onClick={() => { setShowChargeModal(false); setEditingChargeId(null); }} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
             </div>
             <form onSubmit={handleSaveManualCharge} className="space-y-4">
                 <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label><input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Ex: Uniforme, Taxa de Torneio..." value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} /></div>
@@ -1357,7 +1379,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label><input required type="number" step="0.01" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none font-bold" placeholder="0,00" value={manualCharge.amount || ''} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value) || 0})} /></div>
                     <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label><input required type="date" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none" value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} /></div>
                 </div>
-                <div className="pt-4 flex gap-3"><button type="button" onClick={() => setShowChargeModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button><button type="submit" className="flex-1 py-3 bg-gray-900 text-white rounded-xl font-black hover:bg-black transition-all">LANÇAR</button></div>
+                <div className="pt-4 flex gap-3">
+                  <button type="button" onClick={() => { setShowChargeModal(false); setEditingChargeId(null); }} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
+                  <button type="submit" className="flex-1 py-3 bg-gray-900 text-white rounded-xl font-black hover:bg-black transition-all uppercase tracking-tight">{editingChargeId ? 'SALVAR' : 'LANÇAR'}</button>
+                </div>
             </form>
           </div>
         </div>
