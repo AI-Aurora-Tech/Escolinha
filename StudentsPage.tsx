@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
+import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from './types';
 import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { createPixPayment, createMPPreference } from '../services/mercadoPago';
-import { sendZApiMessage } from '../services/zapiService';
+import { createPixPayment, createMPPreference } from './services/mercadoPago';
+import { sendZApiMessage } from './zapiService';
 
 interface StudentsPageProps {
   students: Student[];
@@ -43,7 +43,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE' | 'OCCURRENCES'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Filtros de presença
   const [attendanceMonth, setAttendanceMonth] = useState<number>(new Date().getMonth());
   const [attendanceYear, setAttendanceYear] = useState<number>(new Date().getFullYear());
   
@@ -75,10 +74,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const positionsList = ['Goleiro', 'Lateral Direito', 'Zagueiro', 'Lateral Esquerdo', 'Volante', 'Meia', 'Atacante'];
 
-  // Use local time for YYYY-MM-DD comparison to avoid UTC mismatch (e.g. at night)
   const todayStr = useMemo(() => {
     const now = new Date();
-    return now.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD
+    return now.toLocaleDateString('en-CA'); 
   }, []);
 
   useEffect(() => {
@@ -96,7 +94,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     else if (initialFilter === 'MISSING_DOCS') setDocsFilter('MISSING_DOCS');
   }, [initialFilter]);
 
-  // Monitora se as transações vinculadas ao QR Code atual foram pagas pelo background reconciliation
+  const confirmPixPaymentSuccess = () => {
+    setShowPixModal(false);
+    setPixData(null);
+    setPixTxIds([]);
+  };
+
   useEffect(() => {
       if (showPixModal && pixTxIds.length > 0) {
           const allPaid = pixTxIds.every(id => {
@@ -145,21 +148,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const plan = plans.find(p => p.id === student.planId);
     const today = new Date().toLocaleDateString('pt-BR');
     
-    // Header
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.text("CONTRATO DE PRESTAÇÃO DE SERVIÇOS ESPORTIVOS", 105, 20, { align: 'center' });
     doc.setFontSize(12);
     doc.text("Garotos do Martinica", 105, 28, { align: 'center' });
-    
-    // Dados da Escola
     doc.setFontSize(10);
     doc.text("DADOS DA UNIDADE:", 14, 40);
     doc.setFont("helvetica", "normal");
     doc.text("Escola: Garotos do Martinica", 14, 45);
     doc.text("Endereço: Unidade Martinica - São Paulo/SP", 14, 50);
-
-    // Dados do Responsável
     doc.setFont("helvetica", "bold");
     doc.text("DADOS DO RESPONSÁVEL (CONTRATANTE):", 14, 60);
     doc.setFont("helvetica", "normal");
@@ -167,8 +165,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.text(`CPF: ${student.guardian.cpf || '-'}`, 14, 70);
     doc.text(`Telefone: ${student.guardian.phone}`, 100, 70);
     doc.text(`Email: ${student.guardian.email || '-'}`, 14, 75);
-
-    // Dados do Aluno
     doc.setFont("helvetica", "bold");
     doc.text("DADOS DO ALUNO (ATLETA):", 14, 85);
     doc.setFont("helvetica", "normal");
@@ -176,16 +172,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.text(`Data de Nascimento: ${formatDate(student.birthDate)} (Idade: ${calculateAge(student.birthDate)} anos)`, 14, 95);
     doc.text(`RG: ${student.rg || '-'}`, 14, 100);
     doc.text(`CPF: ${student.cpf || '-'}`, 100, 100);
-
-    // Dados do Plano
     doc.setFont("helvetica", "bold");
     doc.text("DADOS DO PLANO CONTRATADO:", 14, 110);
     doc.setFont("helvetica", "normal");
     doc.text(`Plano: ${plan?.name || 'Não definido'}`, 14, 115);
     doc.text(`Valor da Mensalidade: R$ ${plan?.price.toFixed(2) || '0,00'}`, 14, 120);
     doc.text(`Dia do Vencimento: Todo dia ${plan?.dueDay || '10'}`, 100, 120);
-
-    // Cláusulas
     doc.setFont("helvetica", "bold");
     doc.text("TERMOS E CONDIÇÕES:", 14, 130);
     doc.setFont("helvetica", "normal");
@@ -194,12 +186,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const introText = `Eu, CONTRATANTE, abaixo qualificado, na qualidade de RESPONSÁVEL pelo (ALUNO) acima citado, venho solicitar e formalizar a inscrição, neste TERMO DE CONTRATAÇÃO, na UNIDADE, do ALUNO acima qualificado, declarando e assumindo, nesta oportunidade:`;
     
     const clauses = [
-      "1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
-      "2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;",
-      "3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);",
-      "4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção da escola e posteriormente comunicados ao responsável pelo aluno.;",
-      "5 - Autorizo a utilização da imagem do referido aluno nas mídias sociais do Garotos do Martinica / Martinica Oficial, site e demais ações publicitárias com o intuito de promover o trabalho desenvolvido pela entidade.",
-      "6 - Caso o atleta acumule duas ou mais mensalidades em atraso, o mesmo terá o acesso aos treinamentos automaticamente suspenso, permanecendo o bloqueio até a regularização dos débitos pendentes."
+      "1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol.",
+      "2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias).",
+      "3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO.",
+      "4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção.",
+      "5 - Autorizo a utilização da imagem do referido aluno.",
+      "6 - Caso o atleta acumule duas ou mais mensalidades em atraso, o mesmo terá o acesso suspenso."
     ];
 
     let currentY = 135;
@@ -213,202 +205,113 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       currentY += (splitClause.length * 5) + 1.5;
     });
 
-    // Seção de Saúde
     currentY += 5;
     doc.setFont("helvetica", "bold");
     doc.text("SEU FILHO POSSUI ALGUM RESTRIÇÃO DE SAUDE: SIM (  ) NÃO (  )", 14, currentY);
-    currentY += 6;
-    doc.text("SE SIM, QUAL: ____________________________________________________________________", 14, currentY);
-
-    // Footer
     currentY += 20;
     doc.text(`São Paulo, ${today}.`, 14, currentY);
     currentY += 20;
     doc.text("___________________________________________________", 14, currentY);
-    currentY += 5;
-    doc.text("Assinatura do Responsável", 14, currentY);
+    doc.text("Assinatura do Responsável", 14, currentY + 5);
 
     doc.save(`Contrato_Martinica_${student.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const handleManualTuitionGen = async () => {
-      if (confirm("Deseja gerar as mensalidades ainda não lançadas deste mês para todos os alunos ativos?")) {
+      if (confirm("Gerar mensalidades deste mês?")) {
           setIsGenerating(true);
-          try {
-              await onGenerateTuitions();
-              alert("Processamento de mensalidades concluído!");
-          } catch (error) {
-              alert("Erro ao processar mensalidades.");
-          } finally {
-              setIsGenerating(false);
-          }
+          try { await onGenerateTuitions(); alert("Concluído!"); } catch (e) { alert("Erro"); } finally { setIsGenerating(false); }
       }
   };
 
   const handleBatchSendCharges = async () => {
-      const debtors = students.filter(s => {
-          if (!s.active) return false;
-          const overdue = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr);
-          return overdue.length > 0;
-      });
-
-      if (debtors.length === 0) {
-          alert("Não há atletas ativos com mensalidades em atraso para notificar.");
-          return;
-      }
-
-      const confirmMsg = `Deseja enviar lembretes de cobrança via WhatsApp para ${debtors.length} responsáveis?\n\nREGRA DE SEGURANÇA: O sistema enviará 1 mensagem a cada 10 segundos para evitar que seu número seja bloqueado por SPAM.`;
-      
-      if (!confirm(confirmMsg)) return;
-
+      const debtors = students.filter(s => s.active && getStudentOverdueCount(s.id) > 0);
+      if (debtors.length === 0) return alert("Ninguém em atraso.");
+      if (!confirm(`Enviar cobrança para ${debtors.length} pais?`)) return;
       setIsGenerating(true);
-      let successCount = 0;
-
-      // Execução serial com delay de 10s entre cada aluno
       for (let i = 0; i < debtors.length; i++) {
           const student = debtors[i];
-          const overdueTxs = transactions.filter(t => t.studentId === student.id && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr);
+          const overdueTxs = transactions.filter(t => t.studentId === student.id && t.status === PaymentStatus.PENDING && t.date < todayStr);
           const totalDebt = overdueTxs.reduce((acc, t) => acc + t.amount, 0);
           const phone = student.guardian.phone.replace(/\D/g, '');
-
           if (phone) {
-              let message = `Olá *${student.guardian.name}*! ⚽ Aqui é da escolinha *Garotos do Martinica*.\n\nIdentificamos as seguintes pendências para o atleta *${student.name}*:\n\n`;
-              
-              overdueTxs.forEach(t => {
-                  message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
-              });
-              
-              message += `\n*TOTAL: R$ ${totalDebt.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria para regularizar a situação. Caso já tenha pago, favor desconsiderar.\n\nAgradecemos a confiança e parceria de sempre!`;
-              
-              const sent = await sendZApiMessage(phone, message);
-              if (sent) successCount++;
+              const msg = `Olá *${student.guardian.name}*! ⚽ Cobrança Martinica: Pendência Total R$ ${totalDebt.toFixed(2)}. Pague via PIX 11987019721.`;
+              await sendZApiMessage(phone, msg);
           }
-
-          // Aguarda 10 segundos antes do próximo, exceto se for o último
-          if (i < debtors.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 10000));
-          }
+          if (i < debtors.length - 1) await new Promise(resolve => setTimeout(resolve, 10000));
       }
-
       setIsGenerating(false);
-      alert(`Processo concluído!\nEnviados com sucesso: ${successCount}\nFalhas/Sem Tel: ${debtors.length - successCount}`);
+      alert(`Enviado!`);
   };
 
   const handleExportExcel = () => {
-      const data = filteredStudents.map(s => ({
-          'Nome do Aluno': s.name,
-          'Data de Nascimento': formatDate(s.birthDate),
-          'Idade': calculateAge(s.birthDate),
-          'RG Aluno': s.rg || '',
-          'CPF Aluno': s.cpf || '',
-          'Telefone Aluno': s.phone || '',
-          'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
-          'Posições': (s.positions || []).join(', '),
-          'Responsável': s.guardian.name,
-          'CPF Responsável': s.guardian.cpf || '',
-          'Telefone Resp.': s.guardian.phone,
-          'Email Resp.': s.guardian.email || '',
-          'CEP': s.address.cep || '',
-          'Rua': s.address.street || '',
-          'Número': s.address.number || '',
-          'Complemento': s.address.complement || '',
-          'Bairro': s.address.district || '',
-          'Cidade': s.address.city || '',
-          'Estado': s.address.state || '',
-          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
-          'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
-          'Status': s.active ? 'Ativo' : 'Inativo',
-          'Mensalidades Atrasadas': getStudentOverdueCount(s.id)
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Alunos Completo");
-      XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const currentYear = new Date().getFullYear();
+    const data = filteredStudents.map(s => {
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        const category = `Sub-${currentYear - birthYear}`;
+        const checkDoc = (doc: any) => (doc?.delivered ? 'Entregue' : 'Pendente');
+        return {
+            'Nome do Atleta': s.name,
+            'Categoria': category,
+            'Data de Nascimento': formatDate(s.birthDate),
+            'Idade': calculateAge(s.birthDate),
+            'RG Atleta': s.rg || '',
+            'CPF Atleta': s.cpf || '',
+            'Telefone Atleta': s.phone || '',
+            'Posições': (s.positions || []).join(', '),
+            'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
+            'Nome do Responsável': s.guardian.name,
+            'CPF Responsável': s.guardian.cpf || '',
+            'WhatsApp Responsável': s.guardian.phone || '',
+            'Email Responsável': s.guardian.email || '',
+            'CEP': s.address?.cep || '',
+            'Rua': s.address?.street || '',
+            'Número': s.address?.number || '',
+            'Complemento': s.address?.complement || '',
+            'Bairro': s.address?.district || '',
+            'Cidade': s.address?.city || '',
+            'Estado': s.address?.state || '',
+            'Plano Atual': plans.find(p => p.id === s.planId)?.name || 'Sem Plano',
+            'Status de Cadastro': s.active ? 'Ativo' : 'Inativo',
+            'Mensalidades em Atraso': getStudentOverdueCount(s.id),
+            'Doc: RG': checkDoc(s.documents?.rg),
+            'Doc: CPF': checkDoc(s.documents?.cpf),
+            'Doc: Atestado Médico': checkDoc(s.documents?.medical),
+            'Doc: Comprovante Endereço': checkDoc(s.documents?.address),
+            'Doc: Comprovante Escolar': checkDoc(s.documents?.school)
+        };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Alunos");
+    XLSX.writeFile(wb, `Alunos_Martinica_Completo_${todayStr}.xlsx`);
   };
 
   const handleExportPDF = () => {
-      const doc = new jsPDF({ orientation: 'landscape' });
-      doc.setFontSize(18);
-      doc.text("Relatório Geral de Alunos - Garotos do Martinica", 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
-      
-      const body = filteredStudents.map(s => [
-          s.name,
-          calculateAge(s.birthDate),
-          s.rg || s.cpf || '-',
-          s.guardian.name,
-          s.guardian.phone,
-          plans.find(p => p.id === s.planId)?.name || '-',
-          s.active ? 'Ativo' : 'Inativo',
-          getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
-      ]);
-
-      autoTable(doc, {
-          startY: 35,
-          head: [['Nome', 'Idade', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
-          body: body,
-          headStyles: { fillColor: [249, 115, 22] },
-          styles: { fontSize: 8 }
-      });
-      doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
-  };
-
-  const handleDownloadTemplate = () => {
-      const templateData = [{
-          nome: "João Exemplo Silva",
-          nascimento: "2012-05-20",
-          rg: "00000000",
-          cpf: "00000000000",
-          telefone_aluno: "11988887777",
-          atestado_vencimento: "2024-12-31",
-          responsavel_nome: "Maria Responsavel",
-          responsavel_cpf: "00000000000",
-          responsavel_telefone: "11977776666",
-          responsavel_email: "maria@email.com",
-          cep: "00000-000",
-          rua: "Rua Exemplo",
-          bairro: "Bairro Exemplo"
-      }];
-      const ws = XLSX.utils.json_to_sheet(templateData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Template_Importacao");
-      XLSX.writeFile(wb, "Modelo_Importacao_Alunos.xlsx");
-  };
-
-  const sendDocReminder = async (student: Student) => {
-    const phone = student.guardian.phone.replace(/\D/g, '');
-    if (!phone) return alert("Responsável sem telefone cadastrado.");
-    const msg = `Olá *${student.guardian.name}*, aqui é da escolinha *Garotos do Martinica*! ⚽\n\nNotamos que o(a) atleta *${student.name}* está com pendências na entrega da documentação obrigatória (RG, CPF, Comprovante de Endereço ou Escolar).\n\nPor favor, entregue o quanto antes na secretaria para regularizar a inscrição. Obrigado!`;
-    const sent = await sendZApiMessage(phone, msg);
-    if (sent) alert(`Lembrete de documentos enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
-  };
-
-  const sendMedicalReminder = async (student: Student) => {
-    const phone = student.guardian.phone.replace(/\D/g, '');
-    if (!phone) return alert("Responsável sem telefone cadastrado.");
-    const date = formatDate(student.medicalCertificateExpiry);
-    const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
-    const sent = await sendZApiMessage(phone, msg);
-    if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("Relatório Geral de Atletas - Garotos do Martinica", 14, 20);
+    const currentYear = new Date().getFullYear();
+    const tableBody = filteredStudents.map(s => {
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        const category = `Sub-${currentYear - birthYear}`;
+        const overdue = getStudentOverdueCount(s.id);
+        const plan = plans.find(p => p.id === s.planId);
+        return [s.name, category, calculateAge(s.birthDate), (s.positions || []).join(', '), s.rg || s.cpf || '-', s.guardian.name, s.guardian.phone, plan?.name || '-', s.active ? 'Ativo' : 'Inat.', overdue > 0 ? `Sim (${overdue})` : 'Não'];
+    });
+    autoTable(doc, {
+        startY: 35,
+        head: [['Nome do Atleta', 'Cat.', 'Idade', 'Posições', 'RG/CPF', 'Responsável', 'WhatsApp', 'Plano', 'Status', 'Em Atraso']],
+        body: tableBody,
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 7, cellPadding: 2 }
+    });
+    doc.save(`Relatorio_Atletas_Martinica_${todayStr}.pdf`);
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
-      // Incluímos paymentDate para garantir que o trigger de WhatsApp receba a data correta
-      onUpdateTransaction({ 
-          id, 
-          status: PaymentStatus.PAID, 
-          paymentMethod: method, 
-          paymentDate: new Date().toISOString().split('T')[0] 
-      });
-  };
-
-  const handleCancelTransaction = (tx: Transaction) => {
-      if (confirm(`Deseja realmente cancelar/ignorar a cobrança: ${tx.description}?`)) {
-          onUpdateTransaction({ id: tx.id, status: PaymentStatus.CANCELLED });
-      }
+      onUpdateTransaction({ id, status: PaymentStatus.PAID, paymentMethod: method, paymentDate: new Date().toISOString().split('T')[0] });
   };
 
   const initialFormState: any = {
@@ -420,89 +323,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [studentForm, setStudentForm] = useState(initialFormState);
 
-  const sendChargeMessage = async (tx: Transaction) => {
-      const phone = studentForm.guardian.phone.replace(/\D/g, '');
-      if (!phone) { alert("Telefone indisponível."); return; }
-      
-      const cleanCpf = studentForm.guardian.cpf?.replace(/\D/g, '');
-      if (!cleanCpf || cleanCpf.length < 11) {
-          alert("Erro: O CPF do responsável é necessário para gerar o link de pagamento do Mercado Pago. Por favor, complete o cadastro.");
-          return;
-      }
-
-      let finalPaymentLink = tx.paymentLink;
-
-      // Gera um link de pagamento em tempo real caso não exista
-      if (!finalPaymentLink) {
-          try {
-              const preference = await createMPPreference({
-                  title: tx.description,
-                  price: tx.amount,
-                  externalReference: tx.externalReference || crypto.randomUUID(),
-                  payer: {
-                      name: studentForm.guardian.name,
-                      email: studentForm.guardian.email || 'financeiro@martinica.com',
-                      phone: studentForm.guardian.phone,
-                      identification: { type: 'CPF', number: cleanCpf }
-                  }
-              });
-
-              if (preference) {
-                  finalPaymentLink = preference.init_point;
-                  onUpdateTransaction({
-                      id: tx.id,
-                      paymentLink: finalPaymentLink,
-                      preferenceId: preference.id
-                  });
-              }
-          } catch (e) {
-              console.error("Erro ao gerar link MP:", e);
-          }
-      }
-
-      let message = `Olá *${studentForm.guardian.name}*, somos da *Garotos do Martinica*. ⚽\n\nConstatamos a pendência: *${tx.description}*\nVencimento: ${formatDate(tx.date)}\nValor: *R$ ${tx.amount.toFixed(2)}*`;
-      
-      message += `\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA`;
-
-      if (finalPaymentLink) {
-          message += `\n\nOu, se preferir, pague via Cartão clicando no link abaixo:\n${finalPaymentLink}`;
-      } else {
-          message += `\n\n(Aviso: No momento, pagamentos via cartão/link estão instáveis. Por favor, utilize a chave PIX acima)`;
-      }
-      
-      message += `\n\nObrigado!`;
-      
-      const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
-  };
-
-  const sendBatchSelectedCharges = async (e?: React.MouseEvent) => {
-      if (e) e.stopPropagation();
-      if (selectedFinanceIds.size === 0) return;
-      
-      const phone = studentForm.guardian.phone.replace(/\D/g, '');
-      if (!phone) { alert("Responsável sem telefone cadastrado."); return; }
-
-      const selectedTxs = studentTransactions.filter(t => selectedFinanceIds.has(t.id));
-      const totalAmount = selectedTxs.reduce((acc, t) => acc + t.amount, 0);
-      
-      let message = `Olá *${studentForm.guardian.name}*! ⚽ Aqui é da *Garotos do Martinica*.\n\nIdentificamos pendências para o atleta *${studentForm.name}*:\n\n`;
-      
-      selectedTxs.forEach(t => {
-          message += `• *${t.description}* - R$ ${t.amount.toFixed(2)} (Venc: ${formatDate(t.date)})\n`;
-      });
-      
-      message += `\n*TOTAL: R$ ${totalAmount.toFixed(2)}*\n\n*Pagamento via PIX (Chave Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize a regularização via Portal do Aluno ou procure a secretaria. Caso já tenha pago, favor desconsiderar.`;
-      
-      const sent = await sendZApiMessage(phone, message);
-      if (sent) alert(`${selectedTxs.length} cobrança(s) enviada(s) com sucesso!`);
-      else alert("Erro ao enviar mensagens via Z-API.");
-  };
-
   const availableCategories = useMemo(() => {
     const cats = new Set<string>(); const currentYear = new Date().getFullYear();
     students.forEach(s => { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear; cats.add(`Sub-${currentYear - birthYear}`); });
-    return Array.from(cats).sort((a, b) => parseInt(a.replace('Sub-', '')) - parseInt(b.replace('Sub-', '')));
+    return Array.from(cats).sort();
   }, [students]);
 
   const toggleCategory = (cat: string) => { setSelectedCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]); };
@@ -510,77 +334,53 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       const ms = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.guardian.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const ma = true;
-      let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
+      let mc = selectedCategories.length === 0; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
       let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
       let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
       let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
-      let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
       let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
       let mplan = planFilter === 'ALL' || s.planId === planFilter;
-      return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
+      return ms && mc && mstat && mmed && mfin && mdoc && mplan;
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, searchTerm, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
 
   const startCamera = async () => {
     setIsCameraOpen(true);
-    try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }); if (videoRef.current) videoRef.current.srcObject = stream; } 
-    catch (error) { alert("Sem acesso à câmera."); setIsCameraOpen(false); }
+    try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if (videoRef.current) videoRef.current.srcObject = stream; } 
+    catch (e) { setIsCameraOpen(false); }
   };
 
   const stopCamera = () => { 
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(t => t.stop());
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current?.srcObject) { (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop()); videoRef.current.srcObject = null; }
     setIsCameraOpen(false); 
   };
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
-      if (context) { 
-        context.drawImage(videoRef.current, 0, 0, 300, 300); 
-        setCapturedImage(canvasRef.current.toDataURL('image/jpeg')); 
-        stopCamera(); 
-      }
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) { ctx.drawImage(videoRef.current, 0, 0, 300, 300); setCapturedImage(canvasRef.current.toDataURL('image/jpeg')); stopCamera(); }
     }
   };
 
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCapturedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleOpenNew = () => { setEditingId(null); setStudentForm({ ...initialFormState, groupIds: [], positions: [] }); setCapturedImage(null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true); };
+  const handleOpenNew = () => { setEditingId(null); setStudentForm(initialFormState); setCapturedImage(null); setActiveTab('DETAILS'); setIsModalOpen(true); };
 
   const handleOpenEdit = (student: Student) => {
       setEditingId(student.id);
-      const normalizeDocs = (docs: any) => {
+      const normalizeDocs = (docs: any): any => {
           if (!docs) return initialFormState.documents;
           const newDocs: any = {};
-          ['rg', 'cpf', 'medical', 'address', 'school'].forEach(k => { const v = docs[k]; newDocs[k] = typeof v === 'boolean' ? { delivered: v, isDigital: false } : v || { delivered: false, isDigital: false }; });
+          ['rg', 'cpf', 'medical', 'address', 'school'].forEach(k => {
+              const v = docs[k];
+              newDocs[k] = typeof v === 'boolean' ? { delivered: v, isDigital: false } : v || { delivered: false, isDigital: false };
+          });
           return newDocs;
       };
-      setStudentForm({ 
-          ...student, 
-          groupIds: Array.isArray(student.groupIds) ? student.groupIds : [], 
-          positions: Array.isArray(student.positions) ? student.positions : [],
-          documents: normalizeDocs(student.documents) 
-      });
-      setCapturedImage(student.photoUrl || null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true);
+      setStudentForm({ ...student, groupIds: Array.isArray(student.groupIds) ? student.groupIds : [], positions: Array.isArray(student.positions) ? student.positions : [], documents: normalizeDocs(student.documents) });
+      setCapturedImage(student.photoUrl || null); setActiveTab('DETAILS'); setIsModalOpen(true);
   };
 
   const handleOpenHistory = (student: Student) => { handleOpenEdit(student); setActiveTab('FINANCE'); };
   const handleOpenAttendance = (student: Student) => { handleOpenEdit(student); setActiveTab('ATTENDANCE'); };
-  const handleOpenOccurrences = (student: Student) => { handleOpenEdit(student); setActiveTab('OCCURRENCES'); };
 
   const handleOpenAddOccurrence = (e: React.MouseEvent, student: Student) => {
     e.stopPropagation();
@@ -591,52 +391,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleSaveOccurrence = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newOccurrence.description && newOccurrence.studentId) {
-        const ok = await onAddOccurrence(newOccurrence.studentId, newOccurrence.description, newOccurrence.date);
-        if (ok) {
-            alert("Ocorrência registrada e enviada!");
-            setShowOccurrenceModal(false);
-        } else {
-            alert("Erro ao salvar ocorrência.");
-        }
+        if (await onAddOccurrence(newOccurrence.studentId, newOccurrence.description, newOccurrence.date)) setShowOccurrenceModal(false);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); if(isGuardian) return; 
-    const studentData = { ...studentForm, photoUrl: capturedImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name)}&background=random&color=fff&size=200` };
-    if (editingId) onUpdateStudent({ ...studentData, id: editingId } as Student);
-    else onAddStudent(studentData);
-    setIsModalOpen(false); setCapturedImage(null); setEditingId(null); setStudentForm(initialFormState); setSelectedFinanceIds(new Set());
-  };
-
-  const handleSaveManualCharge = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (manualCharge.description && manualCharge.amount > 0 && editingId) {
-      if (editingChargeId) {
-        onUpdateTransaction({ 
-          id: editingChargeId, 
-          description: manualCharge.description, 
-          amount: manualCharge.amount, 
-          date: manualCharge.date 
-        });
-      } else {
-        onAddTransaction({ ...manualCharge, type: TransactionType.INCOME, status: PaymentStatus.PENDING, studentId: editingId, paymentMethod: PaymentMethod.CASH });
-      }
-      setShowChargeModal(false); 
-      setEditingChargeId(null);
-      setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] });
-    }
-  };
-
-  const handleOpenEditCharge = (e: React.MouseEvent, tx: Transaction) => {
-      e.stopPropagation();
-      setEditingChargeId(tx.id);
-      setManualCharge({ 
-          description: tx.description, 
-          amount: tx.amount, 
-          date: tx.date 
-      });
-      setShowChargeModal(true);
+    const data = { ...studentForm, photoUrl: capturedImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name)}&background=random` };
+    if (editingId) onUpdateStudent({ ...data, id: editingId } as Student);
+    else onAddStudent(data);
+    setIsModalOpen(false);
   };
 
   const toggleFinanceSelection = (id: string) => {
@@ -644,149 +408,32 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const initiatePixPayment = async (txId?: string) => {
-      let amount = 0; let description = ''; let externalRef = ''; const idsToPay: string[] = [];
-      if (txId) { const tx = transactions.find(t => t.id === txId); if (!tx) return; amount = tx.amount; description = tx.description; externalRef = tx.externalReference || crypto.randomUUID(); idsToPay.push(txId); } 
-      else if (selectedFinanceIds.size > 0) { const sel = transactions.filter(t => selectedFinanceIds.has(t.id)); amount = sel.reduce((a, t) => a + t.amount, 0); description = `Combo ${sel.length} mensalidades`; externalRef = `combo_${Date.now()}`; sel.forEach(t => idsToPay.push(t.id)); } 
+      let amount = 0; let desc = ''; const ids: string[] = [];
+      if (txId) { const tx = transactions.find(t => t.id === txId); if (!tx) return; amount = tx.amount; desc = tx.description; ids.push(txId); } 
+      else if (selectedFinanceIds.size > 0) { const sel = transactions.filter(t => selectedFinanceIds.has(t.id)); amount = sel.reduce((a, t) => a + t.amount, 0); desc = `Combo`; sel.forEach(t => ids.push(t.id)); } 
       else return;
-      
-      if (!studentForm.guardian.cpf) { alert("CPF necessário para gerar PIX."); return; }
-      
-      setPixLoading(true); 
-      setShowPixModal(true); 
-      setPixData(null); 
-      setPixTxIds(idsToPay);
-      
+      if (!studentForm.guardian.cpf) return alert("CPF necessário.");
+      setPixLoading(true); setShowPixModal(true);
       try {
-          const result = await createPixPayment({ 
-              title: description, 
-              price: amount, 
-              externalReference: externalRef, 
-              payer: { 
-                  name: studentForm.guardian.name, 
-                  email: studentForm.guardian.email, 
-                  phone: studentForm.guardian.phone, 
-                  identification: { type: 'CPF', number: studentForm.guardian.cpf } 
-              } 
-          });
-          
-          if (result) { 
-              setPixData(result); 
-              // CRITICAL: Salva a referência externa no banco para o rastreador global poder agir
-              for (const id of idsToPay) {
-                  onUpdateTransaction({ id, externalReference: externalRef });
-              }
-          } 
-          else { 
-              alert("Erro ao gerar QR Code. Verifique as configurações do Mercado Pago."); 
-              setShowPixModal(false); 
-          }
-      } catch (error) { 
-          alert("Erro de comunicação com Mercado Pago."); 
-          setShowPixModal(false); 
-      } finally { 
-          setPixLoading(false); 
-      }
+          const res = await createPixPayment({ title: desc, price: amount, externalReference: crypto.randomUUID(), payer: { name: studentForm.guardian.name, email: studentForm.guardian.email || 'fin@martinica.com', phone: studentForm.guardian.phone, identification: { type: 'CPF', number: studentForm.guardian.cpf } } });
+          if (res) { setPixData(res); setPixTxIds(ids); } else setShowPixModal(false);
+      } catch (e) { setShowPixModal(false); } finally { setPixLoading(false); }
   };
   
-  const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
-  const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
-
-  const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
-
-  const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
-
-  // Atividades filtradas por mês, ano e que já aconteceram (histórico)
-  const filteredStudentActivities = useMemo(() => {
-    return studentActivities.filter(act => {
-      const actDate = act.date; // YYYY-MM-DD
-      const d = new Date(act.date + 'T00:00:00');
-      
-      const matchesMonth = attendanceMonth === -1 || d.getMonth() === attendanceMonth;
-      const matchesYear = d.getFullYear() === attendanceYear;
-      const isPast = actDate <= todayStr;
-      
-      return matchesMonth && matchesYear && isPast;
-    });
-  }, [studentActivities, attendanceMonth, attendanceYear, todayStr]);
-
-  const studentOccurrences = useMemo(() => {
-      return occurrences.filter(o => o.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [occurrences, editingId]);
+  const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => b.date.localeCompare(a.date));
+  const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId))).sort((a, b) => b.date.localeCompare(a.date));
+  const studentOccurrences = occurrences.filter(o => o.studentId === editingId).sort((a, b) => b.date.localeCompare(a.date));
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
-      setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
+      setStudentForm((prev: any) => ({ ...prev, documents: { ...prev.documents, [field]: { ...prev.documents[field], [sub]: val } } }));
   };
 
   const toggleGroupSelection = (gid: string) => {
-      setStudentForm(prev => { const g = prev.groupIds || []; return { ...prev, groupIds: g.includes(gid) ? g.filter(id => id !== gid) : [...g, gid] }; });
+      setStudentForm((prev: any) => ({ ...prev, groupIds: prev.groupIds.includes(gid) ? prev.groupIds.filter((id: any) => id !== gid) : [...prev.groupIds, gid] }));
   };
 
   const togglePositionSelection = (pos: string) => {
-      setStudentForm(prev => { 
-          const currentPositions = prev.positions || [];
-          return { 
-              ...prev, 
-              positions: currentPositions.includes(pos) 
-                ? currentPositions.filter(p => p !== pos) 
-                : [...currentPositions, pos] 
-          }; 
-      });
-  };
-
-  const fetchAddressByCep = async (cep: string) => {
-    const cleanCep = cep.replace(/\D/g, ''); if (cleanCep.length !== 8) return;
-    setIsLoadingCep(true);
-    try {
-        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-        const data = await response.json();
-        if (!data.erro) setStudentForm(prev => ({ ...prev, address: { ...prev.address, street: data.logradouro, district: data.bairro, city: data.localidade, state: data.uf, cep: cep } }));
-        else alert('CEP não encontrado.');
-    } catch (error) { alert('Erro ao buscar CEP.'); } finally { setIsLoadingCep(false); }
-  };
-
-  const monthsList = [
-    { value: 0, label: 'Janeiro' }, { value: 1, label: 'Fevereiro' }, { value: 2, label: 'Março' },
-    { value: 3, label: 'Abril' }, { value: 4, label: 'Maio' }, { value: 5, label: 'Junho' },
-    { value: 6, label: 'Julho' }, { value: 7, label: 'Agosto' }, { value: 8, label: 'Setembro' },
-    { value: 9, label: 'Outubro' }, { value: 10, label: 'Novembro' }, { value: 11, label: 'Dezembro' }
-  ];
-
-  const currentYear = new Date().getFullYear();
-  const yearsList = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
-
-  const handleSendAttendanceReport = async () => {
-      const student = students.find(s => s.id === editingId);
-      if (!student || !student.guardian.phone) return alert("Responsável sem telefone cadastrado.");
-
-      const monthName = monthsList.find(m => m.value === attendanceMonth)?.label || "Todos";
-      const presences = filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length;
-      const absences = filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && a.date <= todayStr).length;
-      const goals = filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0);
-
-      let message = `⚽ *Relatório de Presença - Garotos do Martinica*\n\n`;
-      message += `Atleta: *${student.name}*\n`;
-      message += `Período: ${monthName} / ${attendanceYear}\n\n`;
-      message += `✅ Presenças: *${presences}*\n`;
-      message += `❌ Faltas: *${absences}*\n`;
-      message += `🔥 Gols Marcados: *${goals}*\n\n`;
-      message += `*Histórico Recente:*`;
-
-      // Pega as últimas 5 atividades para não estourar limite ou ficar muito longa
-      filteredStudentActivities.slice(0, 8).forEach(act => {
-          const isPresent = (act.attendance || []).includes(editingId!);
-          message += `\n• ${formatDate(act.date)}: ${act.title} (${isPresent ? '✅' : '❌'})`;
-      });
-
-      if (filteredStudentActivities.length > 8) {
-          message += `\n... entre outras.`;
-      }
-
-      message += `\n\nAcompanhe o desempenho completo pelo Portal do Aluno!`;
-
-      const sent = await sendZApiMessage(student.guardian.phone, message);
-      if (sent) alert("Relatório enviado com sucesso via WhatsApp!");
-      else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
+      setStudentForm((prev: any) => ({ ...prev, positions: prev.positions.includes(pos) ? prev.positions.filter((p: any) => p !== pos) : [...prev.positions, pos] }));
   };
 
   return (
@@ -794,680 +441,148 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         {!isGuardian && (
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full md:w-auto">
-                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
-                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
-                    <span>Mensalidades</span>
-                </button>
-                <button onClick={handleBatchSendCharges} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
-                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    <span>Cobrar</span>
-                </button>
-                <input type="file" ref={fileInputRef} className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} className="justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-xs sm:text-sm"><Upload className="w-4 h-4" /><span>Importar</span></button>
-                <button onClick={handleDownloadTemplate} className="justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-xs sm:text-sm"><FileSpreadsheet className="w-4 h-4" /><span>Modelo</span></button>
-                <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
-                <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
-                <button onClick={handleOpenNew} className="col-span-2 justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-xs sm:text-sm"><Plus className="w-4 h-4" /><span>Novo Aluno</span></button>
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <button onClick={handleManualTuitionGen} className="p-2 bg-gray-700 text-white rounded-lg text-xs"><Settings2 className="w-4 h-4" /></button>
+                <button onClick={handleBatchSendCharges} className="p-2 bg-purple-600 text-white rounded-lg text-xs"><Zap className="w-4 h-4" /></button>
+                <button onClick={handleExportExcel} className="p-2 bg-green-600 text-white rounded-lg text-xs"><Download className="w-4 h-4" /></button>
+                <button onClick={handleExportPDF} className="p-2 bg-red-600 text-white rounded-lg text-xs"><FileText className="w-4 h-4" /></button>
+                <button onClick={handleOpenNew} className="flex-1 md:flex-none px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Novo Aluno</button>
             </div>
         )}
       </div>
 
       {!isGuardian && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-2 relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-            <div className="lg:col-span-1 relative"><input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} /></div>
-            <div className="lg:col-span-2 relative" ref={categoryDropdownRef}>
-                <div className="w-full pl-3 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 text-sm cursor-pointer flex items-center justify-between hover:border-primary-300 transition-colors" onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}><div className="flex items-center gap-2 overflow-hidden truncate"><Layers className="w-4 h-4 flex-shrink-0" /><span className="truncate">{selectedCategories.length > 0 ? `${selectedCategories.length} Sel.` : 'Cat.: Todas'}</span></div><ChevronDown className={`w-4 h-4 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} /></div>
-                {isCategoryDropdownOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100"><div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>{availableCategories.map(cat => (<label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors"><input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" /><span>{cat}</span></label>))}{selectedCategories.length > 0 && (<button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>)}</div>)}
-            </div>
-            <div className="lg:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
-            <div className="lg:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
-            <div className="lg:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
-            <div className="lg:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
+        <div className="bg-white p-4 rounded-xl border grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Buscar..." className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            <select className="border rounded-lg p-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select>
+            <select className="border rounded-lg p-2 text-sm" value={financeFilter} onChange={e => setFinanceFilter(e.target.value)}><option value="ALL">Financ.: Todos</option><option value="DEFAULTING">Inadimplentes</option></select>
+            <select className="border rounded-lg p-2 text-sm" value={docsFilter} onChange={e => setDocsFilter(e.target.value)}><option value="ALL">Docs: Todos</option><option value="MISSING_DOCS">Pendentes</option></select>
+            <select className="border rounded-lg p-2 text-sm" value={planFilter} onChange={e => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
         </div>
       )}
 
-      {/* VISUALIZAÇÃO MOBILE/TABLET EM CARDS (Até LG - 1024px) */}
-      <div className="lg:hidden space-y-4">
-          {filteredStudents.map((student) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredStudents.map(student => {
               const overdueCount = getStudentOverdueCount(student.id);
-              const currentYear = new Date().getFullYear(); 
-              const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
-              const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
-              
               return (
-                  <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueCount > 0 ? 'border-red-200 bg-red-50/20' : 'border-gray-100'}`}>
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                          <div className="flex items-center gap-3">
-                              <img src={student.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover bg-gray-200 border-2 border-white shadow-sm" />
-                              <div>
-                                  <h4 className="font-bold text-gray-900 text-base leading-tight">{student.name}</h4>
-                                  <span className="text-xs text-gray-500 font-medium">Sub-{currentYear - birthYear} • {calculateAge(student.birthDate)} anos</span>
-                              </div>
-                          </div>
-                          <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${student.active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                              {student.active ? 'Ativo' : 'Inat.'}
-                          </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-2 mb-4">
-                          <div className="flex items-center gap-2 text-xs">
-                              <UserIcon className="w-3.5 h-3.5 text-gray-400" />
-                              <span className="text-gray-600 font-bold">{student.guardian.name}</span>
-                              {student.guardian.phone && (
-                                  <a href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-50 text-white p-1 rounded-md ml-auto">
-                                      <MessageCircle className="w-3 h-3" />
-                                  </a>
-                              )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px]">
-                              <Layers className="w-3.5 h-3.5 text-gray-400" />
-                              <span className="text-gray-500 truncate">{groupNames}</span>
+                  <div key={student.id} className={`bg-white p-5 rounded-2xl border shadow-sm transition-all hover:shadow-md ${overdueCount > 0 ? 'border-red-200 bg-red-50/10' : 'border-gray-100'}`}>
+                      <div className="flex gap-4 mb-4">
+                          <img src={student.photoUrl} className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-sm bg-gray-100" />
+                          <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-gray-900 truncate text-lg leading-tight">{student.name}</h4>
+                              <p className="text-sm text-gray-500 font-medium">Idade: {calculateAge(student.birthDate)} anos</p>
+                              <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${student.active ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
                           </div>
                       </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4 border-t border-gray-50 pt-3">
-                          {overdueCount > 0 && (
-                              <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-lg font-black border border-red-200 flex items-center gap-1 animate-pulse">
-                                  <AlertTriangle className="w-3 h-3" /> {overdueCount} MENSALIDADES ATRASADAS
-                              </span>
-                          )}
-                          {hasMissingDocs(student) && !isGuardian && (
-                              <button onClick={() => sendDocReminder(student)} className="bg-orange-100 text-orange-700 text-[10px] px-2 py-1 rounded-lg font-black border border-orange-200 flex items-center gap-1">
-                                  <FileWarning className="w-3 h-3" /> DOCS PENDENTES
-                              </button>
-                          )}
-                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
-                              <button onClick={() => sendMedicalReminder(student)} className="bg-orange-100 text-orange-700 text-[10px] px-2 py-1 rounded-lg font-black border border-orange-200 flex items-center gap-1">
-                                  <HeartPulse className="w-3 h-3" /> ATESTADO VENCIDO
-                              </button>
-                          )}
+                      <div className="space-y-2 mb-6">
+                          <div className="flex items-center gap-2 text-xs text-gray-600"><UserIcon className="w-3.5 h-3.5" /><span className="font-bold">{student.guardian.name}</span></div>
+                          <div className="flex items-center gap-2 text-xs text-gray-600"><Phone className="w-3.5 h-3.5" />{student.guardian.phone}</div>
                       </div>
-
-                      <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                          <button onClick={() => handleGenerateContract(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Printer className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleOpenAttendance(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 p-2 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleOpenHistory(student)} className={`flex-shrink-0 flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /></button>
-                          {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-orange-50 text-orange-700 p-2 rounded-lg text-xs font-bold border border-orange-100"><MessageSquareWarning className="w-3.5 h-3.5" /></button>}
-                          <button onClick={() => handleOpenEdit(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /></button>
+                      <div className="flex gap-2 pt-4 border-t border-gray-50">
+                          <button onClick={() => handleOpenHistory(student)} className={`flex-1 p-2 rounded-lg text-xs font-bold border transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'}`}>Financeiro</button>
+                          <button onClick={() => handleOpenAttendance(student)} className="flex-1 p-2 bg-purple-50 text-purple-700 border border-purple-100 rounded-lg text-xs font-bold hover:bg-purple-100">Frequência</button>
+                          <button onClick={() => handleOpenEdit(student)} className="p-2 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg"><Edit className="w-4 h-4" /></button>
                       </div>
                   </div>
               );
           })}
-          {filteredStudents.length === 0 && (
-              <div className="p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed"><Calculator className="w-10 h-10 mx-auto mb-2 opacity-20" /><p>Nenhum atleta encontrado.</p></div>
-          )}
-      </div>
-
-      {/* VISUALIZAÇÃO DESKTOP (Somente em telas grandes LG+ - 1024px) */}
-      <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-         <div className="overflow-x-auto min-w-0">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredStudents.map((student) => {
-                const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
-                const overdueCount = getStudentOverdueCount(student.id);
-                const currentYear = new Date().getFullYear(); const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
-                return (
-                  <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${overdueCount > 0 ? 'bg-red-50/30' : ''}`}>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <img src={student.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
-                        <div>
-                          <div className="font-medium text-gray-900 flex items-center gap-2">
-                              {student.name}
-                              {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
-                              {hasMissingDocs(student) && !isGuardian && (
-                                <button 
-                                  onClick={() => sendDocReminder(student)}
-                                  className="bg-orange-100 text-orange-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-orange-200 hover:bg-orange-200 transition-colors flex items-center gap-1"
-                                >
-                                  <FileWarning className="w-3 h-3" /> DOC
-                                </button>
-                              )}
-                          </div>
-                          <div className="text-xs text-gray-500 flex items-center gap-1.5">
-                              <span>Tel: {student.phone}</span>
-                              {student.phone && (
-                                <a 
-                                  href={`https://wa.me/55${student.phone.replace(/\D/g, '')}`} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
-                                  title="Chamar Aluno no WhatsApp"
-                                >
-                                  <MessageCircle className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-bold border">Sub-{currentYear - birthYear}</span></td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{calculateAge(student.birthDate)} anos</td>
-                    <td className="px-6 py-4 text-sm text-gray-600 truncate max-w-[200px]" title={groupNames}>{groupNames}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
-                        <div className="text-xs text-gray-500 flex items-center gap-1.5">
-                            <span>{student.guardian.phone}</span>
-                            {student.guardian.phone && (
-                                <a 
-                                  href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-green-500 hover:text-green-600 transition-colors p-0.5 hover:bg-green-50 rounded"
-                                  title="Chamar Responsável no WhatsApp"
-                                >
-                                  <MessageCircle className="w-3.5 h-3.5" />
-                                </a>
-                            )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
-                          <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
-                          {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
-                            <button 
-                              onClick={() => sendMedicalReminder(student)}
-                              className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded-md text-[10px] font-bold flex items-center gap-1 hover:bg-orange-200 transition-colors"
-                            >
-                              <HeartPulse className="w-3 h-3" /> Atestado Vencido
-                            </button>
-                          )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => handleGenerateContract(student)} className="text-gray-600 hover:text-gray-800 p-2 bg-gray-50 rounded-lg" title="Imprimir Contrato"><Printer className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg" title="Frequência"><CalendarCheck className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-50 text-blue-600'}`} title="Financeiro"><History className="w-4 h-4" /></button>
-                        {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="text-orange-600 hover:text-orange-800 p-2 bg-orange-50 rounded-lg transition-colors" title="Enviar Ocorrência"><MessageSquareWarning className="w-4 h-4" /></button>}
-                        <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg" title="Editar"><Edit className="w-4 h-4" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col animate-in zoom-in duration-200">
-             <div className="p-4 md:p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in duration-200">
+            <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
               <div>
-                  <h3 className="text-lg md:text-xl font-bold">{isGuardian ? 'Ficha do Atleta' : (editingId ? 'Editar Aluno' : 'Novo Aluno')}</h3>
-                  {editingId && (
-                      <div className="flex gap-4 mt-4 overflow-x-auto pb-1">
-                          <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>
-                          <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
-                          <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
-                          <button onClick={() => setActiveTab('OCCURRENCES')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'OCCURRENCES' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Ocorrências</button>
-                      </div>
-                  )}
+                <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Ficha do Aluno' : 'Novo Aluno'}</h3>
+                {editingId && (
+                  <div className="flex gap-6 mt-4">
+                    {['DETAILS', 'FINANCE', 'ATTENDANCE', 'OCCURRENCES'].map((t: any) => (
+                      <button key={t} onClick={() => setActiveTab(t)} className={`pb-2 text-sm font-bold transition-all border-b-2 ${activeTab === t ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>{t === 'DETAILS' ? 'Dados' : t === 'FINANCE' ? 'Financeiro' : t === 'ATTENDANCE' ? 'Frequência' : 'Ocorrências'}</button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-3">
-                  {editingId && !isGuardian && (
-                      <button 
-                          onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 border border-orange-200 rounded-lg text-xs font-bold text-orange-700 hover:bg-orange-200 transition-colors shadow-sm"
-                      >
-                          <MessageSquareWarning className="w-4 h-4" />
-                          <span className="hidden sm:inline">Nova Ocorrência</span>
-                      </button>
-                  )}
-                  <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
+              <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="p-2 hover:bg-gray-200 rounded-full transition-colors">✕</button>
             </div>
             
-            {activeTab === 'DETAILS' ? (
-                <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                    <form id="student-form" onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-bold border-b pb-2">Foto</h4>
-                            <div className="flex flex-col items-center gap-4">
-                                {/* Hidden canvas for photo capture */}
-                                <canvas ref={canvasRef} className="hidden" width="300" height="300"></canvas>
-                                {/* Hidden input for file upload */}
-                                <input type="file" ref={photoUploadRef} className="hidden" accept="image/*" onChange={handlePhotoFileChange} />
-                                
-                                {isCameraOpen ? (
-                                    <div className="relative w-40 h-40 bg-black rounded-lg overflow-hidden">
-                                        <video 
-                                          ref={videoRef} 
-                                          autoPlay 
-                                          playsInline 
-                                          muted 
-                                          className="w-full h-full object-cover" 
-                                        />
-                                        <button type="button" onClick={capturePhoto} className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-2">
-                                          <div className="w-4 h-4 bg-red-600 rounded-full" />
-                                        </button>
-                                    </div>
-                                ) : capturedImage ? (
-                                    <div className="relative w-32 h-32 md:w-40 md:h-40"><img src={capturedImage} className="w-full h-full object-cover rounded-xl border-2 border-primary-500" />{!isGuardian && <button type="button" onClick={() => setCapturedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md">✕</button>}</div>
-                                ) : (
-                                    <div className="w-32 h-32 md:w-40 md:h-40 bg-gray-100 rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 gap-2"><UserIcon className="w-10 h-10" /><span>Sem foto</span></div>
-                                )}
-                                {!isGuardian && !isCameraOpen && (
-                                  <div className="flex flex-wrap justify-center gap-2">
-                                    <button type="button" onClick={startCamera} className="flex items-center gap-2 text-xs text-primary-600 font-bold hover:bg-primary-50 px-3 py-1.5 rounded-lg border border-primary-200 transition-colors"><Camera className="w-4 h-4" /> Tirar Foto</button>
-                                    <button type="button" onClick={() => photoUploadRef.current?.click()} className="flex items-center gap-2 text-xs text-gray-600 font-bold hover:bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 transition-colors"><Upload className="w-4 h-4" /> Escolher Foto</button>
-                                  </div>
-                                )}
-                                {isCameraOpen && <button type="button" onClick={stopCamera} className="text-sm text-red-600 font-bold">Cancelar Câmera</button>}
-                            </div>
-
-                            <div className="space-y-3 pt-4">
-                                <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><Lock className="w-4 h-4" /> Acesso e Plano</h4>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Status do Aluno</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.active ? 'true' : 'false'} onChange={e => setStudentForm({...studentForm, active: e.target.value === 'true'})} disabled={isGuardian}><option value="true">Ativo</option><option value="false">Inativo / Trancado</option></select></div>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Plano de Mensalidade</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})} disabled={isGuardian}><option value="">Selecione um plano...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price.toFixed(2)}</option>)}</select></div>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{groups.map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={(studentForm.groupIds || []).includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm">{g.name}</span></label>))}</div></div>
-                            </div>
+            <div className="flex-1 overflow-y-auto p-8">
+              {activeTab === 'DETAILS' ? (
+                <form id="student-form" onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="space-y-6 text-center">
+                    <div className="w-48 h-48 mx-auto relative group">
+                      {isCameraOpen ? (
+                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover rounded-3xl bg-black" />
+                      ) : (
+                        <img src={capturedImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name || 'A')}&background=random`} className="w-full h-full object-cover rounded-3xl border-4 border-white shadow-xl" />
+                      )}
+                      {!isGuardian && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity">
+                          {isCameraOpen ? <button type="button" onClick={capturePhoto} className="p-4 bg-white rounded-full text-black"><Camera /></button> : <button type="button" onClick={startCamera} className="p-4 bg-white rounded-full text-black"><Camera /></button>}
                         </div>
-
-                        <div className="lg:col-span-2 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><UserIcon className="w-4 h-4 text-blue-500" /> Dados do Atleta</h4>
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Nome Completo</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} disabled={isGuardian} /></div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">Nascimento</label><input type="date" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} disabled={isGuardian} /></div>
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">Telefone Aluno</label><input type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="(00) 00000-0000" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} disabled={isGuardian} /></div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">RG</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} disabled={isGuardian} /></div>
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">CPF</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} disabled={isGuardian} /></div>
-                                        </div>
-                                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Vencimento Atestado Médico</label><input type="date" className={`w-full border rounded-lg p-2.5 focus:ring-2 outline-none ${isMedicalExpired(studentForm.medicalCertificateExpiry) ? 'border-red-300 bg-red-50 focus:ring-red-500' : 'focus:ring-primary-500'}`} value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} disabled={isGuardian} /></div>
-                                        
-                                        {/* NOVO CAMPO: POSIÇÕES DE JOGO */}
-                                        <div className="pt-2">
-                                            <label className="block text-xs font-black text-gray-400 uppercase mb-2 tracking-widest">Posições de Jogo</label>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                {positionsList.map(pos => (
-                                                    <label key={pos} className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-all ${studentForm.positions?.includes(pos) ? 'bg-primary-50 border-primary-500 ring-1 ring-primary-500/20' : 'bg-gray-50 border-gray-100 hover:bg-white'}`}>
-                                                        <input 
-                                                            type="checkbox" 
-                                                            className="rounded text-primary-600 w-4 h-4" 
-                                                            checked={studentForm.positions?.includes(pos)} 
-                                                            onChange={() => togglePositionSelection(pos)}
-                                                            disabled={isGuardian}
-                                                        />
-                                                        <span className={`text-[10px] font-bold ${studentForm.positions?.includes(pos) ? 'text-primary-700' : 'text-gray-500'}`}>{pos}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><HeartPulse className="w-4 h-4 text-red-500" /> Responsável</h4>
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Nome do Responsável</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} disabled={isGuardian} /></div>
-                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">CPF do Responsável (Para PIX e Login)</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} disabled={isGuardian} /></div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">Telefone (WhatsApp)</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} disabled={isGuardian} /></div>
-                                            <div><label className="block text-xs font-medium text-gray-500 mb-1">Email</label><input type="email" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.guardian.email} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, email: e.target.value}})} disabled={isGuardian} /></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><MapPin className="w-4 h-4 text-green-500" /> Endereço</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="relative"><label className="block text-xs font-medium text-gray-500 mb-1">CEP</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.address.cep} onChange={e => { const val = e.target.value; setStudentForm({...studentForm, address: {...studentForm.address, cep: val}}); if(val.length >= 8) fetchAddressByCep(val); }} disabled={isGuardian} />{isLoadingCep && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-9 text-primary-500" />}</div>
-                                    <div className="md:col-span-2"><label className="block text-xs font-medium text-gray-500 mb-1">Rua / Avenida</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.address.street} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, street: e.target.value}})} disabled={isGuardian} /></div>
-                                    <div><label className="block text-xs font-medium text-gray-500 mb-1">Número</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.address.number} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, number: e.target.value}})} disabled={isGuardian} /></div>
-                                    <div className="md:col-span-2"><label className="block text-xs font-medium text-gray-500 mb-1">Bairro</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.address.district} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, district: e.target.value}})} disabled={isGuardian} /></div>
-                                    <div className="md:col-span-2"><label className="block text-xs font-medium text-gray-500 mb-1">Cidade</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.address.city} onChange={e => setStudentForm({...studentForm, address: {...studentForm.address, city: e.target.value}})} disabled={isGuardian} /></div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><FolderCheck className="w-4 h-4 text-orange-500" /> Documentação Obrigatória</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-                                    {[ {id:'rg', label:'RG Atleta'}, {id:'cpf', label:'CPF Atleta'}, {id:'medical', label:'Atestado'}, {id:'address', label:'Endereço'}, {id:'school', label:'Escolar'} ].map(doc => {
-                                        const val = studentForm.documents[doc.id] || { delivered: false, isDigital: false };
-                                        return (
-                                            <div key={doc.id} className={`p-3 rounded-xl border transition-all ${val.delivered ? 'bg-green-50 border-green-200 shadow-inner' : 'bg-orange-50 border-orange-200'}`}>
-                                                <p className="text-[10px] font-black uppercase text-gray-500 mb-2 truncate">{doc.label}</p>
-                                                <div className="space-y-2">
-                                                    <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={val.delivered} onChange={e => updateDoc(doc.id, 'delivered', e.target.checked)} className="rounded text-green-600" disabled={isGuardian} /><span className="text-xs font-bold text-gray-700">Entregue</span></label>
-                                                    {val.delivered && (<label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={val.isDigital} onChange={e => updateDoc(doc.id, 'isDigital', e.target.checked)} className="rounded text-blue-600" disabled={isGuardian} /><span className="text-[10px] text-gray-500">Formato Digital</span></label>)}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            ) : activeTab === 'FINANCE' ? (
-                <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-                    <div className="w-full md:w-80 border-r bg-gray-50 p-4 md:p-6 space-y-6">
-                        <div className="bg-white p-4 rounded-xl border shadow-sm space-y-1">
-                             <p className="text-xs font-bold text-gray-500 uppercase">Mensalidades em Aberto</p>
-                             <h4 className="text-2xl font-black text-red-600">{studentTransactions.filter(t => t.status === PaymentStatus.PENDING).length}</h4>
-                        </div>
-                        <div className="bg-white p-4 rounded-xl border shadow-sm space-y-1">
-                             <p className="text-xs font-bold text-gray-500 uppercase">Total Selecionado</p>
-                             <h4 className="text-2xl font-black text-primary-600">R$ {selectedTotal.toFixed(2)}</h4>
-                        </div>
-                        {selectedFinanceIds.size > 0 && (
-                            <div className="space-y-3">
-                                <button onClick={() => initiatePixPayment()} disabled={pixLoading} className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-black shadow-lg shadow-primary-200 transition-all flex items-center justify-center gap-3">
-                                    {pixLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <QrCode className="w-6 h-6" />} PAGAR COM PIX
-                                </button>
-                                {!isGuardian && (
-                                    <button onClick={(e) => sendBatchSelectedCharges(e)} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2">
-                                        <MessageCircle className="w-5 h-5" /> ENVIAR COBRANÇA (WA)
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                        {!isGuardian && (
-                            <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
-                                <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
-                            </button>
-                        )}
+                      )}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                         <div className="space-y-3">
-                             {studentTransactions.map(tx => {
-                                 const isOverdue = tx.date < todayStr && tx.status === PaymentStatus.PENDING;
-                                 const isCancelled = tx.status === PaymentStatus.CANCELLED;
-                                 const isSelected = selectedFinanceIds.has(tx.id);
-                                 return (
-                                     <div key={tx.id} onClick={() => tx.status === PaymentStatus.PENDING && toggleFinanceSelection(tx.id)} className={`group relative flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${tx.status === PaymentStatus.PAID || isCancelled ? 'bg-gray-50 opacity-70' : isSelected ? 'bg-primary-50 border-primary-500 ring-2 ring-primary-500/20' : isOverdue ? 'bg-red-50 border-red-200' : 'bg-white hover:border-primary-300'}`}>
-                                         <div className="flex items-center gap-4">
-                                             <div className={`p-2 rounded-lg ${tx.status === PaymentStatus.PAID ? 'bg-green-100 text-green-600' : isCancelled ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-400'}`}>
-                                                 {isSelected ? <CheckSquare className="w-6 h-6 text-primary-600" /> : tx.status === PaymentStatus.PAID ? <CheckCircle className="w-6 h-6" /> : isCancelled ? <XCircle className="w-6 h-6" /> : <Square className="w-6 h-6" />}
-                                             </div>
-                                             <div>
-                                                 <p className="font-bold text-gray-900">{tx.description}</p>
-                                                 <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                                     <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
-                                                     {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
-                                                     {isCancelled && <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded font-black uppercase text-[9px]">Cancelado</span>}
-                                                     {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
-                                                 </div>
-                                             </div>
-                                         </div>
-                                         <div className="text-right flex items-center gap-4">
-                                              <div className={`font-black text-lg ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>R$ {tx.amount.toFixed(2)}</div>
-                                              {!isGuardian && tx.status === PaymentStatus.PENDING && (
-                                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                      <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>
-                                                      <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança via WhatsApp"><Send className="w-4 h-4" /></button>
-                                                      <button onClick={(e) => { e.stopPropagation(); handleOpenEditCharge(e, tx); }} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200" title="Editar Cobrança"><Edit className="w-4 h-4" /></button>
-                                                      <button onClick={(e) => { e.stopPropagation(); handleCancelTransaction(tx); }} className="p-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300" title="Cancelar Cobrança"><Ban className="w-4 h-4" /></button>
-                                                  </div>
-                                              )}
-                                              {tx.status === PaymentStatus.PENDING && isGuardian && tx.paymentLink && (
-                                                  <button onClick={(e) => { e.stopPropagation(); copyPixCode(); }} className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100 border border-primary-200" title="Pagar agora"><QrCode className="w-4 h-4" /></button>
-                                              )}
-                                         </div>
-                                     </div>
-                                 );
-                             })}
-                             {studentTransactions.length === 0 && <div className="p-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200"><Calculator className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>Nenhuma transação financeira registrada.</p></div>}
-                         </div>
+                    {!isGuardian && <button type="button" onClick={() => photoUploadRef.current?.click()} className="text-xs font-bold text-primary-600 uppercase tracking-widest hover:underline">Alterar Foto</button>}
+                    <input type="file" ref={photoUploadRef} className="hidden" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ const r = new FileReader(); r.onload = (x) => setCapturedImage(x.target?.result as string); r.readAsDataURL(f); } }} />
+                    <div className="pt-6 border-t text-left space-y-4">
+                      <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Acesso e Plano</h4>
+                      <select className="w-full p-3 border rounded-xl text-sm font-bold bg-gray-50" value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})} disabled={isGuardian} required><option value="">Selecione o Plano...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price.toFixed(2)}</option>)}</select>
+                      <div className="space-y-1">{groups.map(g => <label key={g.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"><input type="checkbox" checked={studentForm.groupIds.includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm font-medium">{g.name}</span></label>)}</div>
                     </div>
-                </div>
-            ) : activeTab === 'ATTENDANCE' ? (
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
-                    <div className="max-w-4xl mx-auto space-y-6">
-                        {/* Filtros de Frequência */}
-                        <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-wrap items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <Filter className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-bold text-gray-700 uppercase">Filtrar Período:</span>
-                          </div>
-                          <select 
-                            className="border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
-                            value={attendanceMonth}
-                            onChange={(e) => setAttendanceMonth(parseInt(e.target.value))}
-                          >
-                            <option value={-1}>Todos os Meses</option>
-                            {monthsList.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                          </select>
-                          <select 
-                            className="border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
-                            value={attendanceYear}
-                            onChange={(e) => setAttendanceYear(parseInt(e.target.value))}
-                          >
-                            {yearsList.map(y => <option key={y} value={y}>{y}</option>)}
-                          </select>
+                  </div>
+                  <div className="lg:col-span-2 space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><UserIcon className="w-4 h-4" /> Atleta</h4>
+                        <input className="w-full p-3 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="Nome Completo" required value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} disabled={isGuardian} />
+                        <div className="grid grid-cols-2 gap-4"><input type="date" className="w-full p-3 border rounded-xl text-sm" value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} disabled={isGuardian} /><input type="text" className="w-full p-3 border rounded-xl text-sm" placeholder="Telefone" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} disabled={isGuardian} /></div>
+                        <div className="grid grid-cols-2 gap-4"><input className="w-full p-3 border rounded-xl text-sm" placeholder="RG" value={studentForm.rg} onChange={e => setStudentForm({...studentForm, rg: e.target.value})} disabled={isGuardian} /><input className="w-full p-3 border rounded-xl text-sm" placeholder="CPF" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} disabled={isGuardian} /></div>
+                        <div className="pt-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block">Posições</label>
+                            <div className="flex flex-wrap gap-2">{positionsList.map(pos => <button key={pos} type="button" onClick={() => !isGuardian && togglePositionSelection(pos)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${studentForm.positions.includes(pos) ? 'bg-primary-600 text-white border-primary-700 shadow-md' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}>{pos}</button>)}</div>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Presenças</p><h4 className="text-3xl font-black text-green-600">{filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length}</h4></div><div className="bg-green-50 p-3 rounded-xl"><CheckCircle className="w-6 h-6 text-green-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Faltas</p><h4 className="text-3xl font-black text-red-600">{filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && a.date <= todayStr).length}</h4></div><div className="bg-red-50 p-3 rounded-xl"><XCircle className="w-6 h-6 text-red-600" /></div></div>
-                             <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center justify-between"><div><p className="text-xs font-bold text-gray-400 uppercase mb-1">Gols Marcados</p><h4 className="text-3xl font-black text-yellow-500">{filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0)}</h4></div><div className="bg-yellow-50 p-3 rounded-xl"><Medal className="w-6 h-6 text-yellow-600" /></div></div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                            <div className="p-4 border-b bg-gray-50 flex items-center justify-between font-bold text-gray-700">
-                                <div className="flex items-center gap-2">
-                                    <History className="w-4 h-4 text-primary-600" /> Histórico de Atividades
-                                </div>
-                                {!isGuardian && (
-                                    <button 
-                                        onClick={handleSendAttendanceReport}
-                                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors shadow-sm"
-                                    >
-                                        <MessageCircle className="w-3.5 h-3.5" /> ENVIAR P/ RESPONSÁVEL
-                                    </button>
-                                )}
-                            </div>
-                            
-                            {/* SEÇÃO DE JOGOS */}
-                            <div className="px-4 py-2 bg-yellow-50 text-yellow-800 text-[10px] font-black uppercase border-b border-yellow-100 flex items-center gap-2">
-                                <Trophy className="w-3 h-3" /> Jogos
-                            </div>
-                            <div className="divide-y divide-gray-100 border-b">
-                                {filteredStudentActivities.filter(a => a.type === 'GAME').map(act => {
-                                    const isPresent = (act.attendance || []).includes(editingId!);
-                                    const goals = act.scorers?.filter(s => s === editingId).length || 0;
-                                    return (
-                                        <div key={act.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-2 rounded-lg bg-yellow-100 text-yellow-600"><Trophy className="w-5 h-5" /></div>
-                                                <div><p className="font-bold text-sm text-gray-800">{act.title}</p><p className="text-xs text-gray-400">{formatDate(act.date)} • {act.startTime}</p></div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                {goals > 0 && <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-[10px] font-black border border-yellow-200">⚽ {goals} GOLS</span>}
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter border ${isPresent ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{isPresent ? 'Presença' : 'Falta'}</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {filteredStudentActivities.filter(a => a.type === 'GAME').length === 0 && (
-                                    <div className="p-8 text-center text-gray-400 text-xs italic">Nenhum jogo registrado neste período.</div>
-                                )}
-                            </div>
-
-                            {/* SEÇÃO DE TREINOS */}
-                            <div className="px-4 py-2 bg-blue-50 text-blue-800 text-[10px] font-black uppercase border-b border-blue-100 flex items-center gap-2">
-                                <Zap className="w-3 h-3" /> Treinos
-                            </div>
-                            <div className="divide-y divide-gray-100">
-                                {filteredStudentActivities.filter(a => a.type !== 'GAME').map(act => {
-                                    const isPresent = (act.attendance || []).includes(editingId!);
-                                    return (
-                                        <div key={act.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-2 rounded-lg bg-blue-100 text-blue-600"><Zap className="w-5 h-5" /></div>
-                                                <div><p className="font-bold text-sm text-gray-800">{act.title}</p><p className="text-xs text-gray-400">{formatDate(act.date)} • {act.startTime}</p></div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter border ${isPresent ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{isPresent ? 'Presença' : 'Falta'}</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {filteredStudentActivities.filter(a => a.type !== 'GAME').length === 0 && (
-                                    <div className="p-8 text-center text-gray-400 text-xs italic">Nenhum treino registrado neste período.</div>
-                                )}
-                            </div>
-                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Responsável</h4>
+                        <input className="w-full p-3 border rounded-xl text-sm" placeholder="Nome" required value={studentForm.guardian.name} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, name: e.target.value}})} disabled={isGuardian} />
+                        <input className="w-full p-3 border rounded-xl text-sm" placeholder="WhatsApp" required value={studentForm.guardian.phone} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, phone: e.target.value}})} disabled={isGuardian} />
+                        <input className="w-full p-3 border rounded-xl text-sm" placeholder="CPF" required value={studentForm.guardian.cpf} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, cpf: e.target.value}})} disabled={isGuardian} />
+                        <input className="w-full p-3 border rounded-xl text-sm" placeholder="E-mail" value={studentForm.guardian.email} onChange={e => setStudentForm({...studentForm, guardian: {...studentForm.guardian, email: e.target.value}})} disabled={isGuardian} />
+                      </div>
                     </div>
-                </div>
-            ) : (
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
-                    <div className="max-w-4xl mx-auto space-y-6">
-                        <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
-                            <h4 className="font-bold text-gray-700 flex items-center gap-2">
-                                <MessageSquareWarning className="w-5 h-5 text-orange-600" /> Histórico de Comunicados
-                            </h4>
-                            {!isGuardian && (
-                                <button onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-xs font-black transition-colors shadow-sm flex items-center gap-2">
-                                    <Plus className="w-4 h-4" /> NOVO REGISTRO
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="space-y-4">
-                            {studentOccurrences.map(occ => (
-                                <div key={occ.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <span className="bg-orange-50 text-orange-700 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-orange-100">Comunicado WA</span>
-                                        <span className="text-xs text-gray-400 font-bold flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(occ.date)}</span>
-                                    </div>
-                                    <p className="text-sm text-gray-700 leading-relaxed italic">"{occ.description}"</p>
-                                    <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between text-[10px] text-gray-400 font-medium">
-                                        <span>Registrado em: {new Date(occ.createdAt).toLocaleString('pt-BR')}</span>
-                                        <span className="text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Enviado com sucesso</span>
-                                    </div>
-                                </div>
-                            ))}
-                            {studentOccurrences.length === 0 && (
-                                <div className="p-12 text-center text-gray-400 bg-white rounded-2xl border-2 border-dashed border-gray-100">
-                                    <MessageSquareWarning className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                                    <p>Nenhuma ocorrência registrada para este atleta.</p>
-                                </div>
-                            )}
-                        </div>
+                  </div>
+                </form>
+              ) : activeTab === 'FINANCE' ? (
+                <div className="space-y-4">
+                  {studentTransactions.map(tx => (
+                    <div key={tx.id} className="p-4 border rounded-2xl flex justify-between items-center bg-gray-50">
+                      <div>
+                        <p className="font-bold text-gray-900">{tx.description}</p>
+                        <p className="text-xs text-gray-500">Venc: {formatDate(tx.date)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-gray-900">R$ {tx.amount.toFixed(2)}</p>
+                        {tx.status === PaymentStatus.PENDING && !isGuardian && <button onClick={() => handlePayTransaction(tx.id, PaymentMethod.CASH)} className="text-[10px] font-black text-green-600 uppercase mt-1">Dar Baixa</button>}
+                      </div>
                     </div>
+                  ))}
                 </div>
-            )}
+              ) : null}
+            </div>
             
-            <div className="p-4 md:p-6 border-t bg-gray-50 rounded-b-2xl flex justify-end gap-3">
-              <button type="button" onClick={() => { setIsModalOpen(false); stopCamera(); }} className="px-6 py-2.5 text-gray-500 font-bold hover:bg-gray-200 rounded-xl transition-colors">Fechar</button>
-              {!isGuardian && activeTab === 'DETAILS' && (<button type="submit" form="student-form" className="px-10 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all">SALVAR ALTERAÇÕES</button>)}
+            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="px-6 py-2.5 font-bold text-gray-500 hover:bg-gray-200 rounded-xl transition-colors">Fechar</button>
+              {!isGuardian && activeTab === 'DETAILS' && <button type="submit" form="student-form" className="px-10 py-2.5 bg-primary-600 text-white rounded-xl font-black shadow-lg hover:bg-primary-700 transition-all">SALVAR FICHA</button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL PIX - MERCADO PAGO */}
       {showPixModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-             <div className="bg-white rounded-3xl shadow-2xl w-full max-sm overflow-hidden animate-in zoom-in duration-300">
-                <div className="bg-primary-600 p-6 text-white text-center">
-                    <QrCode className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                    <h3 className="text-xl font-black uppercase tracking-tighter">Pagamento Instantâneo</h3>
-                    <p className="text-primary-100 text-sm opacity-80">Aponte a câmera para o QR Code</p>
-                </div>
-                
-                <div className="p-8 text-center space-y-6">
-                    {pixLoading ? (
-                        <div className="py-12 flex flex-col items-center gap-4"><Loader2 className="w-12 h-12 text-primary-600 animate-spin" /><p className="text-gray-500 font-bold animate-pulse">Gerando seu QR Code...</p></div>
-                    ) : pixData ? (
-                        <>
-                           <div className="relative group mx-auto w-fit p-3 bg-gray-50 rounded-2xl border-2 border-primary-100">
-                               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
-                               <div className="absolute inset-0 group-hover:bg-primary-600/5 transition-colors pointer-events-none rounded-lg" />
-                           </div>
-                           <div className="space-y-3">
-                               <button onClick={copyPixCode} className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-all active:scale-95"><Copy className="w-4 h-4" /> Copiar Código PIX</button>
-                               <p className="text-[10px] text-gray-400 font-medium px-4">Após o pagamento, o sistema identificará automaticamente e dará baixa em sua mensalidade em alguns instantes.</p>
-                           </div>
-                        </>
-                    ) : (
-                        <div className="py-12 text-red-500 font-bold"><XCircle className="w-12 h-12 mx-auto mb-2" /> Falha ao gerar pagamento.</div>
-                    )}
-                </div>
-                
-                <div className="p-4 bg-gray-50 border-t flex justify-center">
-                    <button onClick={() => setShowPixModal(false)} className="text-gray-500 font-black text-xs hover:text-gray-700 transition-colors uppercase tracking-widest">Cancelar e Fechar</button>
-                </div>
-             </div>
-        </div>
-      )}
-
-      {/* MODAL COBRANÇA AVULSA */}
-      {showChargeModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">{editingChargeId ? 'Editar Cobrança' : 'Lançar Cobrança'}</h3>
-                <button onClick={() => { setShowChargeModal(false); setEditingChargeId(null); }} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
-            </div>
-            <form onSubmit={handleSaveManualCharge} className="space-y-4">
-                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label><input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Ex: Uniforme, Taxa de Torneio..." value={manualCharge.description} onChange={e => setManualCharge({...manualCharge, description: e.target.value})} /></div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label><input required type="number" step="0.01" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none font-bold" placeholder="0,00" value={manualCharge.amount || ''} onChange={e => setManualCharge({...manualCharge, amount: parseFloat(e.target.value) || 0})} /></div>
-                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vencimento</label><input required type="date" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-primary-500 outline-none" value={manualCharge.date} onChange={e => setManualCharge({...manualCharge, date: e.target.value})} /></div>
-                </div>
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => { setShowChargeModal(false); setEditingChargeId(null); }} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                  <button type="submit" className="flex-1 py-3 bg-gray-900 text-white rounded-xl font-black hover:bg-black transition-all uppercase tracking-tight">{editingChargeId ? 'SALVAR' : 'LANÇAR'}</button>
-                </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL NOVA OCORRÊNCIA */}
-      {showOccurrenceModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter flex items-center gap-2">
-                    <MessageSquareWarning className="text-orange-600 w-5 h-5" /> Registrar Ocorrência
-                </h3>
-                <button onClick={() => setShowOccurrenceModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
-            </div>
-            <form onSubmit={handleSaveOccurrence} className="space-y-4">
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição do Ocorrido</label>
-                    <textarea required rows={4} className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none text-sm" 
-                        placeholder="Descreva o comportamento, atraso ou aviso para o responsável..."
-                        value={newOccurrence.description} onChange={e => setNewOccurrence({...newOccurrence, description: e.target.value})} />
-                </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data da Ocorrência</label>
-                    <input required type="date" className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
-                        value={newOccurrence.date} onChange={e => setNewOccurrence({...newOccurrence, date: e.target.value})} />
-                </div>
-                <p className="text-[10px] text-gray-400 italic">Ao salvar, uma mensagem será enviada automaticamente para o WhatsApp do responsável cadastrado.</p>
-                <div className="pt-4 flex gap-3">
-                    <button type="button" onClick={() => setShowOccurrenceModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                    <button type="submit" className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-black hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">SALVAR E ENVIAR</button>
-                </div>
-            </form>
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center">
+            <h3 className="text-xl font-black mb-6 uppercase">Pagamento PIX</h3>
+            {pixLoading ? <Loader2 className="animate-spin mx-auto w-12 h-12" /> : pixData && <img src={`data:image/jpeg;base64,${pixData.qrCodeBase64}`} className="mx-auto w-64 h-64 rounded-xl border p-2" />}
+            <button onClick={() => setShowPixModal(false)} className="mt-8 text-sm font-bold text-gray-400">FECHAR</button>
           </div>
         </div>
       )}

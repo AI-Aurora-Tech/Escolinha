@@ -12,7 +12,7 @@ import { AICoachPage } from './pages/AICoachPage';
 import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
-import { checkMPPaymentStatus } from './mercadoPago';
+import { checkMPPaymentStatus } from './services/mercadoPago';
 import { sendZApiMessage, sendZApiDocument } from './zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
