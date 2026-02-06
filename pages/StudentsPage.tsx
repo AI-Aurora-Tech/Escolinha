@@ -295,31 +295,44 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleExportExcel = () => {
-      const data = filteredStudents.map(s => ({
-          'Nome do Aluno': s.name,
-          'Data de Nascimento': formatDate(s.birthDate),
-          'Idade': calculateAge(s.birthDate),
-          'RG Aluno': s.rg || '',
-          'CPF Aluno': s.cpf || '',
-          'Telefone Aluno': s.phone || '',
-          'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
-          'Posições': (s.positions || []).join(', '),
-          'Responsável': s.guardian.name,
-          'CPF Responsável': s.guardian.cpf || '',
-          'Telefone Resp.': s.guardian.phone,
-          'Email Resp.': s.guardian.email || '',
-          'CEP': s.address.cep || '',
-          'Rua': s.address.street || '',
-          'Número': s.address.number || '',
-          'Complemento': s.address.complement || '',
-          'Bairro': s.address.district || '',
-          'Cidade': s.address.city || '',
-          'Estado': s.address.state || '',
-          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
-          'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
-          'Status': s.active ? 'Ativo' : 'Inativo',
-          'Mensalidades Atrasadas': getStudentOverdueCount(s.id)
-      }));
+      const currentYear = new Date().getFullYear();
+      const data = filteredStudents.map(s => {
+          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+          const category = `Sub-${currentYear - birthYear}`;
+          const checkDoc = (doc: any) => (typeof doc === 'boolean' ? (doc ? 'Sim' : 'Não') : (doc?.delivered ? 'Sim' : 'Não'));
+
+          return {
+              'Nome do Aluno': s.name,
+              'Categoria': category,
+              'Data de Nascimento': formatDate(s.birthDate),
+              'Idade': calculateAge(s.birthDate),
+              'RG Aluno': s.rg || '',
+              'CPF Aluno': s.cpf || '',
+              'Telefone Aluno': s.phone || '',
+              'Posições': (s.positions || []).join(', '),
+              'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
+              'Responsável': s.guardian.name,
+              'CPF Responsável': s.guardian.cpf || '',
+              'Telefone Resp.': s.guardian.phone,
+              'Email Resp.': s.guardian.email || '',
+              'CEP': s.address.cep || '',
+              'Rua': s.address.street || '',
+              'Número': s.address.number || '',
+              'Complemento': s.address.complement || '',
+              'Bairro': s.address.district || '',
+              'Cidade': s.address.city || '',
+              'Estado': s.address.state || '',
+              'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
+              'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
+              'Status': s.active ? 'Ativo' : 'Inativo',
+              'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
+              'Doc: RG': checkDoc(s.documents.rg),
+              'Doc: CPF': checkDoc(s.documents.cpf),
+              'Doc: Atestado': checkDoc(s.documents.medical),
+              'Doc: Endereço': checkDoc(s.documents.address),
+              'Doc: Escolar': checkDoc(s.documents.school)
+          };
+      });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Alunos Completo");
@@ -333,23 +346,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       doc.setFontSize(10);
       doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
       
-      const body = filteredStudents.map(s => [
-          s.name,
-          calculateAge(s.birthDate),
-          s.rg || s.cpf || '-',
-          s.guardian.name,
-          s.guardian.phone,
-          plans.find(p => p.id === s.planId)?.name || '-',
-          s.active ? 'Ativo' : 'Inativo',
-          getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
-      ]);
+      const currentYear = new Date().getFullYear();
+      const body = filteredStudents.map(s => {
+          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+          const category = `Sub-${currentYear - birthYear}`;
+          return [
+              s.name,
+              category,
+              calculateAge(s.birthDate),
+              (s.positions || []).join(', '),
+              s.rg || s.cpf || '-',
+              s.guardian.name,
+              s.guardian.phone,
+              plans.find(p => p.id === s.planId)?.name || '-',
+              s.active ? 'Ativo' : 'Inativo',
+              getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
+          ];
+      });
 
       autoTable(doc, {
           startY: 35,
-          head: [['Nome', 'Idade', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
+          head: [['Nome', 'Cat.', 'Idade', 'Posições', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
           body: body,
           headStyles: { fillColor: [249, 115, 22] },
-          styles: { fontSize: 8 }
+          styles: { fontSize: 7, cellPadding: 2 }
       });
       doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
   };
@@ -360,7 +380,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           nascimento: "2012-05-20",
           rg: "00000000",
           cpf: "00000000000",
-          telefone_aluno: "11988887777",
+          telefone_aluno: "11987019721",
           atestado_vencimento: "2024-12-31",
           responsavel_nome: "Maria Responsavel",
           responsavel_cpf: "00000000000",
@@ -651,10 +671,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       
       if (!studentForm.guardian.cpf) { alert("CPF necessário para gerar PIX."); return; }
       
-      setPixLoading(true); 
-      setShowPixModal(true); 
-      setPixData(null); 
-      setPixTxIds(idsToPay);
+      setPixLoading(true); setShowPixModal(true); setPixData(null); setPixTxIds(idsToPay);
       
       try {
           const result = await createPixPayment({ 
@@ -676,16 +693,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   onUpdateTransaction({ id, externalReference: externalRef });
               }
           } 
-          else { 
-              alert("Erro ao gerar QR Code. Verifique as configurações do Mercado Pago."); 
-              setShowPixModal(false); 
-          }
-      } catch (error) { 
-          alert("Erro de comunicação com Mercado Pago."); 
-          setShowPixModal(false); 
-      } finally { 
-          setPixLoading(false); 
-      }
+          else { alert("Erro ao gerar QR Code."); setShowPixModal(false); }
+      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setShowPixModal(false); setPixLoading(false); }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
@@ -1217,7 +1226,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          <div className="text-right flex items-center gap-4">
                                               <div className={`font-black text-lg ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>R$ {tx.amount.toFixed(2)}</div>
                                               {!isGuardian && tx.status === PaymentStatus.PENDING && (
-                                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <div className="flex items-center gap-1 items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança via WhatsApp"><Send className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); handleOpenEditCharge(e, tx); }} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200" title="Editar Cobrança"><Edit className="w-4 h-4" /></button>
@@ -1397,7 +1406,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     ) : pixData ? (
                         <>
                            <div className="relative group mx-auto w-fit p-3 bg-gray-50 rounded-2xl border-2 border-primary-100">
-                               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
+                               <img src={`data:image/jpeg;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
                                <div className="absolute inset-0 group-hover:bg-primary-600/5 transition-colors pointer-events-none rounded-lg" />
                            </div>
                            <div className="space-y-3">
