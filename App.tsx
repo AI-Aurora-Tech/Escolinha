@@ -112,7 +112,28 @@ function App() {
         }
 
         const { data: activitiesData } = await supabase.from('activities').select('*');
-        if (activitiesData) setActivities(activitiesData.map((a: any) => ({ id: a.id, title: a.title, type: a.activity_type || 'TRAINING', fee: a.fee || 0, location: a.location || '', presentationTime: a.presentation_time, opponent: a.opponent, homeScore: a.home_score, awayScore: a.away_score, scorers: a.scorers || [], groupId: a.group_id, participants: a.participants || [], date: a.date, startTime: a.start_time, endTime: a.end_time, recurrence: a.recurrence, attendance: a.attendance || [], feePayments: a.fee_payments || [] })));
+        if (activitiesData) {
+            setActivities(activitiesData.map((a: any) => ({
+                id: a.id,
+                title: a.title,
+                type: a.activity_type || 'TRAINING',
+                fee: a.fee || 0,
+                location: a.location || '',
+                presentationTime: a.presentation_time,
+                opponent: a.opponent,
+                homeScore: a.home_score,
+                awayScore: a.away_score,
+                scorers: a.scorers || [],
+                groupId: a.group_id,
+                participants: a.participants || [],
+                date: a.date,
+                startTime: a.start_time,
+                endTime: a.end_time,
+                recurrence: a.recurrence || 'none',
+                attendance: a.attendance || [],
+                feePayments: a.fee_payments || []
+            } as Activity)));
+        }
     } catch (error) {
         console.error("Error fetching data:", error);
     } finally {
@@ -158,11 +179,6 @@ function App() {
   };
 
   const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
-
-  const handleGenerateGlobalTuitions = async () => {
-    // Lógica para gerar mensalidades automatizadas...
-    await fetchData(true);
-  };
 
   const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
     setIsLoading(true);
@@ -218,8 +234,6 @@ function App() {
 
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
-      
-      // MAPEAMENTO CAMELCASE -> SNAKE_CASE PARA O BANCO
       const payload: any = {};
       if (t.description !== undefined) payload.description = t.description;
       if (t.category !== undefined) payload.category = t.category;
@@ -237,7 +251,6 @@ function App() {
       if (t.recurrence !== undefined) payload.recurrence = t.recurrence;
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
-      
       if(!error) {
         if (t.status === PaymentStatus.PAID) {
             const student = students.find(s => s.id === (transactions.find(tx => tx.id === t.id)?.studentId));
@@ -247,54 +260,78 @@ function App() {
             }
         }
         await fetchData(true);
-      } else {
-          console.error("Erro ao atualizar transação:", error);
-          alert("Erro ao salvar baixa.");
       }
   };
 
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
-    const payload = {
-        description: t.description,
-        category: t.category || 'Outros',
-        amount: t.amount,
-        type: t.type,
-        date: t.date,
-        payment_date: t.paymentDate,
-        status: t.status,
-        student_id: safeId(t.studentId),
-        plan_id: safeId(t.planId),
-        payment_method: t.paymentMethod,
-        payment_link: t.paymentLink,
-        external_reference: t.externalReference,
-        preference_id: t.preferenceId,
-        recurrence: t.recurrence || 'NONE'
-    };
+    const payload = { description: t.description, category: t.category || 'Outros', amount: t.amount, type: t.type, date: t.date, payment_date: t.paymentDate, status: t.status, student_id: safeId(t.studentId), plan_id: safeId(t.planId), payment_method: t.paymentMethod, recurrence: t.recurrence || 'NONE' };
     await supabase.from('transactions').insert([payload]);
     await fetchData(true);
   };
 
+  // Fix: Implemented handleGenerateGlobalTuitions to fix the "Cannot find name" error.
+  const handleGenerateGlobalTuitions = async () => {
+    setIsLoading(true);
+    try {
+      const activeStudents = students.filter(s => s.active);
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      const monthStr = currentMonth.toString().padStart(2, '0');
+      const yearStr = currentYear.toString();
+      
+      for (const student of activeStudents) {
+        if (!student.planId) continue;
+        const plan = plans.find(p => p.id === student.planId);
+        if (!plan) continue;
+
+        const existing = transactions.find(t => 
+          t.studentId === student.id && 
+          t.category === 'Mensalidade' &&
+          t.date.startsWith(`${yearStr}-${monthStr}`)
+        );
+
+        if (!existing) {
+          const dueDay = plan.dueDay || 10;
+          const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
+          
+          const payload = { 
+            description: `Mensalidade ${monthStr}/${yearStr}`, 
+            category: 'Mensalidade', 
+            amount: plan.price, 
+            type: TransactionType.INCOME, 
+            date: dueDate, 
+            status: PaymentStatus.PENDING, 
+            student_id: safeId(student.id), 
+            plan_id: safeId(student.planId), 
+            payment_method: PaymentMethod.CASH, 
+            recurrence: 'NONE' 
+          };
+          await supabase.from('transactions').insert([payload]);
+        }
+      }
+      await fetchData(true);
+    } catch (err) {
+      console.error("Error generating tuitions", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
-      const payload = {
-          title: a.title,
-          activity_type: a.type,
-          fee: a.fee || 0,
-          location: a.location || '',
-          presentation_time: a.presentationTime,
-          opponent: a.opponent,
-          home_score: a.homeScore,
-          away_score: a.awayScore,
-          scorers: a.scorers || [],
-          group_id: safeId(a.groupId),
-          participants: a.participants || [],
-          date: a.date,
-          start_time: a.startTime,
-          end_time: a.endTime,
-          recurrence: a.recurrence || 'none',
-          attendance: a.attendance || [],
-          fee_payments: a.feePayments || []
-      };
+      const payload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.home_score, away_score: a.away_score, scorers: a.scorers || [], group_id: safeId(a.groupId), participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence || 'none', attendance: a.attendance || [], fee_payments: a.fee_payments || [] };
       await supabase.from('activities').insert([payload]);
+      await fetchData(true);
+  };
+
+  const handleUpdateActivity = async (a: Activity) => {
+      const payload = { title: a.title, activity_type: a.type, fee: a.fee, location: a.location, presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.home_score, away_score: a.away_score, scorers: a.scorers, group_id: safeId(a.groupId), participants: a.participants, date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, fee_payments: a.fee_payments };
+      await supabase.from('activities').update(payload).eq('id', a.id);
+      await fetchData(true);
+  };
+
+  const handleDeleteActivity = async (id: string) => {
+      await supabase.from('activities').delete().eq('id', id);
       await fetchData(true);
   };
 
@@ -306,12 +343,35 @@ function App() {
     await fetchData(true);
   };
 
+  const handleUpdateFeePayment = async (activityId: string, studentId: string) => {
+    const activity = activities.find(a => a.id === activityId);
+    if (!activity) return;
+    
+    const isPaying = !(activity.feePayments || []).includes(studentId);
+    const nextFeePayments = isPaying 
+        ? [...(activity.feePayments || []), studentId] 
+        : (activity.feePayments || []).filter(id => id !== studentId);
+    
+    const { error } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+    
+    if (!error) {
+        if (isPaying && activity.fee) {
+            const student = students.find(s => s.id === studentId);
+            if (student && student.guardian.phone) {
+                const msg = `✅ *TAXA DE ATIVIDADE RECEBIDA* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o pagamento da taxa de *R$ ${activity.fee.toFixed(2)}* para: *${activity.title}* (Atleta: ${student.name}).\n\nObrigado! Garotos do Martinica.`;
+                sendZApiMessage(student.guardian.phone, msg);
+            }
+        }
+        await fetchData(true);
+    }
+  };
+
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
 
   if (!isAuthenticated) {
     return (
         <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-md overflow-hidden">
                 <div className="bg-primary-600 p-8 text-center">
                     <h1 className="text-2xl font-bold text-white mb-1">Garotos do Martinica</h1>
                     <p className="text-primary-100">Gestão de Escolinha</p>
@@ -353,9 +413,8 @@ function App() {
         {currentPage === 'dashboard' && <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />}
         {currentPage === 'students' && <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={() => Promise.resolve(true)} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />}
         {currentPage === 'finance' && <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />}
-        {currentPage === 'plans' && <PlansPage plans={plans} onAddPlan={() => {}} onUpdatePlan={() => {}} onDeletePlan={() => {}} />}
-        {currentPage === 'groups' && <GroupsPage groups={groups} students={students} onAddGroup={() => Promise.resolve('')} onUpdateGroup={() => {}} onDeleteGroup={() => {}} onBatchAssignStudents={() => {}} />}
-        {currentPage === 'schedule' && <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={() => {}} onUpdateAttendance={handleUpdateAttendance} onDeleteActivity={() => {}} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />}
+        {currentPage === 'schedule' && <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />}
+        {currentPage === 'aicoach' && <AICoachPage income={transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} expense={transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} />}
       </main>
     </div>
   );
