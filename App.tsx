@@ -17,7 +17,8 @@ import { sendZApiMessage, sendZApiDocument } from './services/zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
+// Adicionado recurrence ao seletor
+const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id, recurrence';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -70,12 +71,14 @@ function App() {
 
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
+                 const { data: myTxs, error: txError } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
+                 if (txError) console.error("Erro ao buscar transações do responsável:", txError);
                  transactionsData = myTxs;
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
+             const { data: allTxs, error: txError } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
+             if (txError) console.error("Erro ao buscar todas transações:", txError);
              studentsData = allStudents;
              transactionsData = allTxs;
         }
@@ -97,25 +100,32 @@ function App() {
         if (groupsData) setGroups(groupsData);
         if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, dueDay: p.due_day, description: p.description })));
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
-        if (transactionsData) setTransactions(transactionsData.map((t: any) => ({ 
-            id: t.id, 
-            description: t.description, 
-            category: t.category,
-            amount: t.amount, 
-            type: t.type, 
-            date: t.date, 
-            paymentDate: t.payment_date,
-            status: t.status, 
-            studentId: t.student_id, 
-            planId: t.plan_id, 
-            paymentMethod: t.payment_method, 
-            paymentLink: t.payment_link, 
-            externalReference: t.external_reference, 
-            preferenceId: t.preference_id 
-        })));
+        
+        if (transactionsData) {
+            setTransactions(transactionsData.map((t: any) => ({ 
+                id: t.id, 
+                description: t.description, 
+                category: t.category,
+                amount: Number(t.amount), 
+                type: t.type, 
+                date: t.date, 
+                paymentDate: t.payment_date,
+                status: t.status, 
+                studentId: t.student_id, 
+                planId: t.plan_id, 
+                paymentMethod: t.payment_method, 
+                paymentLink: t.payment_link, 
+                externalReference: t.external_reference, 
+                preferenceId: t.preference_id,
+                recurrence: t.recurrence || 'NONE'
+            } as Transaction)));
+        } else {
+            setTransactions([]);
+        }
+        
         if (activitiesData) setActivities(activitiesData.map((a: any) => ({ id: a.id, title: a.title, type: a.activity_type || 'TRAINING', fee: a.fee || 0, location: a.location || '', presentationTime: a.presentation_time, opponent: a.opponent, homeScore: a.home_score, awayScore: a.away_score, scorers: a.scorers || [], groupId: a.group_id, participants: a.participants || [], date: a.date, startTime: a.start_time, endTime: a.end_time, recurrence: a.recurrence, attendance: a.attendance || [], feePayments: a.fee_payments || [] })));
     } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Critical Error fetching data:", error);
     } finally {
         if (!silent) setIsLoading(false);
     }
@@ -269,7 +279,6 @@ function App() {
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
       
-      // Mapeamento camelCase -> snake_case para o banco de dados
       const payload: any = {};
       if (t.description !== undefined) payload.description = t.description;
       if (t.category !== undefined) payload.category = t.category;
@@ -283,12 +292,12 @@ function App() {
       if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
       if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
       if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
+      if (t.recurrence !== undefined) payload.recurrence = t.recurrence;
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       
       if(!error) {
         if (t.status === PaymentStatus.PAID) {
-            // Recarrega transações para garantir que temos o objeto completo para o WhatsApp
             const { data: updatedTx } = await supabase.from('transactions').select('*').eq('id', t.id).single();
             if (updatedTx && updatedTx.student_id) {
                 const student = students.find(s => s.id === updatedTx.student_id);
@@ -319,7 +328,8 @@ function App() {
         payment_method: t.paymentMethod,
         payment_link: t.paymentLink,
         external_reference: t.externalReference,
-        preference_id: t.preferenceId
+        preference_id: t.preferenceId,
+        recurrence: t.recurrence || 'NONE'
     };
     await supabase.from('transactions').insert([payload]);
     await fetchData(true);
@@ -349,6 +359,7 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence || 'none',
           attendance: a.attendance || [],
+          // Fix: Property 'fee_payments' was using a.fee_payments but should use a.feePayments
           fee_payments: a.feePayments || []
       };
       const { error } = await supabase.from('activities').insert([payload]);
@@ -377,6 +388,7 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: a.attendance,
+          // Fix: Property 'fee_payments' was using a.fee_payments but should use a.feePayments
           fee_payments: a.feePayments
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
