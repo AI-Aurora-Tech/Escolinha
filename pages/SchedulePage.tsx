@@ -127,38 +127,39 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const activityData = { 
           ...newActivity, 
           fee: hasFee ? (newActivity.fee || 0) : 0, 
-          groupId: targetType === 'GROUP' ? (newActivity.groupId || undefined) : undefined, 
+          groupId: targetType === 'GROUP' ? newActivity.groupId : undefined, 
           participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [], 
           scorers: newActivity.type === 'GAME' ? (newActivity.scorers || []).slice(0, newActivity.homeScore || 0) : [] 
       };
       
-      const hasTarget = targetType === 'GROUP' ? !!activityData.groupId : !!(activityData.participants && activityData.participants.length > 0);
-
-      if(activityData.title && hasTarget) {
+      if(activityData.title && (activityData.groupId || activityData.participants?.length)) {
           if (editingId) onUpdateActivity({ ...activityData, id: editingId } as Activity);
           else onAddActivity(activityData as Omit<Activity, 'id'>);
           setShowAddModal(false);
-      } else {
-          alert("Por favor, preencha o título e selecione um grupo ou atletas.");
-      }
+      } else alert("Dados incompletos.");
   };
 
   const handleFinishMatchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
 
+    // Clonamos os dados atuais para o payload de atualização
     const activityData = {
       ...newActivity,
       id: editingId,
       scorers: (newActivity.scorers || []).slice(0, newActivity.homeScore || 0)
     } as Activity;
 
+    // REGRA DE HISTÓRICO: Se o jogo pertencia a um grupo, agora que acabou,
+    // capturamos quem eram os atletas e transformamos em lista individual (estática).
+    // Isso evita que mudanças futuras no grupo alterem o histórico deste jogo finalizado.
     if (activityData.groupId) {
         const currentGroupMembers = students.filter(s => (s.groupIds || []).includes(activityData.groupId!) && s.active);
         activityData.participants = currentGroupMembers.map(s => s.id);
-        activityData.groupId = undefined; 
+        activityData.groupId = undefined; // Remove a ligação dinâmica com o grupo
     }
 
+    // REGRA DE NEGÓCIO: Cancelar taxa de atletas ausentes
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
       const participants = getAttendeesList(activityData);
       participants.forEach(student => {
@@ -176,6 +177,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     onUpdateActivity(activityData);
     setShowFinishModal(false);
 
+    // Fluxo de cobrança de taxas pós-jogo
     if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
         if (confirm("Resultado salvo!\nDeseja realizar a cobrança via WhatsApp das taxas de jogo para os atletas PRESENTES que ainda não pagaram?")) {
             const participants = getAttendeesList(activityData);
@@ -227,6 +229,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   };
 
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
+
+  // --- LOGICA DE RELATORIOS ---
 
   const generateTrainingReport = () => {
       const training = getFilteredActivitiesForReport('TRAINING'); if (!training.length) return alert("Nenhum treino no período.");
@@ -326,6 +330,26 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         3: { cellWidth: 25 },
         4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
         5: { cellWidth: 45, halign: 'center', fontStyle: 'bold' }
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const text = data.cell.text[0];
+          if (text === 'AUSENTE') {
+            data.cell.styles.textColor = [220, 38, 38];
+            data.cell.text = ['[X] AUSENTE'];
+          } else {
+            data.cell.styles.textColor = [22, 163, 74];
+            data.cell.text = ['[V] PRESENTE'];
+          }
+        }
+        if (data.section === 'body' && data.column.index === 5) {
+          const text = data.cell.text[0];
+          if (text.includes('PENDENTE')) {
+            data.cell.styles.textColor = [217, 119, 6];
+          } else if (text.includes('PAGO')) {
+            data.cell.styles.textColor = [79, 70, 229];
+          }
+        }
       }
     });
 
@@ -513,7 +537,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 </div>)}
                                 <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
                                     <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span>
-                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Lista Avulsa'}</span>
+                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Individual'}</span>
                                     {!isGuardian && (
                                         <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
                                             <CheckCircle className="w-3 h-3" /> Frequência: {presenceCount}/{attendeesCount}

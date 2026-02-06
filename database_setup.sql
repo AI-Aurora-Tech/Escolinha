@@ -1,5 +1,5 @@
 
--- 1. Criar a Tabela de Alunos (se não existir) com tipos de dados robustos
+-- 1. Criar a Tabela de Alunos (se não existir)
 CREATE TABLE IF NOT EXISTS public.students (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     name text NOT NULL,
@@ -18,6 +18,14 @@ CREATE TABLE IF NOT EXISTS public.students (
     documents jsonb DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now()
 );
+
+-- GARANTIA: Adicionar coluna positions caso a tabela já exista sem ela
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='positions') THEN
+        ALTER TABLE public.students ADD COLUMN positions text[] DEFAULT '{}';
+    END IF;
+END $$;
 
 -- 2. Tabela de Ocorrências
 CREATE TABLE IF NOT EXISTS public.student_occurrences (
@@ -47,19 +55,15 @@ CREATE TABLE IF NOT EXISTS public.plans (
 CREATE TABLE IF NOT EXISTS public.transactions (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     description text,
-    category text,
     amount numeric NOT NULL,
     type text NOT NULL,
     date date NOT NULL,
-    payment_date date,
     status text NOT NULL,
     student_id uuid REFERENCES public.students(id) ON DELETE SET NULL,
-    plan_id uuid REFERENCES public.plans(id) ON DELETE SET NULL,
     payment_method text,
     payment_link text,
     external_reference text,
     preference_id text,
-    recurrence text DEFAULT 'NONE',
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -70,28 +74,15 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     updated_at timestamp with time zone DEFAULT now()
 );
 
--- 5. Tabela de Usuários (Backup para Auth)
-CREATE TABLE IF NOT EXISTS public.app_users (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    name text NOT NULL,
-    email text UNIQUE NOT NULL,
-    password text NOT NULL,
-    role text NOT NULL,
-    avatar text,
-    cpf text UNIQUE,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- 6. DESATIVAR RLS (Para desenvolvimento ágil)
+-- 5. DESATIVAR RLS
 ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_occurrences DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.groups DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.plans DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.app_users DISABLE ROW LEVEL SECURITY;
 
--- 7. Configurar Realtime
+-- 6. Configurar Realtime
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
