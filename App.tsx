@@ -253,7 +253,20 @@ function App() {
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
       const { error } = await supabase.from('transactions').update(t).eq('id', t.id);
-      if(!error) await fetchData(true);
+      if(!error) {
+        // Enviar confirmação de pagamento recebido (Z-API)
+        if (t.status === PaymentStatus.PAID) {
+            const fullTx = transactions.find(x => x.id === t.id);
+            if (fullTx && fullTx.studentId) {
+                const student = students.find(s => s.id === fullTx.studentId);
+                if (student && student.guardian.phone) {
+                    const msg = `✅ *PAGAMENTO CONFIRMADO* ⚽\n\nOlá *${student.guardian.name}*!\n\nRecebemos o pagamento de *R$ ${fullTx.amount.toFixed(2)}* referente a: *${fullTx.description}* (Atleta: ${student.name}).\n\nObrigado pela confiança! Martinica Manager.`;
+                    sendZApiMessage(student.guardian.phone, msg);
+                }
+            }
+        }
+        await fetchData(true);
+      }
   };
 
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
@@ -288,9 +301,21 @@ function App() {
   const handleUpdateFeePayment = async (activityId: string, studentId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity) return;
-    const nextFeePayments = (activity.feePayments || []).includes(studentId) ? (activity.feePayments || []).filter(id => id !== studentId) : [...(activity.feePayments || []), studentId];
-    await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
-    await fetchData(true);
+    const isPaying = !(activity.feePayments || []).includes(studentId);
+    const nextFeePayments = isPaying ? [...(activity.feePayments || []), studentId] : (activity.feePayments || []).filter(id => id !== studentId);
+    
+    const { error } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+    if (!error) {
+        // Enviar confirmação de pagamento de taxa de atividade (Z-API)
+        if (isPaying && activity.fee) {
+            const student = students.find(s => s.id === studentId);
+            if (student && student.guardian.phone) {
+                const msg = `✅ *TAXA DE ATIVIDADE RECEBIDA* ⚽\n\nOlá *${student.guardian.name}*!\n\nConfirmamos o pagamento da taxa de *R$ ${activity.fee.toFixed(2)}* para: *${activity.title}* (Atleta: ${student.name}).\n\nObrigado! Martinica Manager.`;
+                sendZApiMessage(student.guardian.phone, msg);
+            }
+        }
+        await fetchData(true);
+    }
   };
 
   const handleDeleteActivity = async (id: string) => {
