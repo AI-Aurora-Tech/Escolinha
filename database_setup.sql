@@ -1,5 +1,5 @@
 
--- 1. Criar a Tabela de Alunos (se não existir)
+-- 1. Criar a Tabela de Alunos (se não existir) com tipos de dados robustos
 CREATE TABLE IF NOT EXISTS public.students (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     name text NOT NULL,
@@ -18,14 +18,6 @@ CREATE TABLE IF NOT EXISTS public.students (
     documents jsonb DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now()
 );
-
--- GARANTIA: Adicionar coluna positions caso a tabela já exista sem ela
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='positions') THEN
-        ALTER TABLE public.students ADD COLUMN positions text[] DEFAULT '{}';
-    END IF;
-END $$;
 
 -- 2. Tabela de Ocorrências
 CREATE TABLE IF NOT EXISTS public.student_occurrences (
@@ -74,7 +66,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     updated_at timestamp with time zone DEFAULT now()
 );
 
--- 5. DESATIVAR RLS
+-- 5. DESATIVAR RLS (Para permitir cadastros sem políticas complexas no momento)
 ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_occurrences DISABLE ROW LEVEL SECURITY;
@@ -93,4 +85,5 @@ END $$;
 ALTER PUBLICATION supabase_realtime SET TABLE 
     public.students, 
     public.transactions, 
-    public.student_occurrences;
+    public.student_occurrences,
+    public.activities;
