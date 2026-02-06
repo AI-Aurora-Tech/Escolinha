@@ -1,131 +1,41 @@
 
--- 1. Criar a Tabela de Alunos (se não existir)
-CREATE TABLE IF NOT EXISTS public.students (
+-- 1. Tabela de Atividades (Agenda)
+CREATE TABLE IF NOT EXISTS public.activities (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    name text NOT NULL,
-    birth_date date,
-    rg text,
-    cpf text,
-    phone text,
-    medical_expiry date,
-    photo_url text,
-    address jsonb DEFAULT '{}',
-    guardian jsonb DEFAULT '{}',
-    plan_id uuid,
-    group_ids uuid[] DEFAULT '{}',
-    positions text[] DEFAULT '{}',
-    active boolean DEFAULT true,
-    documents jsonb DEFAULT '{}',
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- GARANTIA: Adicionar coluna positions caso a tabela já exista sem ela
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='positions') THEN
-        ALTER TABLE public.students ADD COLUMN positions text[] DEFAULT '{}';
-    END IF;
-END $$;
-
--- 2. Tabela de Ocorrências
-CREATE TABLE IF NOT EXISTS public.student_occurrences (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    student_id uuid REFERENCES public.students(id) ON DELETE CASCADE,
-    description text NOT NULL,
+    title text NOT NULL,
+    activity_type text NOT NULL DEFAULT 'TRAINING',
+    fee numeric DEFAULT 0,
+    location text,
+    presentation_time text,
+    opponent text,
+    home_score integer,
+    away_score integer,
+    scorers uuid[] DEFAULT '{}',
+    group_id uuid REFERENCES public.groups(id) ON DELETE SET NULL,
+    participants uuid[] DEFAULT '{}',
     date date NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- 3. Tabelas de Suporte
-CREATE TABLE IF NOT EXISTS public.groups (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    name text NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.plans (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    name text NOT NULL,
-    price numeric NOT NULL,
-    due_day integer,
+    start_time text NOT NULL,
+    end_time text,
     description text,
+    recurrence text DEFAULT 'none',
+    attendance uuid[] DEFAULT '{}',
+    fee_payments uuid[] DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now()
 );
 
--- TABELA DE TRANSAÇÕES COMPLETA
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    description text NOT NULL,
-    category text DEFAULT 'Outros',
-    amount numeric NOT NULL,
-    type text NOT NULL,
-    date date NOT NULL,
-    payment_date date,
-    status text NOT NULL,
-    student_id uuid REFERENCES public.students(id) ON DELETE SET NULL,
-    plan_id uuid,
-    payment_method text,
-    payment_link text,
-    external_reference text,
-    preference_id text,
-    recurrence text DEFAULT 'NONE',
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- GARANTIA DE COLUNAS PARA TRANSAÇÕES EXISTENTES
+-- Garantir colunas de controle caso a tabela já exista
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='category') THEN
-        ALTER TABLE public.transactions ADD COLUMN category text DEFAULT 'Outros';
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='fee_payments') THEN
+        ALTER TABLE public.activities ADD COLUMN fee_payments uuid[] DEFAULT '{}';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='payment_date') THEN
-        ALTER TABLE public.transactions ADD COLUMN payment_date date;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='plan_id') THEN
-        ALTER TABLE public.transactions ADD COLUMN plan_id uuid;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='recurrence') THEN
-        ALTER TABLE public.transactions ADD COLUMN recurrence text DEFAULT 'NONE';
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='attendance') THEN
+        ALTER TABLE public.activities ADD COLUMN attendance uuid[] DEFAULT '{}';
     END IF;
 END $$;
 
--- 4. Tabela de Configurações
-CREATE TABLE IF NOT EXISTS public.app_settings (
-    key text PRIMARY KEY,
-    value text,
-    updated_at timestamp with time zone DEFAULT now()
-);
+-- DESATIVAR RLS para Atividades
+ALTER TABLE public.activities DISABLE ROW LEVEL SECURITY;
 
--- 5. Tabela de Usuários (necessária para login de gestão)
-CREATE TABLE IF NOT EXISTS public.app_users (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    name text NOT NULL,
-    email text UNIQUE NOT NULL,
-    password text NOT NULL,
-    role text NOT NULL,
-    avatar text,
-    cpf text UNIQUE,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- 6. DESATIVAR RLS (Para facilitar o desenvolvimento inicial)
-ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.student_occurrences DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.groups DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.plans DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.app_settings DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.app_users DISABLE ROW LEVEL SECURITY;
-
--- 7. Configurar Realtime
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-        CREATE PUBLICATION supabase_realtime;
-    END IF;
-END $$;
-
-ALTER PUBLICATION supabase_realtime SET TABLE 
-    public.students, 
-    public.transactions, 
-    public.student_occurrences;
+-- Adicionar Atividades ao Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE public.activities;
