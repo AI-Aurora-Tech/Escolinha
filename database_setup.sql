@@ -1,5 +1,24 @@
 
--- 1. Criar a Tabela de Ocorrências (Se não existir)
+-- 1. Criar a Tabela de Alunos (se não existir) com tipos de dados robustos
+CREATE TABLE IF NOT EXISTS public.students (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    name text NOT NULL,
+    birth_date date,
+    rg text,
+    cpf text,
+    phone text,
+    medical_expiry date,
+    photo_url text,
+    address jsonb DEFAULT '{}',
+    guardian jsonb DEFAULT '{}',
+    plan_id uuid,
+    group_ids uuid[] DEFAULT '{}',
+    active boolean DEFAULT true,
+    documents jsonb DEFAULT '{}',
+    created_at timestamp with time zone DEFAULT now()
+);
+
+-- 2. Tabela de Ocorrências
 CREATE TABLE IF NOT EXISTS public.student_occurrences (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     student_id uuid REFERENCES public.students(id) ON DELETE CASCADE,
@@ -8,46 +27,53 @@ CREATE TABLE IF NOT EXISTS public.student_occurrences (
     created_at timestamp with time zone DEFAULT now()
 );
 
--- 2. Garantir colunas necessárias na tabela students
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='group_ids') THEN
-        ALTER TABLE public.students ADD COLUMN group_ids uuid[] DEFAULT '{}';
-    END IF;
+-- 3. Tabelas de Suporte
+CREATE TABLE IF NOT EXISTS public.groups (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    name text NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='active') THEN
-        ALTER TABLE public.students ADD COLUMN active boolean DEFAULT true;
-    END IF;
+CREATE TABLE IF NOT EXISTS public.plans (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    name text NOT NULL,
+    price numeric NOT NULL,
+    due_day integer,
+    description text,
+    created_at timestamp with time zone DEFAULT now()
+);
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='documents') THEN
-        ALTER TABLE public.students ADD COLUMN documents jsonb DEFAULT '{}';
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='birth_date') THEN
-        ALTER TABLE public.students ADD COLUMN birth_date date;
-    END IF;
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    description text,
+    amount numeric NOT NULL,
+    type text NOT NULL,
+    date date NOT NULL,
+    status text NOT NULL,
+    student_id uuid REFERENCES public.students(id) ON DELETE SET NULL,
+    payment_method text,
+    payment_link text,
+    external_reference text,
+    preference_id text,
+    created_at timestamp with time zone DEFAULT now()
+);
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='medical_expiry') THEN
-        ALTER TABLE public.students ADD COLUMN medical_expiry date;
-    END IF;
-END $$;
+-- 4. Tabela de Configurações
+CREATE TABLE IF NOT EXISTS public.app_settings (
+    key text PRIMARY KEY,
+    value text,
+    updated_at timestamp with time zone DEFAULT now()
+);
 
--- 3. DESATIVAR RLS (CRITICAL para salvar sem erros de permissão)
-ALTER TABLE IF EXISTS public.students DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.activities DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.groups DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.plans DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.app_users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.student_occurrences DISABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.app_settings DISABLE ROW LEVEL SECURITY;
+-- 5. DESATIVAR RLS (Para permitir cadastros sem políticas complexas no momento)
+ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_occurrences DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.groups DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.plans DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings DISABLE ROW LEVEL SECURITY;
 
--- 4. Configurar Realtime
-ALTER TABLE IF EXISTS public.students REPLICA IDENTITY FULL;
-ALTER TABLE IF EXISTS public.transactions REPLICA IDENTITY FULL;
-ALTER TABLE IF EXISTS public.activities REPLICA IDENTITY FULL;
-ALTER TABLE IF EXISTS public.student_occurrences REPLICA IDENTITY FULL;
-
+-- 6. Configurar Realtime
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
@@ -57,9 +83,6 @@ END $$;
 
 ALTER PUBLICATION supabase_realtime SET TABLE 
     public.students, 
-    public.activities, 
     public.transactions, 
-    public.groups, 
-    public.plans, 
-    public.app_users, 
-    public.student_occurrences;
+    public.student_occurrences,
+    public.activities;
