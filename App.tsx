@@ -17,7 +17,7 @@ import { sendZApiMessage, sendZApiDocument } from './services/zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Adicionado recurrence ao seletor
+// Seletor exaustivo de campos do banco
 const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id, recurrence';
 
 function App() {
@@ -56,14 +56,17 @@ function App() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-        const { data: groupsData } = await supabase.from('groups').select('*');
-        const { data: plansData } = await supabase.from('plans').select('*');
-        const { data: activitiesData } = await supabase.from('activities').select('*');
-        const { data: occurrencesData } = await supabase.from('student_occurrences').select('*');
+        const [{ data: groupsData }, { data: plansData }, { data: activitiesData }, { data: occurrencesData }] = await Promise.all([
+          supabase.from('groups').select('*'),
+          supabase.from('plans').select('*'),
+          supabase.from('activities').select('*'),
+          supabase.from('student_occurrences').select('*')
+        ]);
         
         let studentsData;
         let transactionsData;
 
+        // Filtro de Atletas e Financeiro por Usuário
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const { data: allStudents } = await supabase.from('students').select('*');
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
@@ -71,14 +74,16 @@ function App() {
 
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs, error: txError } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
-                 if (txError) console.error("Erro ao buscar transações do responsável:", txError);
+                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
                  transactionsData = myTxs;
-             } else transactionsData = [];
+             } else {
+               transactionsData = [];
+             }
         } else {
-             const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs, error: txError } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
-             if (txError) console.error("Erro ao buscar todas transações:", txError);
+             const [{ data: allStudents }, { data: allTxs }] = await Promise.all([
+               supabase.from('students').select('*'),
+               supabase.from('transactions').select(TX_SELECT_FIELDS)
+             ]);
              studentsData = allStudents;
              transactionsData = allTxs;
         }
@@ -88,6 +93,7 @@ function App() {
             if (usersData) setSystemUsers(usersData as User[]);
         }
 
+        // Mapeamento de Alunos
         if (studentsData) {
              setStudents(studentsData.map((s: any) => ({
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
@@ -98,9 +104,10 @@ function App() {
         }
 
         if (groupsData) setGroups(groupsData);
-        if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, dueDay: p.due_day, description: p.description })));
+        if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), dueDay: p.due_day, description: p.description })));
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
         
+        // Mapeamento Robusto de Transações
         if (transactionsData) {
             setTransactions(transactionsData.map((t: any) => ({ 
                 id: t.id, 
@@ -125,7 +132,7 @@ function App() {
         
         if (activitiesData) setActivities(activitiesData.map((a: any) => ({ id: a.id, title: a.title, type: a.activity_type || 'TRAINING', fee: a.fee || 0, location: a.location || '', presentationTime: a.presentation_time, opponent: a.opponent, homeScore: a.home_score, awayScore: a.away_score, scorers: a.scorers || [], groupId: a.group_id, participants: a.participants || [], date: a.date, startTime: a.start_time, endTime: a.end_time, recurrence: a.recurrence, attendance: a.attendance || [], feePayments: a.fee_payments || [] })));
     } catch (error) {
-        console.error("Critical Error fetching data:", error);
+        console.error("Erro crítico ao buscar dados:", error);
     } finally {
         if (!silent) setIsLoading(false);
     }
@@ -182,8 +189,81 @@ function App() {
 
   const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
 
+  // IMPLEMENTAÇÃO DE GERAÇÃO DE MENSALIDADES
   const handleGenerateGlobalTuitions = async () => {
-    await fetchData(true);
+    setIsLoading(true);
+    try {
+        const monthsList = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        
+        // 1. Buscar atletas ativos e planos diretamente do banco para evitar desalinhamento de estado
+        const [{ data: activeStudents }, { data: latestPlans }] = await Promise.all([
+          supabase.from('students').select('id, name, plan_id').eq('active', true),
+          supabase.from('plans').select('*')
+        ]);
+        
+        if (!activeStudents || activeStudents.length === 0) {
+            alert("Nenhum atleta ativo com plano encontrado.");
+            return;
+        }
+
+        const now = new Date();
+        const monthIndex = now.getMonth();
+        const year = now.getFullYear();
+        const monthName = monthsList[monthIndex];
+        const description = `Mensalidade - ${monthName}/${year}`;
+
+        // 2. Verificar quais atletas já possuem essa mensalidade gerada
+        const { data: existingTxs } = await supabase
+            .from('transactions')
+            .select('student_id')
+            .eq('description', description);
+
+        const existingStudentIds = new Set(existingTxs?.map(t => t.student_id) || []);
+        const newTransactions = [];
+
+        // 3. Preparar novos lançamentos
+        for (const student of activeStudents) {
+            if (student.plan_id && !existingStudentIds.has(student.id)) {
+                const plan = latestPlans?.find(p => p.id === student.plan_id);
+                if (plan) {
+                    const dueDay = plan.due_day || 10;
+                    // Ajuste de data simples para evitar timezone shift
+                    const dueDate = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+                    
+                    newTransactions.push({
+                        description: description,
+                        category: 'Mensalidade',
+                        amount: Number(plan.price),
+                        type: TransactionType.INCOME,
+                        date: dueDate,
+                        status: PaymentStatus.PENDING,
+                        student_id: student.id,
+                        plan_id: plan.id,
+                        recurrence: 'NONE'
+                    });
+                }
+            }
+        }
+
+        // 4. Inserir no banco e recarregar
+        if (newTransactions.length > 0) {
+            const { error } = await supabase.from('transactions').insert(newTransactions);
+            if (error) throw error;
+            alert(`${newTransactions.length} novas mensalidades geradas com sucesso!`);
+        } else {
+            alert("Todas as mensalidades deste mês já foram geradas para os atletas ativos.");
+        }
+
+        await fetchData(true);
+    } catch (err: any) {
+        console.error("Erro ao gerar mensalidades:", err);
+        alert("Erro ao processar mensalidades: " + err.message);
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const uploadPhoto = async (base64: string, name: string) => {
@@ -230,7 +310,6 @@ function App() {
 
         await fetchData(true);
         if (studentData.guardian.phone) sendZApiMessage(studentData.guardian.phone, `Bem-vindo(a) à Garotos do Martinica! ⚽`);
-        await handleGenerateGlobalTuitions();
         alert("Atleta cadastrado com sucesso!");
     } catch (err: any) {
         console.error("Erro ao salvar atleta:", err);
@@ -287,7 +366,8 @@ function App() {
       if (t.date !== undefined) payload.date = t.date;
       if (t.paymentDate !== undefined) payload.payment_date = t.paymentDate;
       if (t.status !== undefined) payload.status = t.status;
-      if (t.studentId !== undefined) payload.student_id = t.studentId;
+      if (t.studentId !== undefined) payload.student_id = safeId(t.studentId);
+      if (t.planId !== undefined) payload.plan_id = safeId(t.planId);
       if (t.paymentMethod !== undefined) payload.payment_method = t.paymentMethod;
       if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
       if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
@@ -317,7 +397,7 @@ function App() {
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
     const payload = {
         description: t.description,
-        category: t.category,
+        category: t.category || 'Outros',
         amount: t.amount,
         type: t.type,
         date: t.date,
@@ -331,7 +411,8 @@ function App() {
         preference_id: t.preferenceId,
         recurrence: t.recurrence || 'NONE'
     };
-    await supabase.from('transactions').insert([payload]);
+    const { error } = await supabase.from('transactions').insert([payload]);
+    if (error) console.error("Erro ao inserir transação:", error);
     await fetchData(true);
   };
 
@@ -359,7 +440,6 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence || 'none',
           attendance: a.attendance || [],
-          // Fix: Property 'fee_payments' was using a.fee_payments but should use a.feePayments
           fee_payments: a.feePayments || []
       };
       const { error } = await supabase.from('activities').insert([payload]);
@@ -388,7 +468,6 @@ function App() {
           end_time: a.endTime,
           recurrence: a.recurrence,
           attendance: a.attendance,
-          // Fix: Property 'fee_payments' was using a.fee_payments but should use a.feePayments
           fee_payments: a.feePayments
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', a.id);

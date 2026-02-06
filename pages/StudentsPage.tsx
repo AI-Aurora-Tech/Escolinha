@@ -236,9 +236,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           setIsGenerating(true);
           try {
               await onGenerateTuitions();
-              alert("Processamento de mensalidades concluído!");
-          } catch (error) {
-              alert("Erro ao processar mensalidades.");
           } finally {
               setIsGenerating(false);
           }
@@ -674,16 +671,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               }
           } 
           else { alert("Erro ao gerar QR Code."); setShowPixModal(false); }
-      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setShowPixModal(false); setPixLoading(false); }
+      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setPixLoading(false); }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
 
+  // ORDENAÇÃO E FILTRAGEM: Garantindo que o studentId vindo do Supabase case com o editingId
   const studentTransactions = useMemo(() => {
     if (!editingId) return [];
+    const cleanId = editingId.trim().toLowerCase();
     return transactions
-      .filter(t => t.studentId === editingId)
+      .filter(t => t.studentId?.trim().toLowerCase() === cleanId)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, editingId]);
 
@@ -891,7 +890,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               );
           })}
           {filteredStudents.length === 0 && (
-              <div className="p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed"><Calculator className="w-10 h-10 mx-auto mb-2 opacity-20" /><p>Nenhum atleta encontrado.</p></div>
+              <div className="p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed"><Calculator className="w-10 h-10 mx-auto mb-2 opacity-20" /><p>Atleta não encontrado ou inativo.</p></div>
           )}
       </div>
 
