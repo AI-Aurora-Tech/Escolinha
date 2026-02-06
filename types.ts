@@ -84,6 +84,7 @@ export interface Student {
   guardian: Guardian;
   planId: string;
   groupIds: string[]; 
+  positions: string[];
   active: boolean;
   documents: StudentDocuments;
 }

@@ -73,6 +73,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
+  const positionsList = ['Goleiro', 'Lateral Direito', 'Zagueiro', 'Lateral Esquerdo', 'Volante', 'Meia', 'Atacante'];
+
   // Use local time for YYYY-MM-DD comparison to avoid UTC mismatch (e.g. at night)
   const todayStr = useMemo(() => {
     const now = new Date();
@@ -301,6 +303,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           'CPF Aluno': s.cpf || '',
           'Telefone Aluno': s.phone || '',
           'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
+          'Posições': (s.positions || []).join(', '),
           'Responsável': s.guardian.name,
           'CPF Responsável': s.guardian.cpf || '',
           'Telefone Resp.': s.guardian.phone,
@@ -409,7 +412,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const initialFormState: any = {
-    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true,
+    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, positions: [],
     address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
     guardian: { name: '', phone: '', email: '', cpf: '' },
     documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
@@ -556,7 +559,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
-  const handleOpenNew = () => { setEditingId(null); setStudentForm({ ...initialFormState, groupIds: [] }); setCapturedImage(null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true); };
+  const handleOpenNew = () => { setEditingId(null); setStudentForm({ ...initialFormState, groupIds: [], positions: [] }); setCapturedImage(null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true); };
 
   const handleOpenEdit = (student: Student) => {
       setEditingId(student.id);
@@ -566,7 +569,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           ['rg', 'cpf', 'medical', 'address', 'school'].forEach(k => { const v = docs[k]; newDocs[k] = typeof v === 'boolean' ? { delivered: v, isDigital: false } : v || { delivered: false, isDigital: false }; });
           return newDocs;
       };
-      setStudentForm({ ...student, groupIds: Array.isArray(student.groupIds) ? student.groupIds : [], documents: normalizeDocs(student.documents) });
+      setStudentForm({ 
+          ...student, 
+          groupIds: Array.isArray(student.groupIds) ? student.groupIds : [], 
+          positions: Array.isArray(student.positions) ? student.positions : [],
+          documents: normalizeDocs(student.documents) 
+      });
       setCapturedImage(student.photoUrl || null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true);
   };
 
@@ -701,6 +709,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const toggleGroupSelection = (gid: string) => {
       setStudentForm(prev => { const g = prev.groupIds || []; return { ...prev, groupIds: g.includes(gid) ? g.filter(id => id !== gid) : [...g, gid] }; });
+  };
+
+  const togglePositionSelection = (pos: string) => {
+      setStudentForm(prev => { 
+          const currentPositions = prev.positions || [];
+          return { 
+              ...prev, 
+              positions: currentPositions.includes(pos) 
+                ? currentPositions.filter(p => p !== pos) 
+                : [...currentPositions, pos] 
+          }; 
+      });
   };
 
   const fetchAddressByCep = async (cep: string) => {
@@ -1066,6 +1086,25 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             <div><label className="block text-xs font-medium text-gray-500 mb-1">CPF</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.cpf} onChange={e => setStudentForm({...studentForm, cpf: e.target.value})} disabled={isGuardian} /></div>
                                         </div>
                                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Vencimento Atestado Médico</label><input type="date" className={`w-full border rounded-lg p-2.5 focus:ring-2 outline-none ${isMedicalExpired(studentForm.medicalCertificateExpiry) ? 'border-red-300 bg-red-50 focus:ring-red-500' : 'focus:ring-primary-500'}`} value={studentForm.medicalCertificateExpiry} onChange={e => setStudentForm({...studentForm, medicalCertificateExpiry: e.target.value})} disabled={isGuardian} /></div>
+                                        
+                                        {/* NOVO CAMPO: POSIÇÕES DE JOGO */}
+                                        <div className="pt-2">
+                                            <label className="block text-xs font-black text-gray-400 uppercase mb-2 tracking-widest">Posições de Jogo</label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                {positionsList.map(pos => (
+                                                    <label key={pos} className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-all ${studentForm.positions?.includes(pos) ? 'bg-primary-50 border-primary-500 ring-1 ring-primary-500/20' : 'bg-gray-50 border-gray-100 hover:bg-white'}`}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            className="rounded text-primary-600 w-4 h-4" 
+                                                            checked={studentForm.positions?.includes(pos)} 
+                                                            onChange={() => togglePositionSelection(pos)}
+                                                            disabled={isGuardian}
+                                                        />
+                                                        <span className={`text-[10px] font-bold ${studentForm.positions?.includes(pos) ? 'text-primary-700' : 'text-gray-500'}`}>{pos}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1348,7 +1387,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <>
                            <div className="relative group mx-auto w-fit p-3 bg-gray-50 rounded-2xl border-2 border-primary-100">
                                <img src={`data:image/jpeg;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
-                               <div className="absolute inset-0 bg-primary-600/0 group-hover:bg-primary-600/5 transition-colors pointer-events-none rounded-lg" />
+                               <div className="absolute inset-0 group-hover:bg-primary-600/5 transition-colors pointer-events-none rounded-lg" />
                            </div>
                            <div className="space-y-3">
                                <button onClick={copyPixCode} className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-all active:scale-95"><Copy className="w-4 h-4" /> Copiar Código PIX</button>

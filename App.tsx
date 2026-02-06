@@ -90,7 +90,7 @@ function App() {
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
                  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 active: s.active, documents: s.documents || {}
+                 positions: s.positions || [], active: s.active, documents: s.documents || {}
              } as Student)));
         }
 
@@ -196,6 +196,7 @@ function App() {
           guardian: studentData.guardian || {},
           plan_id: safeId(studentData.planId),
           group_ids: studentData.groupIds || [],
+          positions: studentData.positions || [],
           active: studentData.active ?? true,
           documents: studentData.documents || {}
         };
@@ -235,11 +236,12 @@ function App() {
           guardian: student.guardian,
           plan_id: safeId(student.planId),
           group_ids: student.groupIds,
+          positions: student.positions,
           active: student.active,
           documents: student.documents
         };
 
-        const { error } = await supabase.from('students').update(payload).eq('id', student.id);
+        const { error = null } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         await fetchData(true);
         alert("Dados atualizados!");

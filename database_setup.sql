@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.students (
     guardian jsonb DEFAULT '{}',
     plan_id uuid,
     group_ids uuid[] DEFAULT '{}',
+    positions text[] DEFAULT '{}',
     active boolean DEFAULT true,
     documents jsonb DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now()
