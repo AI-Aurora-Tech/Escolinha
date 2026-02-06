@@ -651,7 +651,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       
       if (!studentForm.guardian.cpf) { alert("CPF necessário para gerar PIX."); return; }
       
-      setPixLoading(true); setShowPixModal(true); setPixData(null); setPixTxIds(idsToPay);
+      setPixLoading(true); 
+      setShowPixModal(true); 
+      setPixData(null); 
+      setPixTxIds(idsToPay);
       
       try {
           const result = await createPixPayment({ 
@@ -673,8 +676,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   onUpdateTransaction({ id, externalReference: externalRef });
               }
           } 
-          else { alert("Erro ao gerar QR Code."); setShowPixModal(false); }
-      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setShowPixModal(false); setPixLoading(false); }
+          else { 
+              alert("Erro ao gerar QR Code. Verifique as configurações do Mercado Pago."); 
+              setShowPixModal(false); 
+          }
+      } catch (error) { 
+          alert("Erro de comunicação com Mercado Pago."); 
+          setShowPixModal(false); 
+      } finally { 
+          setPixLoading(false); 
+      }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
@@ -1386,7 +1397,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     ) : pixData ? (
                         <>
                            <div className="relative group mx-auto w-fit p-3 bg-gray-50 rounded-2xl border-2 border-primary-100">
-                               <img src={`data:image/jpeg;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
+                               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`} alt="QR Code" className="w-56 h-56 mx-auto rounded-lg shadow-sm" />
                                <div className="absolute inset-0 group-hover:bg-primary-600/5 transition-colors pointer-events-none rounded-lg" />
                            </div>
                            <div className="space-y-3">

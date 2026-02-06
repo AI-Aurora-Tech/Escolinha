@@ -1,3 +1,4 @@
+
 import { supabase } from '../lib/supabaseClient';
 
 // Helper to get token from database
@@ -54,19 +55,17 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'do Aluno';
 
     const rawPhone = payerData.phone ? payerData.phone.replace(/\D/g, '') : '';
-    let phoneObject = undefined;
+    let phoneObject: any = {
+        area_code: '11',
+        number: '99999999'
+    };
 
     if (rawPhone.length >= 10) {
         const areaCode = rawPhone.substring(0, 2);
-        const number = rawPhone.substring(rawPhone.length - 8); // Pega os últimos 8 dígitos
+        const number = rawPhone.substring(rawPhone.length - 8);
         phoneObject = {
             area_code: areaCode,
             number: number
-        };
-    } else {
-        phoneObject = {
-            area_code: '11',
-            number: '99999999'
         };
     }
 
@@ -109,7 +108,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       body: JSON.stringify({
         items: [
           {
-            title: data.title.substring(0, 250), // Limite de caracteres do MP
+            title: data.title.substring(0, 250),
             quantity: 1,
             currency_id: 'BRL',
             unit_price: Number(data.price)
@@ -148,7 +147,10 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
 
 export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qrCode: string, qrCodeBase64: string, id: number } | null> => {
     const token = await getMPAccessToken();
-    if (!token) return null;
+    if (!token) {
+        console.error("Mercado Pago Access Token not found in settings.");
+        return null;
+    }
 
     try {
         const { payerPayload } = sanitizePayer(data.payer);
@@ -178,21 +180,24 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
 
         if (!response.ok) {
             const errData = await response.json();
-            console.error("MP Pix Error:", errData);
+            console.error("MP Pix Request Failed:", errData);
             return null;
         }
+        
         const result = await response.json();
 
-        if (result.id && result.point_of_interaction) {
+        if (result.id && result.point_of_interaction && result.point_of_interaction.transaction_data) {
             return {
                 id: result.id,
                 qrCode: result.point_of_interaction.transaction_data.qr_code,
                 qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64
             };
         }
+        
+        console.error("MP Pix Response missing interaction data:", result);
         return null;
     } catch (error) {
-        console.error("Error creating PIX:", error);
+        console.error("Critical error creating PIX:", error);
         return null;
     }
 };
@@ -212,19 +217,8 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
         
         if (!response.ok) return null;
 
-        const rawText = await response.text();
-        const trimmed = rawText.trim();
-        if (!trimmed) return null;
-
-        try {
-            const result = JSON.parse(trimmed);
-            return result.status;
-        } catch (e) {
-            if (['approved', 'pending', 'rejected', 'cancelled'].includes(trimmed.toLowerCase())) {
-                return trimmed.toLowerCase() as any;
-            }
-            return null;
-        }
+        const result = await response.json();
+        return result.status;
     } catch (error) {
         console.error("Error getting status:", error);
         return null;
@@ -246,19 +240,10 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
   
       if (!response.ok) return null;
       
-      const rawText = await response.text();
-      const trimmed = rawText.trim();
-      if (!trimmed) return 'pending';
-
-      try {
-          const result = JSON.parse(trimmed);
-          if (result && result.results && result.results.length > 0) {
-            const lastPayment = result.results[result.results.length - 1];
-            return lastPayment.status; 
-          }
-      } catch (parseError) {
-          console.error("Malformed JSON response from MP search", trimmed);
-          return 'pending';
+      const result = await response.json();
+      if (result && result.results && result.results.length > 0) {
+        const lastPayment = result.results[result.results.length - 1];
+        return lastPayment.status; 
       }
       
       return 'pending';
