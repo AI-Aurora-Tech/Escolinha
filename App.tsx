@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
-import { StudentsPage } from './pages/StudentsPage';
+import { StudentsPage } from './StudentsPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { PlansPage } from './pages/PlansPage';
 import { SchedulePage } from './pages/SchedulePage';
@@ -12,8 +12,8 @@ import { AICoachPage } from './pages/AICoachPage';
 import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2, User as UserIcon, Lock, Users as UsersIcon } from 'lucide-react';
-import { checkMPPaymentStatus } from './services/mercadoPago';
-import { sendZApiMessage, sendZApiDocument } from './services/zapiService';
+import { checkMPPaymentStatus } from './mercadoPago';
+import { sendZApiMessage, sendZApiDocument } from './zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -97,7 +97,7 @@ function App() {
         if (groupsData) setGroups(groupsData);
         if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, dueDay: p.due_day, description: p.description })));
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
-        if (transactionsData) setTransactions(transactionsData.map((t: any) => ({ id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, studentId: t.student_id, planId: t.plan_id, paymentMethod: t.payment_method, paymentLink: t.payment_link, externalReference: t.external_reference, preferenceId: t.preference_id })));
+        if (transactionsData) setTransactions(transactionsData.map((t: any) => ({ id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, studentId: t.student_id, planId: t.plan_id, paymentMethod: t.payment_method, payment_link: t.payment_link, external_reference: t.external_reference, preference_id: t.preference_id })));
         if (activitiesData) setActivities(activitiesData.map((a: any) => ({ id: a.id, title: a.title, type: a.activity_type || 'TRAINING', fee: a.fee || 0, location: a.location || '', presentationTime: a.presentation_time, opponent: a.opponent, homeScore: a.home_score, awayScore: a.away_score, scorers: a.scorers || [], groupId: a.group_id, participants: a.participants || [], date: a.date, startTime: a.start_time, endTime: a.end_time, recurrence: a.recurrence, attendance: a.attendance || [], feePayments: a.fee_payments || [] })));
     } catch (error) {
         console.error("Error fetching data:", error);
@@ -158,7 +158,6 @@ function App() {
   const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
 
   const handleGenerateGlobalTuitions = async () => {
-    // Lógica para gerar mensalidades em massa...
     await fetchData(true);
   };
 
@@ -256,7 +255,6 @@ function App() {
       if (!t.id) return;
       const { error } = await supabase.from('transactions').update(t).eq('id', t.id);
       if(!error) {
-        // Enviar confirmação de pagamento recebido (Z-API)
         if (t.status === PaymentStatus.PAID) {
             const fullTx = transactions.find(x => x.id === t.id);
             if (fullTx && fullTx.studentId) {
@@ -308,7 +306,6 @@ function App() {
     
     const { error } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
     if (!error) {
-        // Enviar confirmação de pagamento de taxa de atividade (Z-API)
         if (isPaying && activity.fee) {
             const student = students.find(s => s.id === studentId);
             if (student && student.guardian.phone) {
@@ -342,7 +339,6 @@ function App() {
   };
 
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
-      // Lógica de atribuição em lote...
       await fetchData(true);
   };
 
