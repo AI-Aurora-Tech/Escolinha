@@ -47,9 +47,11 @@ CREATE TABLE IF NOT EXISTS public.plans (
 CREATE TABLE IF NOT EXISTS public.transactions (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     description text,
+    category text,
     amount numeric NOT NULL,
     type text NOT NULL,
     date date NOT NULL,
+    payment_date date,
     status text NOT NULL,
     student_id uuid REFERENCES public.students(id) ON DELETE SET NULL,
     payment_method text,
@@ -85,5 +87,4 @@ END $$;
 ALTER PUBLICATION supabase_realtime SET TABLE 
     public.students, 
     public.transactions, 
-    public.student_occurrences,
-    public.activities;
+    public.student_occurrences;

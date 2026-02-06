@@ -17,7 +17,7 @@ import { sendZApiMessage, sendZApiDocument } from './services/zapiService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const TX_SELECT_FIELDS = 'id, description, amount, type, date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
+const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -97,7 +97,22 @@ function App() {
         if (groupsData) setGroups(groupsData);
         if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: p.price, dueDay: p.due_day, description: p.description })));
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
-        if (transactionsData) setTransactions(transactionsData.map((t: any) => ({ id: t.id, description: t.description, amount: t.amount, type: t.type, date: t.date, status: t.status, studentId: t.student_id, planId: t.plan_id, paymentMethod: t.payment_method, paymentLink: t.payment_link, externalReference: t.external_reference, preferenceId: t.preference_id })));
+        if (transactionsData) setTransactions(transactionsData.map((t: any) => ({ 
+            id: t.id, 
+            description: t.description, 
+            category: t.category,
+            amount: t.amount, 
+            type: t.type, 
+            date: t.date, 
+            paymentDate: t.payment_date,
+            status: t.status, 
+            studentId: t.student_id, 
+            planId: t.plan_id, 
+            paymentMethod: t.payment_method, 
+            paymentLink: t.payment_link, 
+            externalReference: t.external_reference, 
+            preferenceId: t.preference_id 
+        })));
         if (activitiesData) setActivities(activitiesData.map((a: any) => ({ id: a.id, title: a.title, type: a.activity_type || 'TRAINING', fee: a.fee || 0, location: a.location || '', presentationTime: a.presentation_time, opponent: a.opponent, homeScore: a.home_score, awayScore: a.away_score, scorers: a.scorers || [], groupId: a.group_id, participants: a.participants || [], date: a.date, startTime: a.start_time, endTime: a.end_time, recurrence: a.recurrence, attendance: a.attendance || [], feePayments: a.fee_payments || [] })));
     } catch (error) {
         console.error("Error fetching data:", error);
@@ -253,24 +268,60 @@ function App() {
 
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
       if (!t.id) return;
-      const { error } = await supabase.from('transactions').update(t).eq('id', t.id);
+      
+      // Mapeamento camelCase -> snake_case para o banco de dados
+      const payload: any = {};
+      if (t.description !== undefined) payload.description = t.description;
+      if (t.category !== undefined) payload.category = t.category;
+      if (t.amount !== undefined) payload.amount = t.amount;
+      if (t.type !== undefined) payload.type = t.type;
+      if (t.date !== undefined) payload.date = t.date;
+      if (t.paymentDate !== undefined) payload.payment_date = t.paymentDate;
+      if (t.status !== undefined) payload.status = t.status;
+      if (t.studentId !== undefined) payload.student_id = t.studentId;
+      if (t.paymentMethod !== undefined) payload.payment_method = t.paymentMethod;
+      if (t.paymentLink !== undefined) payload.payment_link = t.paymentLink;
+      if (t.externalReference !== undefined) payload.external_reference = t.externalReference;
+      if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
+
+      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
+      
       if(!error) {
         if (t.status === PaymentStatus.PAID) {
-            const fullTx = transactions.find(x => x.id === t.id);
-            if (fullTx && fullTx.studentId) {
-                const student = students.find(s => s.id === fullTx.studentId);
+            // Recarrega transações para garantir que temos o objeto completo para o WhatsApp
+            const { data: updatedTx } = await supabase.from('transactions').select('*').eq('id', t.id).single();
+            if (updatedTx && updatedTx.student_id) {
+                const student = students.find(s => s.id === updatedTx.student_id);
                 if (student && student.guardian.phone) {
-                    const msg = `✅ *PAGAMENTO CONFIRMADO* ⚽\n\nOlá *${student.guardian.name}*!\n\nRecebemos o pagamento de *R$ ${fullTx.amount.toFixed(2)}* referente a: *${fullTx.description}* (Atleta: ${student.name}).\n\nObrigado pela confiança! Martinica Manager.`;
+                    const msg = `✅ *PAGAMENTO CONFIRMADO* ⚽\n\nOlá *${student.guardian.name}*!\n\nRecebemos o pagamento de *R$ ${Number(updatedTx.amount).toFixed(2)}* referente a: *${updatedTx.description}* (Atleta: ${student.name}).\n\nObrigado pela confiança! Martinica Manager.`;
                     sendZApiMessage(student.guardian.phone, msg);
                 }
             }
         }
         await fetchData(true);
+      } else {
+          console.error("Erro ao atualizar transação:", error);
+          alert("Erro ao salvar baixa de pagamento.");
       }
   };
 
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
-    await supabase.from('transactions').insert([t]);
+    const payload = {
+        description: t.description,
+        category: t.category,
+        amount: t.amount,
+        type: t.type,
+        date: t.date,
+        payment_date: t.paymentDate,
+        status: t.status,
+        student_id: safeId(t.studentId),
+        plan_id: safeId(t.planId),
+        payment_method: t.paymentMethod,
+        payment_link: t.paymentLink,
+        external_reference: t.externalReference,
+        preference_id: t.preferenceId
+    };
+    await supabase.from('transactions').insert([payload]);
     await fetchData(true);
   };
 
