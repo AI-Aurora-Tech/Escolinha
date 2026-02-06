@@ -158,7 +158,6 @@ function App() {
   const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
 
   const handleGenerateGlobalTuitions = async () => {
-    // Lógica para gerar mensalidades em massa...
     await fetchData(true);
   };
 
@@ -235,13 +234,13 @@ function App() {
           address: student.address,
           guardian: student.guardian,
           plan_id: safeId(student.planId),
-          group_ids: student.groupIds,
-          positions: student.positions,
+          group_ids: student.groupIds || [],
+          positions: student.positions || [],
           active: student.active,
           documents: student.documents
         };
 
-        const { error = null } = await supabase.from('students').update(payload).eq('id', student.id);
+        const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         await fetchData(true);
         alert("Dados atualizados!");
@@ -256,7 +255,6 @@ function App() {
       if (!t.id) return;
       const { error } = await supabase.from('transactions').update(t).eq('id', t.id);
       if(!error) {
-        // Enviar confirmação de pagamento recebido (Z-API)
         if (t.status === PaymentStatus.PAID) {
             const fullTx = transactions.find(x => x.id === t.id);
             if (fullTx && fullTx.studentId) {
@@ -283,12 +281,58 @@ function App() {
   };
 
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
-      await supabase.from('activities').insert([a]);
+      const payload = {
+          title: a.title,
+          activity_type: a.type,
+          fee: a.fee || 0,
+          location: a.location || '',
+          presentation_time: a.presentationTime,
+          opponent: a.opponent,
+          home_score: a.homeScore,
+          away_score: a.awayScore,
+          scorers: a.scorers || [],
+          group_id: safeId(a.groupId),
+          participants: a.participants || [],
+          date: a.date,
+          start_time: a.startTime,
+          end_time: a.endTime,
+          recurrence: a.recurrence || 'none',
+          attendance: a.attendance || [],
+          fee_payments: a.feePayments || []
+      };
+      const { error } = await supabase.from('activities').insert([payload]);
+      if (error) {
+          console.error("Error adding activity:", error);
+          alert("Erro ao salvar atividade.");
+      }
       await fetchData(true);
   };
 
   const handleUpdateActivity = async (a: Activity) => {
-      await supabase.from('activities').update(a).eq('id', a.id);
+      const payload = {
+          title: a.title,
+          activity_type: a.type,
+          fee: a.fee,
+          location: a.location,
+          presentation_time: a.presentationTime,
+          opponent: a.opponent,
+          home_score: a.homeScore,
+          away_score: a.awayScore,
+          scorers: a.scorers,
+          group_id: safeId(a.groupId),
+          participants: a.participants,
+          date: a.date,
+          start_time: a.startTime,
+          end_time: a.endTime,
+          recurrence: a.recurrence,
+          attendance: a.attendance,
+          fee_payments: a.feePayments
+      };
+      const { error } = await supabase.from('activities').update(payload).eq('id', a.id);
+      if (error) {
+          console.error("Error updating activity:", error);
+          alert("Erro ao atualizar atividade.");
+      }
       await fetchData(true);
   };
 
@@ -308,7 +352,6 @@ function App() {
     
     const { error } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
     if (!error) {
-        // Enviar confirmação de pagamento de taxa de atividade (Z-API)
         if (isPaying && activity.fee) {
             const student = students.find(s => s.id === studentId);
             if (student && student.guardian.phone) {
@@ -342,7 +385,6 @@ function App() {
   };
 
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
-      // Lógica de atribuição em lote...
       await fetchData(true);
   };
 
