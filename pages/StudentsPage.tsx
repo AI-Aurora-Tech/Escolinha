@@ -295,100 +295,63 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleExportExcel = () => {
-    const currentYear = new Date().getFullYear();
-    const data = filteredStudents.map(s => {
-        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
-        const category = `Sub-${currentYear - birthYear}`;
-        
-        // Helper para mapear documentos
-        const checkDoc = (doc: any) => {
-            if (typeof doc === 'boolean') return doc ? 'Entregue' : 'Pendente';
-            return doc?.delivered ? 'Entregue' : 'Pendente';
-        };
-
-        return {
-            'Nome do Atleta': s.name,
-            'Categoria': category,
-            'Data de Nascimento': formatDate(s.birthDate),
-            'Idade': calculateAge(s.birthDate),
-            'RG Atleta': s.rg || '',
-            'CPF Atleta': s.cpf || '',
-            'Telefone Atleta': s.phone || '',
-            'Posições': (s.positions || []).join(', '),
-            'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
-            'Nome do Responsável': s.guardian.name,
-            'CPF Responsável': s.guardian.cpf || '',
-            'WhatsApp Responsável': s.guardian.phone || '',
-            'Email Responsável': s.guardian.email || '',
-            'CEP': s.address?.cep || '',
-            'Rua': s.address?.street || '',
-            'Número': s.address?.number || '',
-            'Complemento': s.address?.complement || '',
-            'Bairro': s.address?.district || '',
-            'Cidade': s.address?.city || '',
-            'Estado': s.address?.state || '',
-            'Plano Atual': plans.find(p => p.id === s.planId)?.name || 'Sem Plano',
-            'Grupos/Turmas': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
-            'Status de Cadastro': s.active ? 'Ativo' : 'Inativo',
-            'Mensalidades em Atraso': getStudentOverdueCount(s.id),
-            'Doc: RG': checkDoc(s.documents?.rg),
-            'Doc: CPF': checkDoc(s.documents?.cpf),
-            'Doc: Atestado Médico': checkDoc(s.documents?.medical),
-            'Doc: Comprovante Endereço': checkDoc(s.documents?.address),
-            'Doc: Comprovante Escolar': checkDoc(s.documents?.school)
-        };
-    });
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Lista de Atletas");
-    XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
+      const data = filteredStudents.map(s => ({
+          'Nome do Aluno': s.name,
+          'Data de Nascimento': formatDate(s.birthDate),
+          'Idade': calculateAge(s.birthDate),
+          'RG Aluno': s.rg || '',
+          'CPF Aluno': s.cpf || '',
+          'Telefone Aluno': s.phone || '',
+          'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
+          'Posições': (s.positions || []).join(', '),
+          'Responsável': s.guardian.name,
+          'CPF Responsável': s.guardian.cpf || '',
+          'Telefone Resp.': s.guardian.phone,
+          'Email Resp.': s.guardian.email || '',
+          'CEP': s.address.cep || '',
+          'Rua': s.address.street || '',
+          'Número': s.address.number || '',
+          'Complemento': s.address.complement || '',
+          'Bairro': s.address.district || '',
+          'Cidade': s.address.city || '',
+          'Estado': s.address.state || '',
+          'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
+          'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
+          'Status': s.active ? 'Ativo' : 'Inativo',
+          'Mensalidades Atrasadas': getStudentOverdueCount(s.id)
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Alunos Completo");
+      XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleExportPDF = () => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("Relatório Geral de Atletas - Garotos do Martinica", 14, 20);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} | Total: ${filteredStudents.length} atletas`, 14, 28);
-    
-    const currentYear = new Date().getFullYear();
-    const tableBody = filteredStudents.map(s => {
-        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
-        const category = `Sub-${currentYear - birthYear}`;
-        const overdue = getStudentOverdueCount(s.id);
-        const plan = plans.find(p => p.id === s.planId);
+      const doc = new jsPDF({ orientation: 'landscape' });
+      doc.setFontSize(18);
+      doc.text("Relatório Geral de Alunos - Garotos do Martinica", 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
+      
+      const body = filteredStudents.map(s => [
+          s.name,
+          calculateAge(s.birthDate),
+          s.rg || s.cpf || '-',
+          s.guardian.name,
+          s.guardian.phone,
+          plans.find(p => p.id === s.planId)?.name || '-',
+          s.active ? 'Ativo' : 'Inativo',
+          getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
+      ]);
 
-        return [
-            s.name,
-            category,
-            calculateAge(s.birthDate),
-            (s.positions || []).join(', '),
-            s.rg || s.cpf || '-',
-            s.guardian.name,
-            s.guardian.phone,
-            plan?.name || '-',
-            s.active ? 'Ativo' : 'Inat.',
-            overdue > 0 ? `Sim (${overdue})` : 'Não'
-        ];
-    });
-
-    autoTable(doc, {
-        startY: 35,
-        head: [['Nome do Atleta', 'Cat.', 'Idade', 'Posições', 'RG/CPF', 'Responsável', 'WhatsApp', 'Plano', 'Status', 'Em Atraso']],
-        body: tableBody,
-        headStyles: { fillColor: [249, 115, 22] },
-        styles: { fontSize: 7, cellPadding: 2 },
-        columnStyles: {
-            0: { cellWidth: 40 },
-            3: { cellWidth: 35 },
-            5: { cellWidth: 40 }
-        }
-    });
-
-    doc.save(`Relatorio_Atletas_Martinica_${new Date().toISOString().split('T')[0]}.pdf`);
+      autoTable(doc, {
+          startY: 35,
+          head: [['Nome', 'Idade', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
+          body: body,
+          headStyles: { fillColor: [249, 115, 22] },
+          styles: { fontSize: 8 }
+      });
+      doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
   };
 
   const handleDownloadTemplate = () => {
@@ -397,7 +360,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           nascimento: "2012-05-20",
           rg: "00000000",
           cpf: "00000000000",
-          telefone_aluno: "11987019721",
+          telefone_aluno: "11988887777",
           atestado_vencimento: "2024-12-31",
           responsavel_nome: "Maria Responsavel",
           responsavel_cpf: "00000000000",
@@ -1243,7 +1206,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                          <div className="text-right flex items-center gap-4">
                                               <div className={`font-black text-lg ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>R$ {tx.amount.toFixed(2)}</div>
                                               {!isGuardian && tx.status === PaymentStatus.PENDING && (
-                                                  <div className="flex items-center gap-1 items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={(e) => { e.stopPropagation(); handlePayTransaction(tx.id, PaymentMethod.CASH); }} className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm" title="Dar Baixa (Dinheiro)"><CashIcon className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); sendChargeMessage(tx); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 border border-green-200" title="Enviar cobrança via WhatsApp"><Send className="w-4 h-4" /></button>
                                                       <button onClick={(e) => { e.stopPropagation(); handleOpenEditCharge(e, tx); }} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200" title="Editar Cobrança"><Edit className="w-4 h-4" /></button>
