@@ -295,83 +295,100 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const handleExportExcel = () => {
-      const currentYear = new Date().getFullYear();
-      const data = filteredStudents.map(s => {
-          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
-          const category = `Sub-${currentYear - birthYear}`;
-          const checkDoc = (doc: any) => (typeof doc === 'boolean' ? (doc ? 'Sim' : 'Não') : (doc?.delivered ? 'Sim' : 'Não'));
+    const currentYear = new Date().getFullYear();
+    const data = filteredStudents.map(s => {
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        const category = `Sub-${currentYear - birthYear}`;
+        
+        // Helper para mapear documentos
+        const checkDoc = (doc: any) => {
+            if (typeof doc === 'boolean') return doc ? 'Entregue' : 'Pendente';
+            return doc?.delivered ? 'Entregue' : 'Pendente';
+        };
 
-          return {
-              'Nome do Aluno': s.name,
-              'Categoria': category,
-              'Data de Nascimento': formatDate(s.birthDate),
-              'Idade': calculateAge(s.birthDate),
-              'RG Aluno': s.rg || '',
-              'CPF Aluno': s.cpf || '',
-              'Telefone Aluno': s.phone || '',
-              'Posições': (s.positions || []).join(', '),
-              'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
-              'Responsável': s.guardian.name,
-              'CPF Responsável': s.guardian.cpf || '',
-              'Telefone Resp.': s.guardian.phone,
-              'Email Resp.': s.guardian.email || '',
-              'CEP': s.address.cep || '',
-              'Rua': s.address.street || '',
-              'Número': s.address.number || '',
-              'Complemento': s.address.complement || '',
-              'Bairro': s.address.district || '',
-              'Cidade': s.address.city || '',
-              'Estado': s.address.state || '',
-              'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
-              'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
-              'Status': s.active ? 'Ativo' : 'Inativo',
-              'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
-              'Doc: RG': checkDoc(s.documents.rg),
-              'Doc: CPF': checkDoc(s.documents.cpf),
-              'Doc: Atestado': checkDoc(s.documents.medical),
-              'Doc: Endereço': checkDoc(s.documents.address),
-              'Doc: Escolar': checkDoc(s.documents.school)
-          };
-      });
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Alunos Completo");
-      XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
+        return {
+            'Nome do Atleta': s.name,
+            'Categoria': category,
+            'Data de Nascimento': formatDate(s.birthDate),
+            'Idade': calculateAge(s.birthDate),
+            'RG Atleta': s.rg || '',
+            'CPF Atleta': s.cpf || '',
+            'Telefone Atleta': s.phone || '',
+            'Posições': (s.positions || []).join(', '),
+            'Vencimento Atestado': formatDate(s.medicalCertificateExpiry),
+            'Nome do Responsável': s.guardian.name,
+            'CPF Responsável': s.guardian.cpf || '',
+            'WhatsApp Responsável': s.guardian.phone || '',
+            'Email Responsável': s.guardian.email || '',
+            'CEP': s.address?.cep || '',
+            'Rua': s.address?.street || '',
+            'Número': s.address?.number || '',
+            'Complemento': s.address?.complement || '',
+            'Bairro': s.address?.district || '',
+            'Cidade': s.address?.city || '',
+            'Estado': s.address?.state || '',
+            'Plano Atual': plans.find(p => p.id === s.planId)?.name || 'Sem Plano',
+            'Grupos/Turmas': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
+            'Status de Cadastro': s.active ? 'Ativo' : 'Inativo',
+            'Mensalidades em Atraso': getStudentOverdueCount(s.id),
+            'Doc: RG': checkDoc(s.documents?.rg),
+            'Doc: CPF': checkDoc(s.documents?.cpf),
+            'Doc: Atestado Médico': checkDoc(s.documents?.medical),
+            'Doc: Comprovante Endereço': checkDoc(s.documents?.address),
+            'Doc: Comprovante Escolar': checkDoc(s.documents?.school)
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Lista de Atletas");
+    XLSX.writeFile(wb, `Alunos_Martinica_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleExportPDF = () => {
-      const doc = new jsPDF({ orientation: 'landscape' });
-      doc.setFontSize(18);
-      doc.text("Relatório Geral de Alunos - Garotos do Martinica", 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
-      
-      const currentYear = new Date().getFullYear();
-      const body = filteredStudents.map(s => {
-          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
-          const category = `Sub-${currentYear - birthYear}`;
-          return [
-              s.name,
-              category,
-              calculateAge(s.birthDate),
-              (s.positions || []).join(', '),
-              s.rg || s.cpf || '-',
-              s.guardian.name,
-              s.guardian.phone,
-              plans.find(p => p.id === s.planId)?.name || '-',
-              s.active ? 'Ativo' : 'Inativo',
-              getStudentOverdueCount(s.id) > 0 ? `Sim (${getStudentOverdueCount(s.id)})` : 'Não'
-          ];
-      });
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("Relatório Geral de Atletas - Garotos do Martinica", 14, 20);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} | Total: ${filteredStudents.length} atletas`, 14, 28);
+    
+    const currentYear = new Date().getFullYear();
+    const tableBody = filteredStudents.map(s => {
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        const category = `Sub-${currentYear - birthYear}`;
+        const overdue = getStudentOverdueCount(s.id);
+        const plan = plans.find(p => p.id === s.planId);
 
-      autoTable(doc, {
-          startY: 35,
-          head: [['Nome', 'Cat.', 'Idade', 'Posições', 'RG/CPF', 'Responsável', 'Telefone', 'Plano', 'Status', 'Atraso']],
-          body: body,
-          headStyles: { fillColor: [249, 115, 22] },
-          styles: { fontSize: 7, cellPadding: 2 }
-      });
-      doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
+        return [
+            s.name,
+            category,
+            calculateAge(s.birthDate),
+            (s.positions || []).join(', '),
+            s.rg || s.cpf || '-',
+            s.guardian.name,
+            s.guardian.phone,
+            plan?.name || '-',
+            s.active ? 'Ativo' : 'Inat.',
+            overdue > 0 ? `Sim (${overdue})` : 'Não'
+        ];
+    });
+
+    autoTable(doc, {
+        startY: 35,
+        head: [['Nome do Atleta', 'Cat.', 'Idade', 'Posições', 'RG/CPF', 'Responsável', 'WhatsApp', 'Plano', 'Status', 'Em Atraso']],
+        body: tableBody,
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 7, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 40 },
+            3: { cellWidth: 35 },
+            5: { cellWidth: 40 }
+        }
+    });
+
+    doc.save(`Relatorio_Atletas_Martinica_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const handleDownloadTemplate = () => {
