@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
@@ -71,10 +70,8 @@ function App() {
              transactionsData = allTxs;
         }
 
-        if (currentUser?.role === UserRole.ADMIN) {
-            const { data: usersData } = await supabase.from('app_users').select('*');
-            if (usersData) setSystemUsers(usersData as User[]);
-        }
+        const { data: usersData } = await supabase.from('app_users').select('*');
+        if (usersData) setSystemUsers(usersData as User[]);
 
         if (studentsData) {
              setStudents(studentsData.map((s: any) => ({
@@ -226,8 +223,63 @@ function App() {
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         await fetchData(true);
-        alert("Dados atualizados!");
+        alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
+  };
+
+  const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
+      await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]);
+      await fetchData(true);
+  };
+  const handleUpdatePlan = async (p: Plan) => {
+      await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id);
+      await fetchData(true);
+  };
+  const handleDeletePlan = async (id: string) => {
+      await supabase.from('plans').delete().eq('id', id);
+      await fetchData(true);
+  };
+
+  const handleAddGroup = async (g: Group) => {
+      const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select();
+      await fetchData(true);
+      return data?.[0]?.id || null;
+  };
+  const handleUpdateGroup = async (g: Group) => {
+      await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
+      await fetchData(true);
+  };
+  const handleDeleteGroup = async (id: string) => {
+      await supabase.from('groups').delete().eq('id', id);
+      await fetchData(true);
+  };
+
+  const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
+      for (const sId of studentIds) {
+          const student = students.find(s => s.id === sId);
+          if (!student) continue;
+          const nextGroups = (student.groupIds || []).includes(groupId) ? student.groupIds : [...(student.groupIds || []), groupId];
+          await supabase.from('students').update({ group_ids: nextGroups }).eq('id', sId);
+      }
+      const others = students.filter(s => !studentIds.includes(s.id) && (s.groupIds || []).includes(groupId));
+      for (const s of others) {
+          const nextGroups = (s.groupIds || []).filter(id => id !== groupId);
+          await supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id);
+      }
+      await fetchData(true);
+  };
+
+  const handleAddUser = async (u: Omit<User, 'id'>) => {
+      await supabase.from('app_users').insert([u]);
+      await fetchData(true);
+  };
+  const handleUpdateUser = async (u: User) => {
+      await supabase.from('app_users').update(u).eq('id', u.id);
+      await fetchData(true);
+  };
+  const handleDeleteUser = async (id: string) => {
+      await supabase.from('app_users').delete().eq('id', id);
+      await fetchData(true);
   };
 
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
@@ -350,25 +402,14 @@ function App() {
     const isCurrentlyPaid = feePayments.includes(studentId);
     const becomingPaid = !isCurrentlyPaid;
 
-    // 1. Calcular nova lista de IDs de pagantes
     const nextFeePayments = becomingPaid 
         ? [...feePayments, studentId] 
         : feePayments.filter(id => id !== studentId);
     
-    // 2. Persistir na tabela de atividades (agenda)
-    const { error: actError } = await supabase
-      .from('activities')
-      .update({ fee_payments: nextFeePayments })
-      .eq('id', activityId);
-    
-    if (actError) {
-      console.error("Erro ao atualizar pagamento na agenda:", actError);
-      return;
-    }
+    const { error: actError } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+    if (actError) return;
 
-    // 3. Sincronizar com o Financeiro
     if (becomingPaid) {
-        // Criar ou atualizar transação para "PAID"
         const txPayload = {
             description: `Taxa: ${activity.title} - ${student.name}`,
             category: 'Taxa de Atividade',
@@ -381,21 +422,29 @@ function App() {
             payment_method: PaymentMethod.CASH,
             external_reference: extRef
         };
-        
         await supabase.from('transactions').upsert(txPayload, { onConflict: 'external_reference' });
 
-        // 4. Notificar via WhatsApp APENAS se estiver marcando como pago
         if (student.guardian.phone) {
             const msg = `✅ *PAGAMENTO DE TAXA RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\n\nConfirmamos o recebimento da taxa de *R$ ${Number(activity.fee).toFixed(2)}* referente à atividade: *${activity.title}* do atleta *${student.name}*.\n\nObrigado! Garotos do Martinica.`;
             sendZApiMessage(student.guardian.phone, msg);
         }
     } else {
-        // Se desmarcar, remove o lançamento financeiro
         await supabase.from('transactions').delete().eq('external_reference', extRef);
     }
 
-    // 5. Recarregar dados para atualizar a interface imediatamente
     await fetchData(true);
+  };
+
+  const handleAddOccurrence = async (studentId: string, description: string, date: string) => {
+      const { error } = await supabase.from('student_occurrences').insert([{ student_id: studentId, description, date }]);
+      if (error) return false;
+      const student = students.find(s => s.id === studentId);
+      if (student?.guardian.phone) {
+          const msg = `⚽ *COMUNICADO DE OCORRÊNCIA* ⚽\n\nOlá *${student.guardian.name}*!\n\nRegistramos a seguinte ocorrência para o atleta *${student.name}* em ${date.split('-').reverse().join('/')}:\n\n"${description}"\n\nQualquer dúvida, procure a coordenação. Garotos do Martinica.`;
+          sendZApiMessage(student.guardian.phone, msg);
+      }
+      await fetchData(true);
+      return true;
   };
 
   const handleNavigate = (page: string, data?: any) => { setCurrentPage(page); setPageData(data || null); };
@@ -443,9 +492,12 @@ function App() {
             <h1 className="text-2xl font-bold text-gray-900 uppercase">{currentPage}</h1>
         </header>
         {currentPage === 'dashboard' && <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />}
-        {currentPage === 'students' && <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={() => Promise.resolve(true)} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />}
+        {currentPage === 'students' && <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />}
         {currentPage === 'finance' && <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />}
         {currentPage === 'schedule' && <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />}
+        {currentPage === 'groups' && <GroupsPage groups={groups} students={students} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />}
+        {currentPage === 'plans' && <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />}
+        {currentPage === 'users' && <UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />}
         {currentPage === 'aicoach' && <AICoachPage income={transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} expense={transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} />}
       </main>
     </div>
