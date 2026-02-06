@@ -235,13 +235,13 @@ function App() {
           address: student.address,
           guardian: student.guardian,
           plan_id: safeId(student.planId),
-          group_ids: student.groupIds,
-          positions: student.positions,
+          group_ids: student.groupIds || [],
+          positions: student.positions || [],
           active: student.active,
           documents: student.documents
         };
 
-        const { error = null } = await supabase.from('students').update(payload).eq('id', student.id);
+        const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         await fetchData(true);
         alert("Dados atualizados!");
