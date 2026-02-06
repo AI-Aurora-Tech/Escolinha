@@ -14,7 +14,6 @@ import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2 } from 'lucide-react';
 import { sendZApiMessage } from './services/zapiService';
 
-// Seletor atualizado com todas as colunas necessárias
 const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id, recurrence';
 
 function App() {
@@ -40,7 +39,6 @@ function App() {
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
 
-  // Helpers de tratamento de dados para o Postgres
   const safeDate = (d?: string) => (d === '' || !d) ? null : d;
   const safeId = (id?: string) => (id === '' || !id) ? null : id;
 
@@ -131,7 +129,7 @@ function App() {
                 endTime: a.end_time,
                 recurrence: a.recurrence || 'none',
                 attendance: a.attendance || [],
-                fee_payments: a.fee_payments || []
+                feePayments: a.fee_payments || []
             } as Activity)));
         }
     } catch (error) {
@@ -317,14 +315,12 @@ function App() {
     }
   };
 
-  /* FIXED: Use camelCase properties from Omit<Activity, 'id'> when creating payload */
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers || [], group_id: safeId(a.groupId), participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence || 'none', attendance: a.attendance || [], fee_payments: a.feePayments || [] };
       await supabase.from('activities').insert([payload]);
       await fetchData(true);
   };
 
-  /* FIXED: Use camelCase properties from Activity when creating payload */
   const handleUpdateActivity = async (a: Activity) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee, location: a.location, presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), participants: a.participants, date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, fee_payments: a.feePayments };
       await supabase.from('activities').update(payload).eq('id', a.id);
@@ -349,47 +345,56 @@ function App() {
     const student = students.find(s => s.id === studentId);
     if (!activity || !student) return;
     
-    const isPaying = !(activity.feePayments || []).includes(studentId);
-    const nextFeePayments = isPaying 
-        ? [...(activity.feePayments || []), studentId] 
-        : (activity.feePayments || []).filter(id => id !== studentId);
+    const extRef = `fee_${activityId}_${studentId}`;
+    const feePayments = activity.feePayments || [];
+    const isCurrentlyPaid = feePayments.includes(studentId);
+    const becomingPaid = !isCurrentlyPaid;
+
+    // 1. Calcular nova lista de IDs de pagantes
+    const nextFeePayments = becomingPaid 
+        ? [...feePayments, studentId] 
+        : feePayments.filter(id => id !== studentId);
     
-    // 1. Atualizar a lista de pagantes na atividade
-    const { error: actError } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
+    // 2. Persistir na tabela de atividades (agenda)
+    const { error: actError } = await supabase
+      .from('activities')
+      .update({ fee_payments: nextFeePayments })
+      .eq('id', activityId);
     
     if (actError) {
-      alert("Erro ao atualizar pagamento da taxa.");
+      console.error("Erro ao atualizar pagamento na agenda:", actError);
       return;
     }
 
-    const extRef = `fee_${activityId}_${studentId}`;
-
-    if (isPaying) {
-        // 2. Criar um lançamento de entrada no financeiro para rastreabilidade
+    // 3. Sincronizar com o Financeiro
+    if (becomingPaid) {
+        // Criar ou atualizar transação para "PAID"
         const txPayload = {
             description: `Taxa: ${activity.title} - ${student.name}`,
             category: 'Taxa de Atividade',
             amount: Number(activity.fee) || 0,
             type: TransactionType.INCOME,
-            date: new Date().toISOString().split('T')[0],
+            date: activity.date,
             payment_date: new Date().toISOString().split('T')[0],
             status: PaymentStatus.PAID,
             student_id: studentId,
             payment_method: PaymentMethod.CASH,
             external_reference: extRef
         };
-        await supabase.from('transactions').insert([txPayload]);
+        
+        await supabase.from('transactions').upsert(txPayload, { onConflict: 'external_reference' });
 
-        // 3. Notificar via WhatsApp
+        // 4. Notificar via WhatsApp APENAS se estiver marcando como pago
         if (student.guardian.phone) {
             const msg = `✅ *PAGAMENTO DE TAXA RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\n\nConfirmamos o recebimento da taxa de *R$ ${Number(activity.fee).toFixed(2)}* referente à atividade: *${activity.title}* do atleta *${student.name}*.\n\nObrigado! Garotos do Martinica.`;
             sendZApiMessage(student.guardian.phone, msg);
         }
     } else {
-        // 4. Se desmarcar o pagamento, remove o lançamento financeiro correspondente
+        // Se desmarcar, remove o lançamento financeiro
         await supabase.from('transactions').delete().eq('external_reference', extRef);
     }
 
+    // 5. Recarregar dados para atualizar a interface imediatamente
     await fetchData(true);
   };
 
