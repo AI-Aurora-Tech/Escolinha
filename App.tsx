@@ -22,7 +22,6 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginCpf, setLoginCpf] = useState('');
-  const [isFirstAccess, setIsFirstAccess] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -154,23 +153,88 @@ function App() {
   };
 
   const handleCpfCheck = async (e: React.FormEvent) => {
-      e.preventDefault(); setIsLoggingIn(true); setLoginError('');
-      const cleanCpf = loginCpf.replace(/\D/g, ''); 
+      e.preventDefault(); 
+      setIsLoggingIn(true); 
+      setLoginError('');
+      
+      const cleanInputCpf = loginCpf.replace(/\D/g, ''); 
+      if (!cleanInputCpf) {
+          setLoginError('Informe o CPF.');
+          setIsLoggingIn(false);
+          return;
+      }
+
       try {
-          const { data: existingUser } = await supabase.from('app_users').select('*').eq('cpf', loginCpf).maybeSingle();
+          // 1. Verificar se usuário já existe em app_users
+          const { data: existingUser } = await supabase
+              .from('app_users')
+              .select('*')
+              .eq('cpf', cleanInputCpf)
+              .maybeSingle();
+
           if (existingUser) {
                if (loginPassword) {
-                   if (existingUser.password === loginPassword) { setCurrentUser(existingUser as User); setIsAuthenticated(true); setIsLoggingIn(false); return; }
-                   else { setLoginError('Senha incorreta.'); setIsLoggingIn(false); return; }
-               } else { setLoginError('Por favor, digite sua senha.'); setIsLoggingIn(false); return; }
+                   if (existingUser.password === loginPassword) { 
+                       setCurrentUser(existingUser as User); 
+                       setIsAuthenticated(true); 
+                       setIsLoggingIn(false); 
+                       return; 
+                   } else { 
+                       setLoginError('Senha incorreta.'); 
+                       setIsLoggingIn(false); 
+                       return; 
+                   }
+               } else { 
+                   setLoginError('Usuário já cadastrado. Por favor, digite sua senha.'); 
+                   setIsLoggingIn(false); 
+                   return; 
+               }
           }
+
+          // 2. Se não existe, verificar se o CPF está vinculado a algum aluno
           const { data: studentsData } = await supabase.from('students').select('guardian');
-          if (studentsData) {
-              const matchedStudent = studentsData.find((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') === cleanCpf));
-              if (matchedStudent) { setIsFirstAccess(true); setLoginError(''); setIsLoggingIn(false); return; }
+          const matchedStudent = studentsData?.find((s: any) => 
+              s.guardian?.cpf?.replace(/\D/g, '') === cleanInputCpf
+          );
+
+          if (matchedStudent) {
+              if (!loginPassword) {
+                  setLoginError('CPF validado! Por favor, digite uma senha para criar seu primeiro acesso.');
+                  setIsLoggingIn(false);
+                  return;
+              }
+
+              // 3. Primeiro acesso: Criar o usuário automaticamente
+              const newUserPayload = {
+                  name: matchedStudent.guardian.name,
+                  email: matchedStudent.guardian.email || `${cleanInputCpf}@martinica.com`,
+                  password: loginPassword,
+                  role: UserRole.RESPONSAVEL,
+                  cpf: cleanInputCpf,
+                  avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(matchedStudent.guardian.name)}&background=random`
+              };
+
+              const { data: createdUser, error: createError } = await supabase
+                  .from('app_users')
+                  .insert([newUserPayload])
+                  .select()
+                  .single();
+
+              if (createError) {
+                  setLoginError('Erro ao criar seu acesso. Tente novamente.');
+              } else {
+                  setCurrentUser(createdUser as User);
+                  setIsAuthenticated(true);
+                  alert('Acesso criado com sucesso! Bem-vindo(a) ao Portal do Responsável.');
+              }
+          } else {
+              setLoginError('CPF não encontrado em nossa base de atletas.');
           }
-          setLoginError('CPF não encontrado.');
-      } catch (err) { setLoginError('Erro ao validar CPF.'); } finally { setIsLoggingIn(false); }
+      } catch (err) { 
+          setLoginError('Erro ao validar CPF.'); 
+      } finally { 
+          setIsLoggingIn(false); 
+      }
   };
 
   const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
@@ -471,7 +535,7 @@ function App() {
                     ) : (
                         <form onSubmit={handleCpfCheck} className="space-y-4">
                             <input type="text" placeholder="CPF do Responsável" className="w-full border rounded-lg p-3 outline-none" value={loginCpf} onChange={e => setLoginCpf(e.target.value)} />
-                            <input type="password" placeholder="Senha (ou em branco no 1º acesso)" className="w-full border rounded-lg p-3 outline-none" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+                            <input type="password" placeholder="Senha (ou escolha uma no 1º acesso)" className="w-full border rounded-lg p-3 outline-none" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
                             <button className="w-full bg-primary-600 text-white py-3 rounded-lg font-bold">Acessar</button>
                         </form>
                     )}

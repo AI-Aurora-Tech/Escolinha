@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,12 +28,13 @@ interface StudentsPageProps {
 
 export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, occurrences, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onAddOccurrence, onGenerateTuitions, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const ageFilter = '';
+  const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [medicalFilter, setMedicalFilter] = useState('ALL');
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
   const [planFilter, setPlanFilter] = useState('ALL');
+  const [positionFilter, setPositionFilter] = useState('ALL');
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -530,17 +531,33 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       const ms = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.guardian.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const ma = true;
-      let mc = true; if (selectedCategories.length > 0) { const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); }
+      
+      let mage = true;
+      if (ageFilter) {
+          mage = calculateAge(s.birthDate).toString() === ageFilter;
+      }
+
+      let mpos = true;
+      if (positionFilter !== 'ALL') {
+          mpos = (s.positions || []).includes(positionFilter);
+      }
+
+      let mc = true; 
+      if (selectedCategories.length > 0) { 
+          const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : new Date().getFullYear(); 
+          mc = selectedCategories.includes(`Sub-${ new Date().getFullYear() - birthYear}`); 
+      }
+
       let mstat = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? s.active : !s.active);
       let mmed = medicalFilter === 'ALL' || (medicalFilter === 'VALID' ? !isMedicalExpired(s.medicalCertificateExpiry) : isMedicalExpired(s.medicalCertificateExpiry));
       let mfin = financeFilter === 'ALL' || (financeFilter === 'DEFAULTING' ? getStudentOverdueCount(s.id) > 0 : getStudentOverdueCount(s.id) === 0);
       let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
       let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
       let mplan = planFilter === 'ALL' || s.planId === planFilter;
-      return ms && ma && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
+
+      return ms && mage && mpos && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, searchTerm, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
+  }, [students, searchTerm, ageFilter, positionFilter, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
 
   const startCamera = async () => {
     setIsCameraOpen(true);
@@ -823,17 +840,87 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       </div>
 
       {!isGuardian && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-2 relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-            <div className="lg:col-span-1 relative"><input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} /></div>
-            <div className="lg:col-span-2 relative" ref={categoryDropdownRef}>
-                <div className="w-full pl-3 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 text-sm cursor-pointer flex items-center justify-between hover:border-primary-300 transition-colors" onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}><div className="flex items-center gap-2 overflow-hidden truncate"><Layers className="w-4 h-4 flex-shrink-0" /><span className="truncate">{selectedCategories.length > 0 ? `${selectedCategories.length} Sel.` : 'Cat.: Todas'}</span></div><ChevronDown className={`w-4 h-4 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} /></div>
-                {isCategoryDropdownOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100"><div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Selecione</div>{availableCategories.map(cat => (<label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors"><input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" /><span>{cat}</span></label>))}{selectedCategories.length > 0 && (<button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>)}</div>)}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-3 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input type="text" placeholder="Buscar atleta ou responsável..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+                <div className="lg:col-span-1 relative">
+                    <input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} onChange={(e) => setAgeFilter(e.target.value)} />
+                </div>
+                <div className="lg:col-span-2 relative">
+                    <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={positionFilter} onChange={(e) => setPositionFilter(e.target.value)}>
+                        <option value="ALL">Posição: Todas</option>
+                        {positionsList.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                    </select>
+                </div>
+                <div className="lg:col-span-2 relative" ref={categoryDropdownRef}>
+                    <div className="w-full pl-3 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 text-sm cursor-pointer flex items-center justify-between hover:border-primary-300 transition-colors" onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}>
+                        <div className="flex items-center gap-2 overflow-hidden truncate">
+                            <Layers className="w-4 h-4 flex-shrink-0" />
+                            <span className="truncate">{selectedCategories.length > 0 ? `${selectedCategories.length} Sel.` : 'Categorias'}</span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                    </div>
+                    {isCategoryDropdownOpen && (
+                        <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-100">
+                            <div className="p-2 text-xs text-gray-400 font-medium uppercase tracking-wider border-b border-gray-50 mb-1">Categorias</div>
+                            {availableCategories.map(cat => (
+                                <label key={cat} className="flex items-center gap-2 p-2 hover:bg-primary-50 rounded-md cursor-pointer text-sm transition-colors">
+                                    <input type="checkbox" checked={selectedCategories.includes(cat)} onChange={() => toggleCategory(cat)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4" />
+                                    <span>{cat}</span>
+                                </label>
+                            ))}
+                            {selectedCategories.length > 0 && (
+                                <button onClick={() => { setSelectedCategories([]); setIsCategoryDropdownOpen(false); }} className="w-full text-center text-xs text-red-500 hover:bg-red-50 p-2 rounded mt-1 border-t border-gray-50">Limpar</button>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <div className="lg:col-span-2 relative">
+                    <Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}>
+                        <option value="ALL">Plano: Todos</option>
+                        {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                </div>
+                <div className="lg:col-span-2 relative">
+                    <ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                        <option value="ALL">Status: Todos</option>
+                        <option value="ACTIVE">Ativos</option>
+                        <option value="INACTIVE">Inativos</option>
+                    </select>
+                </div>
             </div>
-            <div className="lg:col-span-2 relative"><Ticket className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}><option value="ALL">Plano: Todos</option>{plans.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
-            <div className="lg:col-span-2 relative"><ShieldCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}><option value="ALL">Status: Todos</option><option value="ACTIVE">Ativos</option><option value="INACTIVE">Inativos</option></select></div>
-            <div className="lg:col-span-2 relative"><Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}><option value="ALL">Fin.: Todos</option><option value="DEFAULTING">Inadimplentes</option><option value="OK">Em dia</option></select></div>
-            <div className="lg:col-span-1 relative"><FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}><option value="ALL">Docs</option><option value="MISSING_DOCS">Pend.</option><option value="OK">OK</option></select></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-3 relative">
+                    <Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}>
+                        <option value="ALL">Financeiro: Todos</option>
+                        <option value="DEFAULTING">Inadimplentes</option>
+                        <option value="OK">Em dia</option>
+                    </select>
+                </div>
+                <div className="lg:col-span-2 relative">
+                    <FolderCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={docsFilter} onChange={(e) => setDocsFilter(e.target.value)}>
+                        <option value="ALL">Docs: Todos</option>
+                        <option value="MISSING_DOCS">Docs: Pendentes</option>
+                        <option value="OK">Docs: OK</option>
+                    </select>
+                </div>
+                <div className="lg:col-span-2 relative">
+                    <HeartPulse className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <select className="w-full pl-9 pr-2 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={medicalFilter} onChange={(e) => setMedicalFilter(e.target.value)}>
+                        <option value="ALL">Médico: Todos</option>
+                        <option value="VALID">Atestado OK</option>
+                        <option value="EXPIRED">Vencido</option>
+                    </select>
+                </div>
+            </div>
         </div>
       )}
 
@@ -866,9 +953,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                               <span className="text-gray-600 font-bold">{student.guardian.name}</span>
                               {student.guardian.phone && (
                                   <a href={`https://wa.me/55${student.guardian.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-50 text-white p-1 rounded-md ml-auto">
-                                      <MessageCircle className="w-3 h-3" />
+                                      <MessageCircle className="w-3 h-3 text-green-600" />
                                   </a>
                               )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px]">
+                              <Target className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-500 truncate">{(student.positions || []).join(', ') || 'N/A'}</span>
                           </div>
                           <div className="flex items-center gap-2 text-[11px]">
                               <Layers className="w-3.5 h-3.5 text-gray-400" />
@@ -917,7 +1008,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aluno</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Idade</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Posição</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grupos</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsável</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -965,7 +1056,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       </div>
                     </td>
                     <td className="px-6 py-4"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-bold border">Sub-{currentYear - birthYear}</span></td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{calculateAge(student.birthDate)} anos</td>
+                    <td className="px-6 py-4"><span className="text-sm text-gray-600">{(student.positions || []).slice(0, 2).join(', ') || '-'}</span></td>
                     <td className="px-6 py-4 text-sm text-gray-600 truncate max-w-[200px]" title={groupNames}>{groupNames}</td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
