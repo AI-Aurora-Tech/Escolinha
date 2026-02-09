@@ -45,31 +45,30 @@ interface CreatePreferenceData {
 
 // --- HELPERS DE SANITIZAÇÃO ---
 const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
+    // Mercado Pago exige e-mail válido. Se não houver, usamos um padrão da escola.
     const email = payerData.email && payerData.email.includes('@') 
         ? payerData.email.trim() 
-        : 'contato@martinica.com.br'; // Fallback mais profissional
+        : 'financeiro@martinica.com.br';
 
-    const fullName = payerData.name ? payerData.name.trim() : 'Responsável';
+    const fullName = payerData.name ? payerData.name.trim() : 'Responsável Atleta';
     const nameParts = fullName.split(' ');
-    const firstName = nameParts[0];
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Atleta';
+    const firstName = nameParts[0] || 'Responsável';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Martinica';
 
     const rawPhone = payerData.phone ? payerData.phone.replace(/\D/g, '') : '';
-    let phoneObject = undefined;
+    let phoneObject = {
+        area_code: '11',
+        number: '987019721'
+    };
 
     if (rawPhone.length >= 10) {
-        const areaCode = rawPhone.substring(0, 2);
-        const number = rawPhone.substring(rawPhone.length - 8); // Pega os últimos 8 dígitos
         phoneObject = {
-            area_code: areaCode,
-            number: number
-        };
-    } else {
-        phoneObject = {
-            area_code: '11',
-            number: '987019721'
+            area_code: rawPhone.substring(0, 2),
+            number: rawPhone.substring(rawPhone.length - 8)
         };
     }
+
+    const cleanedCpf = (payerData.identification?.number || '').replace(/\D/g, '');
 
     const payerPayload: any = {
         first_name: firstName,
@@ -79,11 +78,11 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
         email: email,
         identification: {
             type: 'CPF',
-            number: (payerData.identification?.number || '').replace(/\D/g, '')
+            number: cleanedCpf
         }
     };
     
-    return { payerPayload, phoneObject };
+    return { payerPayload, phoneObject, cleanedCpf };
 };
 
 export const createMPPreference = async (data: CreatePreferenceData): Promise<{ init_point: string, id: string } | null> => {
@@ -113,7 +112,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
             title: data.title.substring(0, 250),
             quantity: 1,
             currency_id: 'BRL',
-            unit_price: Number(data.price)
+            unit_price: Number(Number(data.price).toFixed(2))
           }
         ],
         payer: preferencesPayer,
@@ -128,7 +127,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
     });
 
     if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({ message: "Unknown error" }));
         console.error("MP Preference Error:", errData);
         return null;
     }
@@ -155,10 +154,16 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
     }
 
     try {
-        const { payerPayload } = sanitizePayer(data.payer);
+        const { payerPayload, cleanedCpf } = sanitizePayer(data.payer);
+
+        // Validação crítica para PIX: CPF deve ter 11 dígitos
+        if (cleanedCpf.length !== 11) {
+            console.error("CPF inválido para geração de PIX. Deve conter 11 dígitos numéricos.");
+            return null;
+        }
 
         const body = {
-            transaction_amount: Number(data.price),
+            transaction_amount: Number(Number(data.price).toFixed(2)),
             description: data.title.substring(0, 250),
             payment_method_id: "pix",
             payer: {
@@ -181,10 +186,13 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
         });
 
         if (!response.ok) {
-            const errData = await response.json();
+            const errText = await response.text();
+            let errData;
+            try { errData = JSON.parse(errText); } catch(e) { errData = errText; }
             console.error("Mercado Pago API Error (PIX):", errData);
             return null;
         }
+        
         const result = await response.json();
 
         if (result.id && result.point_of_interaction) {
@@ -194,6 +202,8 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
                 qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64
             };
         }
+        
+        console.error("Resposta do Mercado Pago não contém dados de interação PIX:", result);
         return null;
     } catch (error) {
         console.error("Exception in createPixPayment:", error);
@@ -216,19 +226,8 @@ export const getPaymentStatus = async (paymentId: number | string): Promise<'app
         
         if (!response.ok) return null;
 
-        const rawText = await response.text();
-        const trimmed = rawText.trim();
-        if (!trimmed) return null;
-
-        try {
-            const result = JSON.parse(trimmed);
-            return result.status;
-        } catch (e) {
-            if (['approved', 'pending', 'rejected', 'cancelled'].includes(trimmed.toLowerCase())) {
-                return trimmed.toLowerCase() as any;
-            }
-            return null;
-        }
+        const result = await response.json();
+        return result.status;
     } catch (error) {
         console.error("Error getting status:", error);
         return null;
@@ -250,19 +249,10 @@ export const checkMPPaymentStatus = async (externalReference: string): Promise<'
   
       if (!response.ok) return null;
       
-      const rawText = await response.text();
-      const trimmed = rawText.trim();
-      if (!trimmed) return 'pending';
-
-      try {
-          const result = JSON.parse(trimmed);
-          if (result && result.results && result.results.length > 0) {
-            const lastPayment = result.results[result.results.length - 1];
-            return lastPayment.status; 
-          }
-      } catch (parseError) {
-          console.error("Malformed JSON response from MP search", trimmed);
-          return 'pending';
+      const result = await response.json();
+      if (result && result.results && result.results.length > 0) {
+        const lastPayment = result.results[result.results.length - 1];
+        return lastPayment.status; 
       }
       
       return 'pending';

@@ -195,7 +195,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const introText = `Eu, CONTRATANTE, abaixo qualificado, na qualidade de RESPONSÁVEL pelo (ALUNO) acima citado, venho solicitar e formalizar a inscrição, neste TERMO DE CONTRATAÇÃO, na UNIDADE, do ALUNO acima qualificado, declarando e assumindo, nesta oportunidade:`;
     
     const clauses = [
-      "1 - Eximir a escola de eventuais acidentes, tantas como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
+      "1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
       "2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;",
       "3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);",
       "4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção da escola e posteriormente comunicados ao responsável pelo aluno.;",
@@ -686,7 +686,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       else if (selectedFinanceIds.size > 0) { const sel = transactions.filter(t => selectedFinanceIds.has(t.id)); amount = sel.reduce((a, t) => a + t.amount, 0); description = `Combo ${sel.length} mensalidades`; externalRef = `combo_${Date.now()}`; sel.forEach(t => idsToPay.push(t.id)); } 
       else return;
       
-      if (!studentForm.guardian.cpf) { alert("CPF necessário para gerar PIX."); return; }
+      const cleanedCpf = (studentForm.guardian.cpf || '').replace(/\D/g, '');
+      if (cleanedCpf.length !== 11) { 
+          alert("CPF inválido ou não informado para o responsável. A geração do PIX exige um CPF válido com 11 dígitos nas configurações do atleta."); 
+          return; 
+      }
       
       setPixLoading(true); setShowPixModal(true); setPixData(null); setPixTxIds(idsToPay);
       
@@ -699,19 +703,18 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   name: studentForm.guardian.name, 
                   email: studentForm.guardian.email, 
                   phone: studentForm.guardian.phone, 
-                  identification: { type: 'CPF', number: studentForm.guardian.cpf } 
+                  identification: { type: 'CPF', number: cleanedCpf } 
               } 
           });
           
           if (result) { 
               setPixData(result); 
-              // CRITICAL: Salva a referência externa no banco para o rastreador global poder agir
               for (const id of idsToPay) {
                   onUpdateTransaction({ id, externalReference: externalRef });
               }
           } 
           else { 
-              alert("Erro ao gerar QR Code. Verifique o Access Token nas configurações financeiras."); 
+              alert("Erro ao gerar QR Code. Certifique-se de que o CPF do responsável está correto e o Access Token nas configurações financeiras é válido."); 
               setShowPixModal(false); 
           }
       } catch (error) { 
@@ -1550,7 +1553,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
       {/* MODAL NOVA OCORRÊNCIA */}
       {showOccurrenceModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-120 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter flex items-center gap-2">
