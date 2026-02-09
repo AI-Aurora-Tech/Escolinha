@@ -1,3 +1,4 @@
+
 import { supabase } from '../lib/supabaseClient';
 
 // Helper to get token from database
@@ -46,12 +47,12 @@ interface CreatePreferenceData {
 const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     const email = payerData.email && payerData.email.includes('@') 
         ? payerData.email.trim() 
-        : 'cliente@naoinformado.com';
+        : 'contato@martinica.com.br'; // Fallback mais profissional
 
     const fullName = payerData.name ? payerData.name.trim() : 'Responsável';
     const nameParts = fullName.split(' ');
     const firstName = nameParts[0];
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'do Aluno';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Atleta';
 
     const rawPhone = payerData.phone ? payerData.phone.replace(/\D/g, '') : '';
     let phoneObject = undefined;
@@ -66,7 +67,7 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     } else {
         phoneObject = {
             area_code: '11',
-            number: '99999999'
+            number: '987019721'
         };
     }
 
@@ -109,7 +110,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
       body: JSON.stringify({
         items: [
           {
-            title: data.title.substring(0, 250), // Limite de caracteres do MP
+            title: data.title.substring(0, 250),
             quantity: 1,
             currency_id: 'BRL',
             unit_price: Number(data.price)
@@ -148,7 +149,10 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
 
 export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qrCode: string, qrCodeBase64: string, id: number } | null> => {
     const token = await getMPAccessToken();
-    if (!token) return null;
+    if (!token) {
+        console.error("Token do Mercado Pago não configurado.");
+        return null;
+    }
 
     try {
         const { payerPayload } = sanitizePayer(data.payer);
@@ -171,14 +175,14 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'X-Idempotency-Key': data.externalReference 
+                'X-Idempotency-Key': `pix_${data.externalReference}_${Date.now()}` 
             },
             body: JSON.stringify(body)
         });
 
         if (!response.ok) {
             const errData = await response.json();
-            console.error("MP Pix Error:", errData);
+            console.error("Mercado Pago API Error (PIX):", errData);
             return null;
         }
         const result = await response.json();
@@ -192,7 +196,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
         }
         return null;
     } catch (error) {
-        console.error("Error creating PIX:", error);
+        console.error("Exception in createPixPayment:", error);
         return null;
     }
 };

@@ -195,7 +195,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     const introText = `Eu, CONTRATANTE, abaixo qualificado, na qualidade de RESPONSÁVEL pelo (ALUNO) acima citado, venho solicitar e formalizar a inscrição, neste TERMO DE CONTRATAÇÃO, na UNIDADE, do ALUNO acima qualificado, declarando e assumindo, nesta oportunidade:`;
     
     const clauses = [
-      "1 - Eximir a escola de eventuais acidentes, tais como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
+      "1 - Eximir a escola de eventuais acidentes, tantas como, lesões, machucados, torções etc., decorrente da prática do futebol. Em caso de ocorrência é dever da escola prestar os primeiros socorros. Em caso de acidente grave fica autorizado o atendimento no posto/hospital publico mais próximo;",
       "2 - Apresentar o ATESTADO MÉDICO em tempo hábil (30 dias), além de declarar que o aluno goza de perfeita saúde, não havendo qualquer impedimento ao se estado de saúde para a prática esportiva;",
       "3 - O Aluno não treinara sem que esteja DEVIDAMENTE UNIFORMIZADO. Portanto, é obrigatório o uso do kit completo, além de chuteiras Society (obs.: É proibido o uso de chuteiras com travas em nosso campo);",
       "4 - Os eventuais problemas de ordem DISCIPLINAR serão resolvidos pela direção da escola e posteriormente comunicados ao responsável pelo aluno.;",
@@ -710,8 +710,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   onUpdateTransaction({ id, externalReference: externalRef });
               }
           } 
-          else { alert("Erro ao gerar QR Code."); setShowPixModal(false); }
-      } catch (error) { alert("Erro de comunicação com Mercado Pago."); setShowPixModal(false); } finally { setShowPixModal(false); setPixLoading(false); }
+          else { 
+              alert("Erro ao gerar QR Code. Verifique o Access Token nas configurações financeiras."); 
+              setShowPixModal(false); 
+          }
+      } catch (error) { 
+          alert("Erro de comunicação com Mercado Pago."); 
+          setShowPixModal(false); 
+      } finally { 
+          setPixLoading(false); 
+      }
   };
   
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
