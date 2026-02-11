@@ -943,8 +943,23 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
               const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
               
+              // Definir cores conforme o número de mensalidades atrasadas
+              const overdueBorderClass = overdueCount >= 3 
+                  ? 'border-red-500 bg-red-50/50' 
+                  : overdueCount === 2 
+                  ? 'border-orange-500 bg-orange-50/50' 
+                  : overdueCount === 1 
+                  ? 'border-red-200 bg-red-50/20' 
+                  : 'border-gray-100';
+
+              const overdueBadgeClass = overdueCount >= 3
+                  ? 'bg-red-600 text-white'
+                  : overdueCount === 2
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-red-100 text-red-700';
+              
               return (
-                  <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueCount > 0 ? 'border-red-200 bg-red-50/20' : 'border-gray-100'}`}>
+                  <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueBorderClass}`}>
                       <div className="flex items-start justify-between gap-3 mb-4">
                           <div className="flex items-center gap-3">
                               <img src={student.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover bg-gray-200 border-2 border-white shadow-sm" />
@@ -980,7 +995,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
                       <div className="flex flex-wrap gap-2 mb-4 border-t border-gray-50 pt-3">
                           {overdueCount > 0 && (
-                              <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-lg font-black border border-red-200 flex items-center gap-1 animate-pulse">
+                              <span className={`${overdueBadgeClass} text-[10px] px-2 py-1 rounded-lg font-black border border-black/5 flex items-center gap-1 animate-pulse`}>
                                   <AlertTriangle className="w-3 h-3" /> {overdueCount} MENSALIDADES ATRASADAS
                               </span>
                           )}
@@ -999,7 +1014,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       <div className="flex items-center gap-2 overflow-x-auto pb-2">
                           <button onClick={() => handleGenerateContract(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Printer className="w-3.5 h-3.5" /></button>
                           <button onClick={() => handleOpenAttendance(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 p-2 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleOpenHistory(student)} className={`flex-shrink-0 flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-red-600 text-white border-red-700' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleOpenHistory(student)} className={`flex-shrink-0 flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-gray-800 text-white' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /></button>
                           {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-orange-50 text-orange-700 p-2 rounded-lg text-xs font-bold border border-orange-100"><MessageSquareWarning className="w-3.5 h-3.5" /></button>}
                           <button onClick={() => handleOpenEdit(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /></button>
                       </div>
@@ -1031,15 +1046,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
                 const overdueCount = getStudentOverdueCount(student.id);
                 const currentYear = new Date().getFullYear(); const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
+                
+                // Definir cor da linha conforme número de atrasos
+                const rowBgClass = overdueCount >= 3 
+                    ? 'bg-red-50 hover:bg-red-100/80' 
+                    : overdueCount === 2 
+                    ? 'bg-orange-50 hover:bg-orange-100/80' 
+                    : overdueCount === 1 
+                    ? 'bg-red-50/30 hover:bg-red-50/60' 
+                    : 'hover:bg-gray-50';
+
+                const overdueBadgeClass = overdueCount >= 3
+                    ? 'bg-red-600 text-white'
+                    : overdueCount === 2
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-red-100 text-red-600 border-red-200';
+
                 return (
-                  <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${overdueCount > 0 ? 'bg-red-50/30' : ''}`}>
+                  <tr key={student.id} className={`transition-colors ${rowBgClass}`}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <img src={student.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
                         <div>
                           <div className="font-medium text-gray-900 flex items-center gap-2">
                               {student.name}
-                              {overdueCount > 0 && (<span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-red-200"><AlertTriangle className="w-3 h-3 inline mr-0.5" /> {overdueCount} Pend.</span>)}
+                              {overdueCount > 0 && (<span className={`${overdueBadgeClass} text-[10px] px-1.5 py-0.5 rounded-full font-bold border flex items-center gap-1 shadow-sm`}><AlertTriangle className="w-3 h-3" /> {overdueCount} Pend.</span>)}
                               {hasMissingDocs(student) && !isGuardian && (
                                 <button 
                                   onClick={() => sendDocReminder(student)}
@@ -1105,7 +1136,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       <div className="flex justify-end gap-2">
                         <button onClick={() => handleGenerateContract(student)} className="text-gray-600 hover:text-gray-800 p-2 bg-gray-50 rounded-lg" title="Imprimir Contrato"><Printer className="w-4 h-4" /></button>
                         <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg" title="Frequência"><CalendarCheck className="w-4 h-4" /></button>
-                        <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-50 text-blue-600'}`} title="Financeiro"><History className="w-4 h-4" /></button>
+                        <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-gray-800 text-white shadow-md' : 'bg-blue-50 text-blue-600'}`} title="Financeiro"><History className="w-4 h-4" /></button>
                         {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="text-orange-600 hover:text-orange-800 p-2 bg-orange-50 rounded-lg transition-colors" title="Enviar Ocorrência"><MessageSquareWarning className="w-4 h-4" /></button>}
                         <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg" title="Editar"><Edit className="w-4 h-4" /></button>
                       </div>
