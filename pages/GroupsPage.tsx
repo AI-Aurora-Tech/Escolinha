@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
-import { Group, Student } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Group, Student, Transaction, TransactionType, PaymentStatus } from '../types';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -9,13 +9,14 @@ import * as XLSX from 'xlsx';
 interface GroupsPageProps {
   groups: Group[];
   students: Student[];
+  transactions: Transaction[];
   onAddGroup: (group: Group) => Promise<string | null>;
   onUpdateGroup: (group: Group) => void;
   onDeleteGroup: (id: string) => void;
   onBatchAssignStudents: (studentIds: string[], groupId: string) => void;
 }
 
-export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddGroup, onUpdateGroup, onDeleteGroup, onBatchAssignStudents }) => {
+export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transactions, onAddGroup, onUpdateGroup, onDeleteGroup, onBatchAssignStudents }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -24,6 +25,12 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
   
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const getStudentOverdueCount = (studentId: string) => {
+    return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr).length;
+  };
+
   const initialFormState = {
     name: ''
   };
@@ -344,6 +351,21 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                         const isSelected = selectedStudentIds.has(student.id);
                                         const isMemberOfCurrentGroup = editingId && student.groupIds?.includes(editingId);
                                         const age = calculateAge(student.birthDate);
+                                        const overdueCount = getStudentOverdueCount(student.id);
+                                        
+                                        // Lógica de cores condicional para atraso
+                                        const overdueBgClass = overdueCount >= 3 
+                                            ? 'bg-red-50 hover:bg-red-100' 
+                                            : overdueCount === 2 
+                                            ? 'bg-orange-50 hover:bg-orange-100' 
+                                            : isSelected ? 'bg-primary-50/50' : 'hover:bg-white';
+                                        
+                                        const overdueBadgeClass = overdueCount >= 3
+                                            ? 'bg-red-600 text-white'
+                                            : overdueCount === 2
+                                            ? 'bg-orange-500 text-white'
+                                            : '';
+
                                         const groupNames = (student.groupIds || []).map(gid => {
                                             const gName = groups.find(g => g.id === gid)?.name;
                                             if (editingId && gid === editingId) return { name: gName, active: true };
@@ -353,7 +375,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                         return (
                                             <div 
                                                 key={student.id} 
-                                                className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white transition-colors border-l-4 ${isSelected ? 'bg-primary-50/50' : ''} ${isMemberOfCurrentGroup ? 'border-green-500' : 'border-transparent'}`}
+                                                className={`p-3 flex items-center gap-3 cursor-pointer transition-colors border-l-4 ${overdueBgClass} ${isMemberOfCurrentGroup ? 'border-green-500' : 'border-transparent'}`}
                                                 onClick={() => toggleStudent(student.id)}
                                             >
                                                 <div className="text-primary-600">
@@ -364,6 +386,11 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, onAddG
                                                     <div className="flex items-center gap-2">
                                                         <p className={`text-sm font-bold truncate ${isSelected ? 'text-primary-900' : 'text-gray-700'}`}>{student.name}</p>
                                                         {isMemberOfCurrentGroup && <span className="bg-green-100 text-green-700 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">Membro</span>}
+                                                        {overdueCount >= 2 && (
+                                                            <span className={`${overdueBadgeClass} text-[9px] px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1 shadow-sm`}>
+                                                                <AlertTriangle className="w-2.5 h-2.5" /> {overdueCount} Pend.
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
                                                         <span>{age} anos</span>
