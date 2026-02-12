@@ -37,13 +37,27 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
 
   const [form, setForm] = useState(initialFormState);
 
+  // Helper para formatar data de forma segura (ignora fuso horário)
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const parts = dateString.split('-');
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
+  };
+
+  // Cálculo de idade seguro contra fuso horário
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
+    const parts = birthDateString.split('-');
+    if (parts.length !== 3) return 0;
+
+    const birthYear = parseInt(parts[0]);
+    const birthMonth = parseInt(parts[1]) - 1;
+    const birthDay = parseInt(parts[2]);
+
     const today = new Date();
-    const birthDate = new Date(birthDateString);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    let age = today.getFullYear() - birthYear;
+    const m = today.getMonth() - birthMonth;
+    if (m < 0 || (m === 0 && today.getDate() < birthDay)) {
         age--;
     }
     return age;
@@ -122,12 +136,12 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
       const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
       
       if (groupStudents.length === 0) {
-        // Adiciona apenas o cabeçalho se o grupo estiver vazio
         exportData.push({
           'Grupo': group.name,
           'Atleta': 'Nenhum atleta vinculado',
           'Idade': '-',
           'Categoria': '-',
+          'Data de Nascimento': '-',
           'Responsável': '-',
           'WhatsApp': '-',
           'Status': '-'
@@ -140,6 +154,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
             'Atleta': s.name,
             'Idade': calculateAge(s.birthDate),
             'Categoria': `Sub-${currentYear - birthYear}`,
+            'Data de Nascimento': formatDate(s.birthDate),
             'Responsável': s.guardian.name,
             'WhatsApp': s.guardian.phone,
             'Status': s.active ? 'Ativo' : 'Inativo'
@@ -177,7 +192,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
         s.name,
         s.rg || '-',
         s.cpf || '-',
-        s.birthDate ? new Date(s.birthDate).toLocaleDateString('pt-BR') : '-'
+        s.birthDate ? formatDate(s.birthDate) : '-'
     ]);
 
     autoTable(doc, {
@@ -353,7 +368,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                                         const age = calculateAge(student.birthDate);
                                         const overdueCount = getStudentOverdueCount(student.id);
                                         
-                                        // Lógica de cores condicional para atraso
                                         const overdueBgClass = overdueCount >= 3 
                                             ? 'bg-red-50 hover:bg-red-100' 
                                             : overdueCount === 2 
