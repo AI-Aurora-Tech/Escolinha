@@ -95,13 +95,21 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const transactionsInPeriod = transactions.filter(t => {
       const matchesDate = t.date >= startDate && t.date <= endDate;
       let matchesSearch = true;
-      if (studentSearchFilter.trim()) {
-          if (t.studentId) {
-              const student = students.find(s => s.id === t.studentId);
-              matchesSearch = student?.name.toLowerCase().includes(studentSearchFilter.toLowerCase()) || false;
-          } else {
-              matchesSearch = t.description.toLowerCase().includes(studentSearchFilter.toLowerCase());
-          }
+      const search = studentSearchFilter.toLowerCase().trim();
+
+      if (search) {
+          const student = t.studentId ? students.find(s => s.id === t.studentId) : null;
+          const studentName = student?.name.toLowerCase() || "";
+          const description = t.description.toLowerCase();
+          const category = (t.category || "").toLowerCase();
+          const amount = t.amount.toString();
+          
+          // Busca "Universal": localiza por qualquer um dos campos abaixo
+          matchesSearch = 
+            description.includes(search) || 
+            studentName.includes(search) || 
+            category.includes(search) ||
+            amount.includes(search);
       }
       return matchesDate && matchesSearch;
   });
@@ -405,7 +413,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input type="text" placeholder="Buscar por descrição ou atleta..." className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={studentSearchFilter} onChange={(e) => setStudentSearchFilter(e.target.value)} />
+                    <input type="text" placeholder="Busque qualquer item (nome, descrição, categoria, valor)..." className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={studentSearchFilter} onChange={(e) => setStudentSearchFilter(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-2">
                     <Filter className="text-gray-400 w-4 h-4" />
@@ -473,7 +481,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                     </td>
                                 </tr>
                                 )})
-                        ) : (<tr><td colSpan={8} className="p-12 text-center text-gray-400 font-medium italic">Nenhum registro no período.</td></tr>)}
+                        ) : (<tr><td colSpan={8} className="p-12 text-center text-gray-400 font-medium italic">Nenhum registro encontrado para os filtros selecionados.</td></tr>)}
                     </tbody>
                 </table>
             </div>
