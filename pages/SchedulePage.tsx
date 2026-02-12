@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag, AlertTriangle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
@@ -33,6 +33,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // --- AUTO FOCUS ON NEXT ACTIVITY FOR GUARDIANS ---
   useEffect(() => {
@@ -580,9 +582,30 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             const pres = selectedActivity.attendance.includes(s.id); 
                             const goals = selectedActivity.scorers?.filter(x => x === s.id).length || 0;
                             const isFeePaid = selectedActivity.feePayments?.includes(s.id);
+                            
+                            // Cálculo de inadimplência crítica (3 ou mais mensalidades)
+                            const overdueCount = transactions.filter(t => 
+                                t.studentId === s.id && 
+                                t.type === TransactionType.INCOME && 
+                                t.status === PaymentStatus.PENDING && 
+                                t.date < todayStr
+                            ).length;
+                            const isCriticalDefaulter = overdueCount >= 3;
+
                             return (
-                                <div key={s.id} className="flex items-center justify-between p-3 border-b last:border-0 hover:bg-gray-50 transition-colors rounded-lg">
-                                    <div className="flex items-center gap-2 min-w-0"><span className="text-sm font-medium truncate">{s.name}</span>{goals > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded-full font-bold">⚽ {goals}</span>}</div>
+                                <div key={s.id} className={`flex items-center justify-between p-3 border-b last:border-0 transition-colors rounded-lg ${isCriticalDefaulter ? 'bg-red-50 hover:bg-red-100 border-red-200 shadow-inner' : 'hover:bg-gray-50'}`}>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className="relative">
+                                            <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                            {isCriticalDefaulter && (
+                                                <div className="flex items-center gap-1 mt-0.5">
+                                                    <AlertTriangle className="w-3 h-3 text-red-600 animate-pulse" />
+                                                    <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter">{overdueCount} MENSALIDADES EM ATRASO</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {goals > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold shadow-sm">⚽ {goals}</span>}
+                                    </div>
                                     <div className="flex items-center gap-2">
                                         {!isGuardian ? (
                                             <><button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</button>{selectedActivity.fee && selectedActivity.fee > 0 && (<button onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${isFeePaid ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'}`} title={isFeePaid ? "Cancelar Pagamento da Taxa" : "Dar Baixa na Taxa"}><DollarSign className="w-5 h-5" /></button>)}</>
