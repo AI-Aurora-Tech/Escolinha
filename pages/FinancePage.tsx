@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet } from 'lucide-react';
+import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student, Group } from '../types';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet, User as UserIcon, ShieldCheck } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -9,13 +9,14 @@ import { supabase } from '../lib/supabaseClient';
 
 interface FinancePageProps {
   students: Student[];
+  groups: Group[]; // Adicionado prop de grupos
   transactions: Transaction[];
   plans: Plan[];
   onAddTransaction: (t: Omit<Transaction, 'id'> & { recurrenceMonths?: number }) => void;
   onUpdateTransaction: (t: Partial<Transaction>) => void;
 }
 
-export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, onAddTransaction, onUpdateTransaction }) => {
+export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, groups, onAddTransaction, onUpdateTransaction }) => {
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
   
   // Settings State
@@ -38,6 +39,11 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+
+  // Batch / Destination States
+  const [destType, setDestType] = useState<'GENERAL' | 'STUDENT' | 'GROUP'>('GENERAL');
+  const [targetStudentId, setTargetStudentId] = useState('');
+  const [targetGroupId, setTargetGroupId] = useState('');
 
   const INCOME_CATEGORIES = ['Mensalidade', 'Uniforme', 'Taxa de Torneio', 'Patrocínio', 'Doação', 'Outros'];
   const EXPENSE_CATEGORIES = ['Aluguel Campo', 'Salário Professor', 'Energia/Água', 'Material Esportivo', 'Marketing', 'Manutenção', 'Outros'];
@@ -143,22 +149,49 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTx.description && newTx.description.trim() !== "" && newTx.amount !== undefined && newTx.amount !== null) {
+        
         if (editingTxId) {
           onUpdateTransaction({
             id: editingTxId,
             ...newTx,
             amount: Number(newTx.amount),
-            paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
+            paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined,
+            studentId: destType === 'STUDENT' ? targetStudentId : undefined
           });
         } else {
-          onAddTransaction({
-              ...newTx,
-              amount: Number(newTx.amount),
-              paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined
-          } as Omit<Transaction, 'id'>);
+          // LÓGICA DE LANÇAMENTO EM LOTE OU INDIVIDUAL
+          if (destType === 'GROUP') {
+              const groupMembers = students.filter(s => s.active && (s.groupIds || []).includes(targetGroupId));
+              if (groupMembers.length === 0) {
+                  alert("Este grupo não possui alunos ativos.");
+                  return;
+              }
+
+              if (confirm(`Deseja gerar ${groupMembers.length} lançamentos individuais para o grupo selecionado?`)) {
+                  groupMembers.forEach(student => {
+                      onAddTransaction({
+                          ...newTx,
+                          description: `${newTx.description} - ${student.name}`,
+                          amount: Number(newTx.amount),
+                          paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined,
+                          studentId: student.id
+                      } as Omit<Transaction, 'id'>);
+                  });
+              } else return;
+          } else {
+              onAddTransaction({
+                  ...newTx,
+                  amount: Number(newTx.amount),
+                  paymentDate: newTx.status === PaymentStatus.PAID ? newTx.date : undefined,
+                  studentId: destType === 'STUDENT' ? targetStudentId : undefined
+              } as Omit<Transaction, 'id'>);
+          }
         }
         setIsModalOpen(false);
         setEditingTxId(null);
+        setDestType('GENERAL');
+        setTargetStudentId('');
+        setTargetGroupId('');
         setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 });
     } else {
         alert("Preencha a descrição e o valor do lançamento.");
@@ -177,6 +210,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       paymentMethod: t.paymentMethod || PaymentMethod.CASH,
       recurrence: 'NONE'
     });
+    setDestType(t.studentId ? 'STUDENT' : 'GENERAL');
+    setTargetStudentId(t.studentId || '');
     setIsModalOpen(true);
   };
 
@@ -362,7 +397,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div className="flex gap-2 w-full sm:w-auto">
                         <button onClick={handleExportExcel} className="p-2 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-100 transition-colors" title="Exportar Excel"><FileSpreadsheet className="w-5 h-5" /></button>
                         <button onClick={handleExportPDF} className="p-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors" title="Gerar Relatório PDF"><FileText className="w-5 h-5" /></button>
-                        <button onClick={() => { setEditingTxId(null); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                        <button onClick={() => { setEditingTxId(null); setDestType('GENERAL'); setTargetStudentId(''); setTargetGroupId(''); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
                     </div>
                 </div>
             </div>
@@ -532,9 +567,44 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
-                        <button type="button" onClick={() => setNewTx({...newTx, type: TransactionType.INCOME, category: 'Receita Geral'})} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 uppercase ${newTx.type === TransactionType.INCOME ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> Receita</button>
-                        <button type="button" onClick={() => setNewTx({...newTx, type: TransactionType.EXPENSE, category: 'Despesa Geral'})} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 uppercase ${newTx.type === TransactionType.EXPENSE ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> Despesa</button>
+                        <button type="button" onClick={() => setNewTx({...newTx, type: TransactionType.INCOME, category: INCOME_CATEGORIES[0]})} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 uppercase ${newTx.type === TransactionType.INCOME ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> Receita</button>
+                        <button type="button" onClick={() => setNewTx({...newTx, type: TransactionType.EXPENSE, category: EXPENSE_CATEGORIES[0]})} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 uppercase ${newTx.type === TransactionType.EXPENSE ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> Despesa</button>
                     </div>
+
+                    {!editingTxId && (
+                        <div className="space-y-3">
+                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Destinatário</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {[ {id:'GENERAL', label:'Geral', icon: Settings}, {id:'STUDENT', label:'Atleta', icon: UserIcon}, {id:'GROUP', label:'Grupo', icon: ShieldCheck} ].map(t => (
+                                    <button key={t.id} type="button" onClick={() => setDestType(t.id as any)} className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${destType === t.id ? 'bg-primary-50 border-primary-600 text-primary-700' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}>
+                                        <t.icon className="w-4 h-4" />
+                                        <span className="text-[10px] font-bold uppercase">{t.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {destType === 'STUDENT' && (
+                                <div className="animate-in slide-in-from-top-1">
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Selecionar Atleta</label>
+                                    <select required className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold" value={targetStudentId} onChange={e => setTargetStudentId(e.target.value)}>
+                                        <option value="">Escolha o atleta...</option>
+                                        {students.filter(s => s.active).sort((a,b) => a.name.localeCompare(b.name)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {destType === 'GROUP' && (
+                                <div className="animate-in slide-in-from-top-1">
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Selecionar Grupo</label>
+                                    <select required className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold" value={targetGroupId} onChange={e => setTargetGroupId(e.target.value)}>
+                                        <option value="">Escolha o grupo...</option>
+                                        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Descrição</label><input className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="text" placeholder="Ex: Pagamento Juiz, Material..." required value={newTx.description} onChange={e => setNewTx({...newTx, description: e.target.value})} /></div>
                     
                     <div className="grid grid-cols-2 gap-4">
@@ -544,7 +614,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                 {(newTx.type === TransactionType.INCOME ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
                         </div>
-                        <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Valor (R$)</label><input className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 font-bold" type="number" step="0.01" min="0" required value={newTx.amount} onChange={e => setNewTx({...newTx, amount: parseFloat(e.target.value)})} /></div>
+                        <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Valor (R$)</label><input className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 font-bold" type="number" step="0.01" min="0" required value={newTx.amount || ''} onChange={e => setNewTx({...newTx, amount: parseFloat(e.target.value)})} /></div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -558,7 +628,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                  <input type="checkbox" checked={newTx.status === PaymentStatus.PAID} onChange={e => setNewTx({...newTx, status: e.target.checked ? PaymentStatus.PAID : PaymentStatus.PENDING})} className="rounded text-primary-600 w-4 h-4" />
                                  <span className="text-xs font-bold text-gray-700">Já está pago?</span>
                              </label>
-                             {newTx.type === TransactionType.EXPENSE && !editingTxId && (
+                             {destType === 'GENERAL' && !editingTxId && (
                                  <div className="flex flex-col gap-2 pt-2 border-t border-gray-200">
                                      <label className="flex items-center gap-2 cursor-pointer">
                                          <input type="checkbox" checked={newTx.recurrence === 'MONTHLY'} onChange={e => setNewTx({...newTx, recurrence: e.target.checked ? 'MONTHLY' : 'NONE'})} className="rounded text-indigo-600 w-4 h-4" />
@@ -586,7 +656,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div className="flex justify-end gap-3 pt-6 border-t mt-4">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
                         <button type="submit" className={`px-8 py-2.5 text-white font-black rounded-xl shadow-lg transition-all ${newTx.type === TransactionType.INCOME ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-red-600 hover:bg-red-700 shadow-red-100'}`}>
-                            {editingTxId ? 'SALVAR ALTERAÇÕES' : (newTx.type === TransactionType.INCOME ? 'LANÇAR RECEITA' : 'LANÇAR DESPESA')}
+                            {editingTxId ? 'SALVAR ALTERAÇÕES' : (destType === 'GROUP' ? 'LANÇAR PARA O GRUPO' : (newTx.type === TransactionType.INCOME ? 'LANÇAR RECEITA' : 'LANÇAR DESPESA'))}
                         </button>
                     </div>
                 </form>

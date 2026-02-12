@@ -292,12 +292,10 @@ function App() {
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
 
-  // Fix: Use camelCase properties from the input parameter p
   const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
       await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]);
       await fetchData(true);
   };
-  // Fix: Use camelCase properties from the input parameter p
   const handleUpdatePlan = async (p: Plan) => {
       await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id);
       await fetchData(true);
@@ -434,14 +432,12 @@ function App() {
     }
   };
 
-  // Fix: Use camelCase properties from the input parameter a
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers || [], group_id: safeId(a.groupId), participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence || 'none', attendance: a.attendance || [], fee_payments: a.feePayments || [] };
       await supabase.from('activities').insert([payload]);
       await fetchData(true);
   };
 
-  // Fix: Use camelCase properties from the input parameter a
   const handleUpdateActivity = async (a: Activity) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee, location: a.location, presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), participants: a.participants, date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, fee_payments: a.feePayments };
       await supabase.from('activities').update(payload).eq('id', a.id);
@@ -562,7 +558,7 @@ function App() {
         </header>
         {currentPage === 'dashboard' && <DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />}
         {currentPage === 'students' && <StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={pageData?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />}
-        {currentPage === 'finance' && <FinancePage students={students} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />}
+        {currentPage === 'finance' && <FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />}
         {currentPage === 'schedule' && <SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />}
         {currentPage === 'groups' && <GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />}
         {currentPage === 'plans' && <PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />}
