@@ -76,7 +76,7 @@ function App() {
         if (studentsData) {
              setStudents(studentsData.map((s: any) => ({
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
-                 medicalCertificateExpiry: s.medical_expiry, photo_url: s.photo_url, address: s.address || {}, 
+                 medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
                  positions: s.positions || [], active: s.active, documents: s.documents || {}
              } as Student)));
@@ -292,10 +292,12 @@ function App() {
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
 
+  // Fix: Use camelCase properties from the input parameter p
   const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
       await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]);
       await fetchData(true);
   };
+  // Fix: Use camelCase properties from the input parameter p
   const handleUpdatePlan = async (p: Plan) => {
       await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id);
       await fetchData(true);
@@ -432,12 +434,14 @@ function App() {
     }
   };
 
+  // Fix: Use camelCase properties from the input parameter a
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers || [], group_id: safeId(a.groupId), participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence || 'none', attendance: a.attendance || [], fee_payments: a.feePayments || [] };
       await supabase.from('activities').insert([payload]);
       await fetchData(true);
   };
 
+  // Fix: Use camelCase properties from the input parameter a
   const handleUpdateActivity = async (a: Activity) => {
       const payload = { title: a.title, activity_type: a.type, fee: a.fee, location: a.location, presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), participants: a.participants, date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, fee_payments: a.feePayments };
       await supabase.from('activities').update(payload).eq('id', a.id);
