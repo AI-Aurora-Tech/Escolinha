@@ -166,7 +166,6 @@ function App() {
       }
 
       try {
-          // 1. Verificar se usuário já existe em app_users
           const { data: existingUser } = await supabase
               .from('app_users')
               .select('*')
@@ -192,7 +191,6 @@ function App() {
                }
           }
 
-          // 2. Se não existe, verificar se o CPF está vinculado a algum aluno
           const { data: studentsData } = await supabase.from('students').select('guardian');
           const matchedStudent = studentsData?.find((s: any) => 
               s.guardian?.cpf?.replace(/\D/g, '') === cleanInputCpf
@@ -205,7 +203,6 @@ function App() {
                   return;
               }
 
-              // 3. Primeiro acesso: Criar o usuário automaticamente
               const newUserPayload = {
                   name: matchedStudent.guardian.name,
                   email: matchedStudent.guardian.email || `${cleanInputCpf}@martinica.com`,
@@ -368,9 +365,12 @@ function App() {
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
         if (t.status === PaymentStatus.PAID) {
-            const student = students.find(s => s.id === (transactions.find(tx => tx.id === t.id)?.studentId));
-            if (student && student.guardian.phone) {
-                const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\nOlá *${student.guardian.name}*! Confirmamos o pagamento do atleta *${student.name}*.\nObrigado! Garotos do Martinica.`;
+            const fullTx = transactions.find(tx => tx.id === t.id);
+            const student = students.find(s => s.id === (fullTx?.studentId));
+            if (student && student.guardian.phone && fullTx) {
+                const amount = t.amount || fullTx.amount;
+                const description = t.description || fullTx.description;
+                const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}*:\n\n📌 *${description}*\n💰 Valor: *R$ ${amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                 sendZApiMessage(student.guardian.phone, msg);
             }
         }
@@ -433,13 +433,49 @@ function App() {
   };
 
   const handleAddActivity = async (a: Omit<Activity, 'id'>) => {
-      const payload = { title: a.title, activity_type: a.type, fee: a.fee || 0, location: a.location || '', presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers || [], group_id: safeId(a.groupId), participants: a.participants || [], date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence || 'none', attendance: a.attendance || [], fee_payments: a.feePayments || [] };
+      const payload = { 
+          title: a.title, 
+          activity_type: a.type, 
+          fee: a.fee || 0, 
+          location: a.location || '', 
+          presentation_time: a.presentationTime, 
+          opponent: a.opponent, 
+          home_score: a.homeScore, 
+          away_score: a.awayScore, 
+          scorers: a.scorers || [], 
+          group_id: safeId(a.groupId), 
+          participants: a.participants || [], 
+          date: a.date, 
+          start_time: a.startTime, 
+          end_time: a.endTime, 
+          recurrence: a.recurrence || 'none', 
+          attendance: a.attendance || [], 
+          fee_payments: a.feePayments || [] 
+      };
       await supabase.from('activities').insert([payload]);
       await fetchData(true);
   };
 
   const handleUpdateActivity = async (a: Activity) => {
-      const payload = { title: a.title, activity_type: a.type, fee: a.fee, location: a.location, presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), participants: a.participants, date: a.date, start_time: a.startTime, end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, fee_payments: a.feePayments };
+      const payload = { 
+          title: a.title, 
+          activity_type: a.type, 
+          fee: a.fee, 
+          location: a.location, 
+          presentation_time: a.presentationTime, 
+          opponent: a.opponent, 
+          home_score: a.homeScore, 
+          away_score: a.awayScore, 
+          scorers: a.scorers, 
+          group_id: safeId(a.groupId), 
+          participants: a.participants, 
+          date: a.date, 
+          start_time: a.startTime, 
+          end_time: a.endTime, 
+          recurrence: a.recurrence, 
+          attendance: a.attendance, 
+          fee_payments: a.feePayments 
+      };
       await supabase.from('activities').update(payload).eq('id', a.id);
       await fetchData(true);
   };
