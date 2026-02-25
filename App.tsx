@@ -246,7 +246,7 @@ const AppContent: React.FC = () => {
       }
   };
 
-  const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); setCurrentPage('dashboard'); };
+  const handleLogout = () => { setCurrentUser(null); setIsAuthenticated(false); navigate('/dashboard'); };
 
   const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
     setIsLoading(true);
