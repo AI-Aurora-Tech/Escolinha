@@ -21,14 +21,17 @@ async function startServer() {
 
   app.use(express.json());
 
-  // New endpoint to serve logs
-  app.get('/api/logs', (req, res) => {
+  // --- API ROUTER --- //
+  const apiRouter = express.Router();
+
+  // Endpoint to serve logs
+  apiRouter.get('/logs', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.json(serverLogs);
   });
 
   // Webhook endpoint for Mercado Pago
-  app.post('/api/mp-webhook', async (req, res) => {
+  apiRouter.post('/mp-webhook', async (req, res) => {
     console.log('--- [MP Webhook] Received Notification ---');
     console.log('Body:', JSON.stringify(req.body, null, 2));
 
@@ -100,6 +103,9 @@ async function startServer() {
           return { data: null };
       }
   }
+
+  // Mount the API router
+  app.use('/api', apiRouter);
 
   // Vite middleware should be the last thing to run
   if (process.env.NODE_ENV !== 'production') {
