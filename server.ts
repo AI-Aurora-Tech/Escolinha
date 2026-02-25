@@ -114,7 +114,7 @@ async function startServer() {
       appType: 'spa',
     });
     // This will serve the frontend for any route that is not an API route
-    app.use('*', vite.middlewares);
+    // app.use('*', vite.middlewares); // Temporarily disabled for testing
   }
 
   app.listen(PORT, '0.0.0.0', () => {
