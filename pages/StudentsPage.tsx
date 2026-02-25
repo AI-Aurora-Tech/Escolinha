@@ -848,8 +848,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button onClick={async () => {
                   try {
                     const response = await fetch('/api/logs');
-                    const text = await response.text();
-                    alert('--- RAW SERVER RESPONSE ---\n\n' + text);
+                    if (response.ok) {
+                      const logs = await response.json();
+                      alert('--- SERVER LOGS ---\n\n' + (logs.length > 0 ? logs.join('\n') : 'No logs yet.'));
+                    } else {
+                      alert('Failed to fetch logs. Status: ' + response.status);
+                    }
                   } catch (error) {
                     alert('Error fetching logs: ' + error);
                   }

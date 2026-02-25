@@ -101,13 +101,14 @@ async function startServer() {
       }
   }
 
-  // Vite middleware should be last
+  // Vite middleware should be the last thing to run
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    app.use(vite.middlewares);
+    // This will serve the frontend for any route that is not an API route
+    app.use('*', vite.middlewares);
   }
 
   app.listen(PORT, '0.0.0.0', () => {
