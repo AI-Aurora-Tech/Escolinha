@@ -752,20 +752,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   }, [occurrences, editingId]);
 
   const updateDoc = (field: string, sub: 'delivered' | 'isDigital', val: boolean) => {
-      setStudentForm(prev => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
+      setStudentForm((prev: any) => { const d = (prev.documents as any)[field] || { delivered: false, isDigital: false }; return { ...prev, documents: { ...prev.documents, [field]: { ...d, [sub]: val } } }; });
   };
 
   const toggleGroupSelection = (gid: string) => {
-      setStudentForm(prev => { const g = prev.groupIds || []; return { ...prev, groupIds: g.includes(gid) ? g.filter(id => id !== gid) : [...g, gid] }; });
+      setStudentForm((prev: any) => { const g = prev.groupIds || []; return { ...prev, groupIds: g.includes(gid) ? g.filter((id: any) => id !== gid) : [...g, gid] }; });
   };
 
   const togglePositionSelection = (pos: string) => {
-      setStudentForm(prev => { 
+      setStudentForm((prev: any) => { 
           const currentPositions = prev.positions || [];
           return { 
               ...prev, 
               positions: currentPositions.includes(pos) 
-                ? currentPositions.filter(p => p !== pos) 
+                ? currentPositions.filter((p: any) => p !== pos) 
                 : [...currentPositions, pos] 
           }; 
       });
@@ -777,7 +777,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     try {
         const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
         const data = await response.json();
-        if (!data.erro) setStudentForm(prev => ({ ...prev, address: { ...prev.address, street: data.logradouro, district: data.bairro, city: data.localidade, state: data.uf, cep: cep } }));
+        if (!data.erro) setStudentForm((prev: any) => ({ ...prev, address: { ...prev.address, street: data.logradouro, district: data.bairro, city: data.localidade, state: data.uf, cep: cep } }));
         else alert('CEP não encontrado.');
     } catch (error) { alert('Erro ao buscar CEP.'); } finally { setIsLoadingCep(false); }
   };

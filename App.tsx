@@ -51,7 +51,7 @@ function App() {
         ]);
         
         let studentsData;
-        let transactionsData;
+        let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const { data: allStudents } = await supabase.from('students').select('*');
@@ -61,13 +61,13 @@ function App() {
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
                  const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
-                 transactionsData = myTxs;
+                 transactionsData = myTxs || [];
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
              const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
              studentsData = allStudents;
-             transactionsData = allTxs;
+             transactionsData = allTxs || [];
         }
 
         const { data: usersData } = await supabase.from('app_users').select('*');
