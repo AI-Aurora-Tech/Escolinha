@@ -101,7 +101,7 @@ async function startServer() {
       }
   }
 
-  // Vite middleware for development
+  // Vite middleware should be last
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
