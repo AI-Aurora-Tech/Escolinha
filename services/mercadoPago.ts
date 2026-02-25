@@ -117,7 +117,6 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         ],
         payer: preferencesPayer,
         external_reference: data.externalReference,
-        notification_url: `${window.location.origin}/api/mp-webhook`,
         back_urls: {
           success: window.location.origin,
           failure: window.location.origin,
@@ -173,8 +172,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
                 last_name: payerPayload.last_name,
                 identification: payerPayload.identification
             },
-            external_reference: data.externalReference,
-            notification_url: `${window.location.origin}/api/mp-webhook`
+            external_reference: data.externalReference
         };
 
         const response = await fetch('/api/mp/v1/payments', {

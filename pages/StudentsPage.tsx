@@ -845,19 +845,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button onClick={handleDownloadTemplate} className="justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-xs sm:text-sm"><FileSpreadsheet className="w-4 h-4" /><span>Modelo</span></button>
                 <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
                 <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
-                <button onClick={async () => {
-                  try {
-                    const response = await fetch('/api/logs');
-                    if (response.ok) {
-                      const logs = await response.json();
-                      alert('--- SERVER LOGS ---\n\n' + (logs.length > 0 ? logs.join('\n') : 'No logs yet.'));
-                    } else {
-                      alert('Failed to fetch logs. Status: ' + response.status);
-                    }
-                  } catch (error) {
-                    alert('Error fetching logs: ' + error);
-                  }
-                }} className="justify-center flex items-center gap-2 bg-yellow-500 text-white px-3 py-2 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm text-xs sm:text-sm"><AlertTriangle className="w-4 h-4" /><span>Ver Logs</span></button>
                 <button onClick={handleOpenNew} className="col-span-2 justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-xs sm:text-sm"><Plus className="w-4 h-4" /><span>Novo Aluno</span></button>
             </div>
         )}
