@@ -3,11 +3,29 @@ import { createServer as createViteServer } from 'vite';
 import { supabase } from './src/lib/supabaseClient';
 import { PaymentStatus } from './src/types';
 
+// Store logs in memory
+let serverLogs: string[] = [];
+const originalLog = console.log;
+console.log = (...args: any[]) => {
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+  serverLogs.push(`[${new Date().toISOString()}] ${message}`);
+  if (serverLogs.length > 100) { // Keep only the last 100 logs
+    serverLogs.shift();
+  }
+  originalLog.apply(console, args);
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // New endpoint to serve logs
+  app.get('/api/logs', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json(serverLogs);
+  });
 
   // Webhook endpoint for Mercado Pago
   app.post('/api/mp-webhook', async (req, res) => {
