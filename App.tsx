@@ -452,35 +452,116 @@ function App() {
           attendance: a.attendance || [], 
           fee_payments: a.feePayments || [] 
       };
-      await supabase.from('activities').insert([payload]);
+      
+      const { data: newActivityData, error } = await supabase
+        .from('activities')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating activity:", error);
+        alert(`Erro ao criar atividade: ${error.message}`);
+        return;
+      }
+
+      if (newActivityData && a.type === 'GAME' && a.fee && a.fee > 0) {
+        let participantIds: string[] = [];
+        if (a.groupId) {
+            participantIds = students
+                .filter(s => s.active && (s.groupIds || []).includes(a.groupId!))
+                .map(s => s.id);
+        } else if (a.participants && a.participants.length > 0) {
+            participantIds = a.participants;
+        }
+
+        const transactionPayloads = participantIds.map(studentId => ({
+            description: `Taxa Jogo: ${a.title}`,
+            category: 'Taxa de Atividade',
+            amount: a.fee,
+            type: TransactionType.INCOME,
+            date: a.date,
+            status: PaymentStatus.PENDING,
+            student_id: studentId,
+            external_reference: `game_fee_${newActivityData.id}_${studentId}`,
+            recurrence: 'NONE',
+        }));
+        
+        if (transactionPayloads.length > 0) {
+            await supabase.from('transactions').insert(transactionPayloads);
+        }
+      }
+
       await fetchData(true);
   };
 
   const handleUpdateActivity = async (a: Activity) => {
+      const originalActivity = activities.find(act => act.id === a.id);
+
       const payload = { 
-          title: a.title, 
-          activity_type: a.type, 
-          fee: a.fee, 
-          location: a.location, 
-          presentation_time: a.presentationTime, 
-          opponent: a.opponent, 
-          home_score: a.homeScore, 
-          away_score: a.awayScore, 
-          scorers: a.scorers, 
-          group_id: safeId(a.groupId), 
-          participants: a.participants, 
-          date: a.date, 
-          start_time: a.startTime, 
-          end_time: a.endTime, 
-          recurrence: a.recurrence, 
-          attendance: a.attendance, 
+          title: a.title, activity_type: a.type, fee: a.fee, location: a.location, 
+          presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, 
+          away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), 
+          participants: a.participants, date: a.date, start_time: a.startTime, 
+          end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, 
           fee_payments: a.feePayments 
       };
       await supabase.from('activities').update(payload).eq('id', a.id);
+
+      const isGameWithFee = a.type === 'GAME' && a.fee && a.fee > 0;
+      const wasGameWithFee = originalActivity?.type === 'GAME' && originalActivity.fee && originalActivity.fee > 0;
+
+      // --- Sync Transactions ---
+      if (isGameWithFee) {
+          let participantIds: string[] = [];
+          if (a.groupId) {
+              participantIds = students.filter(s => s.active && (s.groupIds || []).includes(a.groupId!)).map(s => s.id);
+          } else if (a.participants) {
+              participantIds = a.participants;
+          }
+
+          const existingTxs = transactions.filter(t => t.externalReference?.startsWith(`game_fee_${a.id}_`));
+          const participantIdSet = new Set(participantIds);
+          
+          const transactionsToInsert = [];
+          const transactionsToUpdate = [];
+
+          for (const studentId of participantIds) {
+              const extRef = `game_fee_${a.id}_${studentId}`;
+              const existingTx = existingTxs.find(t => t.externalReference === extRef);
+
+              if (!existingTx) {
+                  transactionsToInsert.push({
+                      description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
+                      amount: a.fee, type: TransactionType.INCOME, date: a.date,
+                      status: PaymentStatus.PENDING, student_id: studentId,
+                      external_reference: extRef, recurrence: 'NONE',
+                  });
+              } else if (existingTx.status === PaymentStatus.PENDING && (existingTx.amount !== a.fee || existingTx.date !== a.date)) {
+                  transactionsToUpdate.push(
+                      supabase.from('transactions').update({ amount: a.fee, date: a.date }).eq('id', existingTx.id)
+                  );
+              }
+          }
+
+          const txsToDelete = existingTxs
+              .filter(tx => !participantIdSet.has(tx.studentId!) && tx.status === PaymentStatus.PENDING)
+              .map(tx => tx.id);
+
+          if (transactionsToInsert.length > 0) await supabase.from('transactions').insert(transactionsToInsert);
+          if (transactionsToUpdate.length > 0) await Promise.all(transactionsToUpdate);
+          if (txsToDelete.length > 0) await supabase.from('transactions').delete().in('id', txsToDelete);
+
+      } else if (wasGameWithFee && !isGameWithFee) {
+          await supabase.from('transactions').delete().like('external_reference', `game_fee_${a.id}_%`).eq('status', PaymentStatus.PENDING);
+      }
+
       await fetchData(true);
   };
 
   const handleDeleteActivity = async (id: string) => {
+      // Also delete associated pending fee transactions
+      await supabase.from('transactions').delete().like('external_reference', `game_fee_${id}_%`).eq('status', PaymentStatus.PENDING);
       await supabase.from('activities').delete().eq('id', id);
       await fetchData(true);
   };
@@ -497,40 +578,59 @@ function App() {
     const activity = activities.find(a => a.id === activityId);
     const student = students.find(s => s.id === studentId);
     if (!activity || !student) return;
-    
-    const extRef = `fee_${activityId}_${studentId}`;
+
+    const extRef = `game_fee_${activityId}_${studentId}`;
     const feePayments = activity.feePayments || [];
     const isCurrentlyPaid = feePayments.includes(studentId);
     const becomingPaid = !isCurrentlyPaid;
 
-    const nextFeePayments = becomingPaid 
-        ? [...feePayments, studentId] 
+    const nextFeePayments = becomingPaid
+        ? [...feePayments, studentId]
         : feePayments.filter(id => id !== studentId);
-    
+
     const { error: actError } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
-    if (actError) return;
+    if (actError) {
+        console.error("Error updating activity fee payments:", actError);
+        return;
+    }
+
+    const existingTx = transactions.find(t => t.externalReference === extRef);
 
     if (becomingPaid) {
-        const txPayload = {
-            description: `Taxa: ${activity.title} - ${student.name}`,
-            category: 'Taxa de Atividade',
-            amount: Number(activity.fee) || 0,
-            type: TransactionType.INCOME,
-            date: activity.date,
-            payment_date: new Date().toISOString().split('T')[0],
-            status: PaymentStatus.PAID,
-            student_id: studentId,
-            payment_method: PaymentMethod.CASH,
-            external_reference: extRef
-        };
-        await supabase.from('transactions').upsert(txPayload, { onConflict: 'external_reference' });
+        if (existingTx) {
+            await supabase.from('transactions').update({
+                status: PaymentStatus.PAID,
+                payment_date: new Date().toISOString().split('T')[0],
+                payment_method: PaymentMethod.CASH
+            }).eq('id', existingTx.id);
+        } else {
+            // This is a fallback, but with the new logic it should be rare.
+            const txPayload = {
+                description: `Taxa: ${activity.title}`,
+                category: 'Taxa de Atividade',
+                amount: Number(activity.fee) || 0,
+                type: TransactionType.INCOME,
+                date: activity.date,
+                payment_date: new Date().toISOString().split('T')[0],
+                status: PaymentStatus.PAID,
+                student_id: studentId,
+                payment_method: PaymentMethod.CASH,
+                external_reference: extRef
+            };
+            await supabase.from('transactions').insert([txPayload]);
+        }
 
         if (student.guardian.phone) {
             const msg = `✅ *PAGAMENTO DE TAXA RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\n\nConfirmamos o recebimento da taxa de *R$ ${Number(activity.fee).toFixed(2)}* referente à atividade: *${activity.title}* do atleta *${student.name}*.\n\nObrigado! Garotos do Martinica.`;
             sendZApiMessage(student.guardian.phone, msg);
         }
     } else {
-        await supabase.from('transactions').delete().eq('external_reference', extRef);
+        if (existingTx) {
+            await supabase.from('transactions').update({
+                status: PaymentStatus.PENDING,
+                payment_date: null
+            }).eq('id', existingTx.id);
+        }
     }
 
     await fetchData(true);
