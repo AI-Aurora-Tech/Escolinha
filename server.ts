@@ -3,6 +3,9 @@ import { createServer as createViteServer } from 'vite';
 import { supabase } from './lib/supabaseClient';
 import { PaymentStatus } from './types';
 import { sendZApiMessage } from './services/zapiService';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 // Store logs in memory
 let serverLogs: string[] = [];
@@ -10,9 +13,7 @@ const originalLog = console.log;
 console.log = (...args: any[]) => {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
   serverLogs.push(`[${new Date().toISOString()}] ${message}`);
-  if (serverLogs.length > 100) { // Keep only the last 100 logs
-    serverLogs.shift();
-  }
+  if (serverLogs.length > 200) serverLogs.shift();
   originalLog.apply(console, args);
 };
 
@@ -20,86 +21,129 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // 1. MIDDLEWARES BÁSICOS
   app.use(express.json());
 
-  // --- WEBHOOK MERCADO PAGO (RAIZ PARA EVITAR 302) ---
-  app.get('/api/mp-webhook', (req, res) => {
-    res.status(200).send('Webhook endpoint is active. Use POST for notifications.');
+  // --- ROTA DE TESTE ABSOLUTA (PARA TESTAR O 302) ---
+  app.get('/ping', (req, res) => {
+    console.log('[PING] Recebido');
+    res.send('PONG_SERVER_IS_UP');
   });
 
-  app.post('/api/mp-webhook', async (req, res) => {
-    console.log('--- [MP Webhook] Notificação Recebida ---');
+  // --- WEBHOOK MERCADO PAGO ---
+  app.all('/webhook-mp', async (req, res) => {
+    console.log(`[MP Webhook] Chamada recebida: ${req.method}`);
+    
+    if (req.method === 'GET') {
+      return res.send('WEBHOOK_ENDPOINT_OK');
+    }
+
     const notification = req.body;
-    console.log('[MP Webhook] Payload:', JSON.stringify(notification));
+    console.log('[MP Webhook] Dados:', JSON.stringify(notification));
 
-    if (notification.type === 'payment' || notification.action?.startsWith('payment.')) {
+    try {
+        const token = process.env.MP_ACCESS_TOKEN || (await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').maybeSingle()).data?.value;
+        
+        if (!token) {
+            console.error('[MP Webhook] Erro: Token não configurado.');
+            return res.status(200).send('OK');
+        }
+
         const paymentId = notification.data?.id || notification.id;
-        if (!paymentId) return res.status(200).send('OK');
-
-        try {
-            const token = await getMPAccessToken();
-            if (!token) {
-                console.error('[MP Webhook] Erro: Token não encontrado.');
-                return res.status(200).send('OK');
-            }
-
-            const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        if (paymentId) {
+            const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+            
+            if (mpRes.ok) {
+                const paymentData = await mpRes.ok ? await mpRes.json() : null;
+                if (!paymentData) return res.status(200).send('OK');
 
-            if (!response.ok) {
-                console.error(`[MP Webhook] Erro API MP: ${response.status}`);
-                return res.status(200).send('OK');
-            }
-
-            const paymentData = await response.json();
-            const { external_reference, status } = paymentData;
-
-            if (external_reference && status === 'approved') {
-                const { data: updatedTxs, error: updateError } = await supabase
-                    .from('transactions')
-                    .update({
-                        status: PaymentStatus.PAID,
-                        payment_date: new Date().toISOString().split('T')[0],
-                    })
-                    .eq('external_reference', external_reference)
-                    .select();
-
-                if (!updateError && updatedTxs && updatedTxs.length > 0) {
-                    for (const tx of updatedTxs) {
-                        if (tx.student_id) {
-                            const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
-                            if (student?.guardian?.phone) {
-                                const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
-                                await sendZApiMessage(student.guardian.phone, msg);
+                console.log(`[MP Webhook] Pagamento: ${paymentData.status} | Ref: ${paymentData.external_reference}`);
+                
+                if (paymentData.status === 'approved' && paymentData.external_reference) {
+                    const { data: updated } = await supabase
+                        .from('transactions')
+                        .update({ status: PaymentStatus.PAID, payment_date: new Date().toISOString().split('T')[0] })
+                        .eq('external_reference', paymentData.external_reference)
+                        .select();
+                    
+                    if (updated && updated.length > 0) {
+                        console.log('[MP Webhook] Baixa realizada com sucesso.');
+                        for (const tx of updated) {
+                            if (tx.student_id) {
+                                const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
+                                if (student?.guardian?.phone) {
+                                    const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+                                    await sendZApiMessage(student.guardian.phone, msg);
+                                }
                             }
                         }
                     }
                 }
             }
-        } catch (error) {
-            console.error('[MP Webhook] Exceção:', error);
         }
+    } catch (error) {
+        console.error('[MP Webhook] Erro fatal:', error);
     }
     res.status(200).send('OK');
   });
 
-  // --- API ROUTER --- //
-  const apiRouter = express.Router();
+  // --- API ROUTES ---
+  app.get('/api/logs', (req, res) => res.json(serverLogs));
 
-  async function getMPAccessToken() {
-    // Tenta primeiro a variável de ambiente (configurada no painel do AI Studio)
-    if (process.env.MP_ACCESS_TOKEN) return process.env.MP_ACCESS_TOKEN;
-    
-    // Se não houver, tenta buscar no banco de dados
-    const { data } = await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').maybeSingle();
-    return data?.value || null;
-  }
+  // Endpoint para o frontend consultar o status de um pagamento (contorna o erro 302 do webhook)
+  app.get('/api/payment-status/:ref', async (req, res) => {
+    const { ref } = req.params;
+    console.log(`[Status Check] Verificando status para ref: ${ref}`);
 
-  // Mount the API router
-  app.use('/api', apiRouter);
+    try {
+        const token = process.env.MP_ACCESS_TOKEN || (await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').maybeSingle()).data?.value;
+        if (!token) return res.status(500).json({ error: 'Token não configurado' });
 
-  // Vite middleware should be the last thing to run
+        // Busca o pagamento no Mercado Pago pela referência externa
+        const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/search?external_reference=${ref}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!mpRes.ok) return res.status(500).json({ error: 'Erro na API do Mercado Pago' });
+
+        const searchData = await mpRes.json();
+        const payment = searchData.results?.[0];
+
+        if (payment && payment.status === 'approved') {
+            console.log(`[Status Check] Pagamento aprovado encontrado para ref: ${ref}. Baixando...`);
+            
+            // Atualiza no banco
+            const { data: updated, error: updateError } = await supabase
+                .from('transactions')
+                .update({ status: PaymentStatus.PAID, payment_date: new Date().toISOString().split('T')[0] })
+                .eq('external_reference', ref)
+                .select();
+
+            if (!updateError && updated && updated.length > 0) {
+                // Envia WhatsApp
+                for (const tx of updated) {
+                    if (tx.student_id) {
+                        const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
+                        if (student?.guardian?.phone) {
+                            const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+                            await sendZApiMessage(student.guardian.phone, msg);
+                        }
+                    }
+                }
+                return res.json({ status: 'approved', updated: true });
+            }
+        }
+
+        res.json({ status: payment?.status || 'pending' });
+    } catch (error) {
+        console.error('[Status Check] Erro:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    }
+  });
+
+  // --- VITE MIDDLEWARE (SPA FALLBACK) ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

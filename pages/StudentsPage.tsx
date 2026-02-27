@@ -110,6 +110,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
   }, [transactions, showPixModal, pixTxIds]);
 
+  // Polling para verificar status do pagamento (contorna o erro 302 do webhook no ambiente de preview)
+  useEffect(() => {
+    let interval: any;
+    const pixDataTyped = pixData as any;
+    if (showPixModal && pixDataTyped?.externalReference && !pixLoading) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/payment-status/${pixDataTyped.externalReference}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'approved') {
+              // O próprio endpoint já atualiza o Supabase, o useEffect acima cuidará de fechar o modal
+              console.log("Pagamento aprovado detectado via polling!");
+            }
+          }
+        } catch (e) {
+          console.error("Erro no polling:", e);
+        }
+      }, 5000); // Verifica a cada 5 segundos
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [showPixModal, pixData, pixLoading]);
+
   const calculateAge = (birthDateString: string) => {
     if (!birthDateString) return 0;
     const today = new Date(); const birthDate = new Date(birthDateString);

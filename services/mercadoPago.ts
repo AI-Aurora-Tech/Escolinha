@@ -147,7 +147,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
   }
 };
 
-export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qrCode: string, qrCodeBase64: string, id: number } | null> => {
+export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qrCode: string, qrCodeBase64: string, id: number, externalReference: string } | null> => {
     const token = await getMPAccessToken();
     if (!token) {
         console.error("Token do Mercado Pago não configurado.");
@@ -201,7 +201,8 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             return {
                 id: result.id,
                 qrCode: result.point_of_interaction.transaction_data.qr_code,
-                qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64
+                qrCodeBase64: result.point_of_interaction.transaction_data.qr_code_base64,
+                externalReference: data.externalReference
             };
         }
         
