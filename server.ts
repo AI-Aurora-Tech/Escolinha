@@ -22,36 +22,24 @@ async function startServer() {
 
   app.use(express.json());
 
-  // --- API ROUTER --- //
-  const apiRouter = express.Router();
-
-  // Endpoint to serve logs
-  apiRouter.get('/logs', (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.json(serverLogs);
+  // --- WEBHOOK MERCADO PAGO (RAIZ PARA EVITAR 302) ---
+  app.get('/api/mp-webhook', (req, res) => {
+    res.status(200).send('Webhook endpoint is active. Use POST for notifications.');
   });
 
-  // Webhook endpoint for Mercado Pago
-  apiRouter.post('/mp-webhook', async (req, res) => {
+  app.post('/api/mp-webhook', async (req, res) => {
     console.log('--- [MP Webhook] Notificação Recebida ---');
     const notification = req.body;
     console.log('[MP Webhook] Payload:', JSON.stringify(notification));
 
-    // Mercado Pago envia notificações de 'payment' ou 'merchant_order'
     if (notification.type === 'payment' || notification.action?.startsWith('payment.')) {
         const paymentId = notification.data?.id || notification.id;
-        
-        if (!paymentId) {
-            console.log('[MP Webhook] ID de pagamento não encontrado no payload.');
-            return res.status(200).send('OK');
-        }
-
-        console.log(`[MP Webhook] Processando Pagamento ID: ${paymentId}`);
+        if (!paymentId) return res.status(200).send('OK');
 
         try {
             const token = await getMPAccessToken();
             if (!token) {
-                console.error('[MP Webhook] ERRO: Access Token do Mercado Pago não configurado (env ou DB).');
+                console.error('[MP Webhook] Erro: Token não encontrado.');
                 return res.status(200).send('OK');
             }
 
@@ -60,18 +48,14 @@ async function startServer() {
             });
 
             if (!response.ok) {
-                console.error(`[MP Webhook] Erro na API do Mercado Pago: ${response.status}`);
+                console.error(`[MP Webhook] Erro API MP: ${response.status}`);
                 return res.status(200).send('OK');
             }
 
             const paymentData = await response.json();
-            const { external_reference, status, status_detail } = paymentData;
-
-            console.log(`[MP Webhook] Status do Pagamento: ${status} (${status_detail}) | Ref: ${external_reference}`);
+            const { external_reference, status } = paymentData;
 
             if (external_reference && status === 'approved') {
-                console.log(`[MP Webhook] ✅ Pagamento APROVADO. Atualizando banco de dados...`);
-
                 const { data: updatedTxs, error: updateError } = await supabase
                     .from('transactions')
                     .update({
@@ -81,36 +65,27 @@ async function startServer() {
                     .eq('external_reference', external_reference)
                     .select();
 
-                if (updateError) {
-                    console.error('[MP Webhook] Erro ao atualizar transação no Supabase:', updateError);
-                } else if (updatedTxs && updatedTxs.length > 0) {
-                    console.log(`[MP Webhook] Sucesso: ${updatedTxs.length} transação(ões) baixada(s).`);
-                    
+                if (!updateError && updatedTxs && updatedTxs.length > 0) {
                     for (const tx of updatedTxs) {
                         if (tx.student_id) {
-                            const { data: student } = await supabase
-                                .from('students')
-                                .select('name, guardian')
-                                .eq('id', tx.student_id)
-                                .single();
-                            
-                            if (student && student.guardian?.phone) {
+                            const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
+                            if (student?.guardian?.phone) {
                                 const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                                 await sendZApiMessage(student.guardian.phone, msg);
                             }
                         }
                     }
-                } else {
-                    console.log(`[MP Webhook] Nenhuma transação encontrada com a referência: ${external_reference}`);
                 }
             }
         } catch (error) {
-            console.error('[MP Webhook] Exceção ao processar webhook:', error);
+            console.error('[MP Webhook] Exceção:', error);
         }
     }
-
     res.status(200).send('OK');
   });
+
+  // --- API ROUTER --- //
+  const apiRouter = express.Router();
 
   async function getMPAccessToken() {
     // Tenta primeiro a variável de ambiente (configurada no painel do AI Studio)
