@@ -33,21 +33,25 @@ async function startServer() {
 
   // Webhook endpoint for Mercado Pago
   apiRouter.post('/mp-webhook', async (req, res) => {
-    console.log('--- [MP Webhook] Received Notification ---');
+    console.log('--- [MP Webhook] Notificação Recebida ---');
     const notification = req.body;
+    console.log('[MP Webhook] Payload:', JSON.stringify(notification));
 
-    // Mercado Pago sends notifications for 'payment' and 'merchant_order'
-    // We are interested in 'payment'
+    // Mercado Pago envia notificações de 'payment' ou 'merchant_order'
     if (notification.type === 'payment' || notification.action?.startsWith('payment.')) {
         const paymentId = notification.data?.id || notification.id;
-        if (!paymentId) return res.status(200).send('OK');
+        
+        if (!paymentId) {
+            console.log('[MP Webhook] ID de pagamento não encontrado no payload.');
+            return res.status(200).send('OK');
+        }
 
-        console.log(`[MP Webhook] Processing payment ID: ${paymentId}`);
+        console.log(`[MP Webhook] Processando Pagamento ID: ${paymentId}`);
 
         try {
             const token = await getMPAccessToken();
             if (!token) {
-                console.error('[MP Webhook] MP Access Token not found in database.');
+                console.error('[MP Webhook] ERRO: Access Token do Mercado Pago não configurado (env ou DB).');
                 return res.status(200).send('OK');
             }
 
@@ -56,17 +60,18 @@ async function startServer() {
             });
 
             if (!response.ok) {
-                console.error(`[MP Webhook] MP API Error: ${response.status}`);
+                console.error(`[MP Webhook] Erro na API do Mercado Pago: ${response.status}`);
                 return res.status(200).send('OK');
             }
 
             const paymentData = await response.json();
-            const { external_reference, status } = paymentData;
+            const { external_reference, status, status_detail } = paymentData;
+
+            console.log(`[MP Webhook] Status do Pagamento: ${status} (${status_detail}) | Ref: ${external_reference}`);
 
             if (external_reference && status === 'approved') {
-                console.log(`[MP Webhook] Payment approved for ref: ${external_reference}`);
+                console.log(`[MP Webhook] ✅ Pagamento APROVADO. Atualizando banco de dados...`);
 
-                // Update transaction in Supabase
                 const { data: updatedTxs, error: updateError } = await supabase
                     .from('transactions')
                     .update({
@@ -77,11 +82,10 @@ async function startServer() {
                     .select();
 
                 if (updateError) {
-                    console.error('[MP Webhook] Error updating DB:', updateError);
+                    console.error('[MP Webhook] Erro ao atualizar transação no Supabase:', updateError);
                 } else if (updatedTxs && updatedTxs.length > 0) {
-                    console.log(`[MP Webhook] ${updatedTxs.length} transactions updated successfully.`);
+                    console.log(`[MP Webhook] Sucesso: ${updatedTxs.length} transação(ões) baixada(s).`);
                     
-                    // Send WhatsApp confirmation
                     for (const tx of updatedTxs) {
                         if (tx.student_id) {
                             const { data: student } = await supabase
@@ -96,12 +100,12 @@ async function startServer() {
                             }
                         }
                     }
+                } else {
+                    console.log(`[MP Webhook] Nenhuma transação encontrada com a referência: ${external_reference}`);
                 }
-            } else {
-                console.log(`[MP Webhook] Payment status: ${status} for ref: ${external_reference}`);
             }
         } catch (error) {
-            console.error('[MP Webhook] Exception:', error);
+            console.error('[MP Webhook] Exceção ao processar webhook:', error);
         }
     }
 
@@ -109,7 +113,11 @@ async function startServer() {
   });
 
   async function getMPAccessToken() {
-    const { data } = await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').single();
+    // Tenta primeiro a variável de ambiente (configurada no painel do AI Studio)
+    if (process.env.MP_ACCESS_TOKEN) return process.env.MP_ACCESS_TOKEN;
+    
+    // Se não houver, tenta buscar no banco de dados
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').maybeSingle();
     return data?.value || null;
   }
 
