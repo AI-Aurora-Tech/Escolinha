@@ -263,6 +263,43 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       }
   };
 
+  const handleBatchSendDocReminders = async () => {
+      const studentsWithMissingDocs = students.filter(s => s.active && hasMissingDocs(s));
+
+      if (studentsWithMissingDocs.length === 0) {
+          alert("Não há atletas ativos com documentos pendentes para notificar.");
+          return;
+      }
+
+      const confirmMsg = `Deseja enviar lembretes de documentos via WhatsApp para ${studentsWithMissingDocs.length} responsáveis?\n\nREGRA DE SEGURANÇA: O sistema enviará 1 mensagem a cada 10 segundos para evitar que seu número seja bloqueado por SPAM.`;
+      
+      if (!confirm(confirmMsg)) return;
+
+      setIsGenerating(true);
+      let successCount = 0;
+
+      for (let i = 0; i < studentsWithMissingDocs.length; i++) {
+          const student = studentsWithMissingDocs[i];
+          const phone = student.guardian.phone.replace(/\D/g, '');
+          
+          if (phone) {
+              const missingDocs = getMissingDocsList(student);
+              const docsListString = missingDocs.map(doc => `• ${doc}`).join('\n');
+              const msg = `Olá *${student.guardian.name}*, aqui é da escolinha *Garotos do Martinica*! ⚽\n\nNotamos que o(a) atleta *${student.name}* está com pendências na entrega da seguinte documentação:\n\n${docsListString}\n\nPor favor, entregue o quanto antes na secretaria para regularizar a inscrição. Obrigado!`;
+              
+              const sent = await sendZApiMessage(phone, msg);
+              if (sent) successCount++;
+          }
+
+          if (i < studentsWithMissingDocs.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 10000));
+          }
+      }
+
+      setIsGenerating(false);
+      alert(`Processo concluído!\nEnviados com sucesso: ${successCount}\nFalhas/Sem Tel: ${studentsWithMissingDocs.length - successCount}`);
+  };
+
   const handleBatchSendCharges = async () => {
       const debtors = students.filter(s => {
           if (!s.active) return false;
@@ -864,7 +901,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 </button>
                 <button onClick={handleBatchSendCharges} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    <span>Cobrar</span>
+                    <span>Cobrar Dívidas</span>
+                </button>
+                <button onClick={handleBatchSendDocReminders} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-orange-600 text-white px-3 py-2 rounded-lg hover:bg-orange-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
+                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileWarning className="w-4 h-4" />}
+                    <span>Cobrar Docs</span>
                 </button>
                 <input type="file" ref={fileInputRef} className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-xs sm:text-sm"><Upload className="w-4 h-4" /><span>Importar</span></button>
