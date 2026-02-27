@@ -1585,7 +1585,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {/* MODAL NOVA OCORRÊNCIA */}
       {showOccurrenceModal && (
         <div className="fixed inset-0 z-120 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-sm p-6 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in slide-in-from-bottom-4 duration-200">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter flex items-center gap-2">
                     <MessageSquareWarning className="text-orange-600 w-5 h-5" /> Registrar Ocorrência

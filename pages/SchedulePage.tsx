@@ -130,7 +130,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           ...newActivity, 
           fee: hasFee ? (newActivity.fee || 0) : 0, 
           groupId: targetType === 'GROUP' ? newActivity.groupId : undefined, 
-          participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : [], 
+          participants: targetType === 'INDIVIDUAL' ? Array.from(selectedStudentIds) : (targetType === 'GROUP' && newActivity.groupId ? students.filter(s => s.active && (s.groupIds || []).includes(newActivity.groupId!)).map(s => s.id) : []), 
           scorers: newActivity.type === 'GAME' ? (newActivity.scorers || []).slice(0, newActivity.homeScore || 0) : [] 
       };
       
