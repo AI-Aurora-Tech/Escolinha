@@ -540,18 +540,42 @@ const AppContent: React.FC = () => {
           for (const studentId of participantIds) {
               const extRef = `game_fee_${a.id}_${studentId}`;
               const existingTx = existingTxs.find(t => t.externalReference === extRef);
+              const isPresent = (a.attendance || []).includes(studentId);
 
               if (!existingTx) {
                   transactionsToInsert.push({
                       description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
                       amount: a.fee, type: TransactionType.INCOME, date: a.date,
-                      status: PaymentStatus.PENDING, student_id: studentId,
+                      status: isPresent ? PaymentStatus.PENDING : PaymentStatus.CANCELLED, 
+                      student_id: studentId,
                       external_reference: extRef, recurrence: 'NONE',
                   });
-              } else if (existingTx.status === PaymentStatus.PENDING && (existingTx.amount !== a.fee || existingTx.date !== a.date)) {
-                  transactionsToUpdate.push(
-                      supabase.from('transactions').update({ amount: a.fee, date: a.date }).eq('id', existingTx.id)
-                  );
+              } else {
+                  const updates: any = {};
+                  let needsUpdate = false;
+
+                  if (existingTx.status === PaymentStatus.PENDING && (existingTx.amount !== a.fee || existingTx.date !== a.date)) {
+                      updates.amount = a.fee;
+                      updates.date = a.date;
+                      needsUpdate = true;
+                  }
+
+                  // Sincronizar status com presença (apenas para transações não pagas)
+                  const isGameFinished = typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
+                  
+                  if (existingTx.status === PaymentStatus.PENDING && !isPresent && isGameFinished) {
+                      updates.status = PaymentStatus.CANCELLED;
+                      needsUpdate = true;
+                  } else if (existingTx.status === PaymentStatus.CANCELLED && isPresent) {
+                      updates.status = PaymentStatus.PENDING;
+                      needsUpdate = true;
+                  }
+
+                  if (needsUpdate) {
+                      transactionsToUpdate.push(
+                          supabase.from('transactions').update(updates).eq('id', existingTx.id)
+                      );
+                  }
               }
           }
 
@@ -580,8 +604,33 @@ const AppContent: React.FC = () => {
   const handleUpdateAttendance = async (activityId: string, studentId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity) return;
-    const nextAttendance = activity.attendance.includes(studentId) ? activity.attendance.filter(id => id !== studentId) : [...activity.attendance, studentId];
+    
+    const isPresent = activity.attendance.includes(studentId);
+    const nextAttendance = isPresent 
+      ? activity.attendance.filter(id => id !== studentId) 
+      : [...activity.attendance, studentId];
+    
     await supabase.from('activities').update({ attendance: nextAttendance }).eq('id', activityId);
+
+    // Regra: Se for um JOGO com taxa, sincronizar o status da transação com a presença
+    if (activity.type === 'GAME' && activity.fee && activity.fee > 0) {
+        const extRef = `game_fee_${activityId}_${studentId}`;
+        const linkedTx = transactions.find(t => t.externalReference === extRef);
+
+        if (linkedTx) {
+            const isGameFinished = typeof activity.homeScore === 'number' && typeof activity.awayScore === 'number';
+
+            // Se estava presente e agora estamos marcando FALTA
+            if (isPresent && linkedTx.status === PaymentStatus.PENDING && isGameFinished) {
+                await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).eq('id', linkedTx.id);
+            } 
+            // Se estava ausente e agora estamos marcando PRESENÇA
+            else if (!isPresent && linkedTx.status === PaymentStatus.CANCELLED) {
+                await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).eq('id', linkedTx.id);
+            }
+        }
+    }
+
     await fetchData(true);
   };
 

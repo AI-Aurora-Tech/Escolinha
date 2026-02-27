@@ -161,21 +161,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         activityData.groupId = undefined; // Remove a ligação dinâmica com o grupo
     }
 
-    // REGRA DE NEGÓCIO: Cancelar taxa de atletas ausentes
-    if (activityData.type === 'GAME' && activityData.fee && activityData.fee > 0) {
-      const participants = getAttendeesList(activityData);
-      participants.forEach(student => {
-        const isPresent = (activityData.attendance || []).includes(student.id);
-        if (!isPresent) {
-          const targetRef = `game_fee_${editingId}_${student.id}`;
-          const linkedTx = transactions.find(t => t.externalReference === targetRef && t.status === PaymentStatus.PENDING);
-          if (linkedTx) {
-            onUpdateTransaction({ id: linkedTx.id, status: PaymentStatus.CANCELLED });
-          }
-        }
-      });
-    }
-
     onUpdateActivity(activityData);
     setShowFinishModal(false);
 
