@@ -1,7 +1,8 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { supabase } from './src/lib/supabaseClient';
-import { PaymentStatus } from './src/types';
+import { supabase } from './lib/supabaseClient';
+import { PaymentStatus } from './types';
+import { sendZApiMessage } from './services/zapiService';
 
 // Store logs in memory
 let serverLogs: string[] = [];
@@ -33,75 +34,83 @@ async function startServer() {
   // Webhook endpoint for Mercado Pago
   apiRouter.post('/mp-webhook', async (req, res) => {
     console.log('--- [MP Webhook] Received Notification ---');
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-
     const notification = req.body;
 
-    if (notification.type === 'payment' && notification.data?.id) {
-        const paymentId = notification.data.id;
+    // Mercado Pago sends notifications for 'payment' and 'merchant_order'
+    // We are interested in 'payment'
+    if (notification.type === 'payment' || notification.action?.startsWith('payment.')) {
+        const paymentId = notification.data?.id || notification.id;
+        if (!paymentId) return res.status(200).send('OK');
+
         console.log(`[MP Webhook] Processing payment ID: ${paymentId}`);
 
         try {
-            const { data: paymentData } = await getPaymentFromMercadoPago(paymentId);
-            console.log('[MP Webhook] Fetched Payment Data from MP:', JSON.stringify(paymentData, null, 2));
+            const token = await getMPAccessToken();
+            if (!token) {
+                console.error('[MP Webhook] MP Access Token not found in database.');
+                return res.status(200).send('OK');
+            }
 
-            if (paymentData && paymentData.external_reference && paymentData.status === 'approved') {
-                console.log(`[MP Webhook] Payment approved for external_reference: ${paymentData.external_reference}. Updating database...`);
-                
-                const { data: updatedTx, error } = await supabase
+            const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                console.error(`[MP Webhook] MP API Error: ${response.status}`);
+                return res.status(200).send('OK');
+            }
+
+            const paymentData = await response.json();
+            const { external_reference, status } = paymentData;
+
+            if (external_reference && status === 'approved') {
+                console.log(`[MP Webhook] Payment approved for ref: ${external_reference}`);
+
+                // Update transaction in Supabase
+                const { data: updatedTxs, error: updateError } = await supabase
                     .from('transactions')
                     .update({
                         status: PaymentStatus.PAID,
-                        payment_date: new Date().toISOString().split('T')[0], // Use YYYY-MM-DD
+                        payment_date: new Date().toISOString().split('T')[0],
                     })
-                    .eq('external_reference', paymentData.external_reference)
+                    .eq('external_reference', external_reference)
                     .select();
 
-                if (error) {
-                    console.error('[MP Webhook] Error updating transaction from webhook:', error);
-                } else {
-                    console.log('[MP Webhook] Database update successful for:', updatedTx);
+                if (updateError) {
+                    console.error('[MP Webhook] Error updating DB:', updateError);
+                } else if (updatedTxs && updatedTxs.length > 0) {
+                    console.log(`[MP Webhook] ${updatedTxs.length} transactions updated successfully.`);
+                    
+                    // Send WhatsApp confirmation
+                    for (const tx of updatedTxs) {
+                        if (tx.student_id) {
+                            const { data: student } = await supabase
+                                .from('students')
+                                .select('name, guardian')
+                                .eq('id', tx.student_id)
+                                .single();
+                            
+                            if (student && student.guardian?.phone) {
+                                const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+                                await sendZApiMessage(student.guardian.phone, msg);
+                            }
+                        }
+                    }
                 }
             } else {
-                console.log('[MP Webhook] Payment not ready for processing or missing data. Status:', paymentData?.status);
+                console.log(`[MP Webhook] Payment status: ${status} for ref: ${external_reference}`);
             }
-
         } catch (error) {
-            console.error('[MP Webhook] Error processing Mercado Pago webhook:', error);
-            return res.status(500).send('Webhook processing error');
+            console.error('[MP Webhook] Exception:', error);
         }
-    } else {
-        console.log('[MP Webhook] Notification received, but it was not a valid payment notification.');
     }
 
     res.status(200).send('OK');
   });
 
-  // This function would interact with Mercado Pago's API
-  async function getPaymentFromMercadoPago(paymentId: string) {
-      // IMPORTANT: Replace with your actual Mercado Pago Access Token
-      const accessToken = process.env.MP_ACCESS_TOKEN;
-      if (!accessToken) {
-          console.error('Mercado Pago Access Token is not configured.');
-          return { data: null };
-      }
-
-      const url = `https://api.mercadopago.com/v1/payments/${paymentId}`;
-      try {
-          const response = await fetch(url, {
-              headers: {
-                  'Authorization': `Bearer ${accessToken}`
-              }
-          });
-          if (!response.ok) {
-              throw new Error(`Mercado Pago API responded with status: ${response.status}`);
-          }
-          const data = await response.json();
-          return { data };
-      } catch (error) {
-          console.error('Failed to fetch payment from Mercado Pago:', error);
-          return { data: null };
-      }
+  async function getMPAccessToken() {
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'mp_access_token').single();
+    return data?.value || null;
   }
 
   // Mount the API router
@@ -113,8 +122,7 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    // This will serve the frontend for any route that is not an API route
-    // app.use('*', vite.middlewares); // Temporarily disabled for testing
+    app.use(vite.middlewares);
   }
 
   app.listen(PORT, '0.0.0.0', () => {
