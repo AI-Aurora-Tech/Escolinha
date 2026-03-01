@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag, AlertTriangle } from 'lucide-react';
+import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod, Lineup } from '../types';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag, AlertTriangle, Layout } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sendZApiMessage } from '../services/zapiService';
 import { createMPPreference } from '../services/mercadoPago';
+import { TacticalLineup } from '../components/TacticalLineup';
 
 interface SchedulePageProps {
   activities: Activity[];
@@ -27,6 +28,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showLineupModal, setShowLineupModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
@@ -199,6 +201,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             setNotifyCountdown(1);
         }
     }
+  };
+
+  const handleSaveLineup = (lineup: Lineup) => {
+    if (!selectedActivity) return;
+    onUpdateActivity({ ...selectedActivity, lineup });
+    setShowLineupModal(false);
   };
 
   const handleManualSearchChange = (val: string) => {
@@ -536,6 +544,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             {!isGuardian && (
                                 <div className="flex gap-2">
                                     {a.type === 'GAME' && (
+                                      <button onClick={(e) => { e.stopPropagation(); setSelectedActivityId(a.id); setShowLineupModal(true); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Escalação Tática">
+                                        <Layout className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    {a.type === 'GAME' && (
                                       <button onClick={(e) => handleOpenFinishMatch(e, a)} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Encerrar Partida (Lançar Placar)">
                                         <Flag className="w-4 h-4" />
                                       </button>
@@ -732,6 +745,15 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             <div className="flex justify-end gap-2">{notifyIsRunning ? (<button onClick={() => setNotifyIsRunning(false)} className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors"><Pause className="w-4 h-4 inline mr-1" /> PAUSAR</button>) : (<button onClick={() => setNotifyIsRunning(true)} className="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-xl text-sm font-bold hover:bg-green-200 transition-colors" disabled={notifyCurrentIndex >= notifyQueue.length}><Play className="w-4 h-4 inline mr-1" /> CONTINUAR</button>)}<button onClick={() => setNotifyModalOpen(false)} className="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">FECHAR</button></div>
           </div>
         </div>
+      )}
+
+      {showLineupModal && selectedActivity && (
+        <TacticalLineup 
+          activity={selectedActivity}
+          students={students}
+          onSave={handleSaveLineup}
+          onClose={() => setShowLineupModal(false)}
+        />
       )}
     </div>
   );

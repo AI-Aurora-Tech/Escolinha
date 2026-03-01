@@ -89,6 +89,20 @@ export interface Student {
   documents: StudentDocuments;
 }
 
+export interface LineupPosition {
+  id: string; // e.g., 'GK', 'LB', 'CB1', etc.
+  label: string;
+  studentId?: string;
+  x: number; // percentage
+  y: number; // percentage
+}
+
+export interface Lineup {
+  formation: string; // e.g., '4-4-2'
+  starting: LineupPosition[];
+  reserves: string[]; // studentIds
+}
+
 export interface Activity {
   id: string;
   title: string;
@@ -109,6 +123,7 @@ export interface Activity {
   recurrence?: 'weekly' | 'none';
   attendance: string[]; 
   feePayments?: string[]; 
+  lineup?: Lineup;
 }
 
 export interface Transaction {
