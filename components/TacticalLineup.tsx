@@ -128,18 +128,38 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     const title = `Escalação: ${activity.title}`;
     const date = new Date(activity.date).toLocaleDateString('pt-BR');
     
-    // Helper to load image as base64
+    // Helper to load image as base64 and crop to circle
     const loadImage = (url: string): Promise<string> => {
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = 'Anonymous';
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
+          const size = Math.min(img.width, img.height);
+          canvas.width = size;
+          canvas.height = size;
           const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
+          if (!ctx) return reject('Could not get context');
+          
+          // Create circular clip
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.clip();
+          
+          // Draw image centered
+          ctx.drawImage(
+            img,
+            (img.width - size) / 2,
+            (img.height - size) / 2,
+            size,
+            size,
+            0,
+            0,
+            size,
+            size
+          );
+          
+          resolve(canvas.toDataURL('image/png'));
         };
         img.onerror = reject;
         img.src = url;
@@ -185,21 +205,19 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
       const student = students.find(s => s.id === pos.studentId);
       const px = fieldX + (pos.x / 100) * fieldW;
       const py = fieldY + (pos.y / 100) * fieldH;
+      const radius = 6;
       
-      // Player Circle
+      // Player Circle Background
       doc.setFillColor(255, 255, 255);
-      doc.circle(px, py, 6, 'F');
-      doc.setDrawColor(0, 100, 0);
-      doc.setLineWidth(0.3);
-      doc.circle(px, py, 6, 'S');
+      doc.circle(px, py, radius, 'F');
       
       if (student) {
         // Try to add photo
         if (student.photoUrl) {
           try {
             const base64 = await loadImage(student.photoUrl);
-            // Draw circular image clip (approximation with square for now or just draw)
-            doc.addImage(base64, 'JPEG', px - 5, py - 5, 10, 10);
+            // Draw circular image
+            doc.addImage(base64, 'PNG', px - radius, py - radius, radius * 2, radius * 2);
           } catch (e) {
             console.warn("Could not load student photo for PDF", e);
             // Fallback to label
@@ -216,6 +234,11 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
           doc.text(pos.label, px, py + 1, { align: 'center' });
         }
         
+        // Player Circle Border (drawn after image to ensure clean edges)
+        doc.setDrawColor(0, 100, 0);
+        doc.setLineWidth(0.3);
+        doc.circle(px, py, radius, 'S');
+
         // Student Name (below circle)
         doc.setFontSize(8);
         doc.setTextColor(255, 255, 255);
@@ -224,6 +247,10 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
         doc.text(displayName, px, py + 9, { align: 'center' });
       } else {
         // Empty position label
+        doc.setDrawColor(0, 100, 0);
+        doc.setLineWidth(0.3);
+        doc.circle(px, py, radius, 'S');
+        
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
         doc.text(pos.label, px, py + 1, { align: 'center' });
