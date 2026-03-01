@@ -396,46 +396,58 @@ const AppContent: React.FC = () => {
     await fetchData(true);
   };
 
-  const handleGenerateGlobalTuitions = async () => {
+  const handleGenerateGlobalTuitions = async (studentId?: string) => {
     setIsLoading(true);
     try {
-      const activeStudents = students.filter(s => s.active);
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
-      const monthStr = currentMonth.toString().padStart(2, '0');
-      const yearStr = currentYear.toString();
+      const targetStudents = studentId 
+        ? students.filter(s => s.id === studentId && s.active)
+        : students.filter(s => s.active);
       
-      for (const student of activeStudents) {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1; // 1-12
+      
+      const transactionsToInsert = [];
+
+      for (const student of targetStudents) {
         if (!student.planId) continue;
         const plan = plans.find(p => p.id === student.planId);
         if (!plan) continue;
 
-        const existing = transactions.find(t => 
-          t.studentId === student.id && 
-          t.category === 'Mensalidade' &&
-          t.date.startsWith(`${yearStr}-${monthStr}`)
-        );
+        for (let month = currentMonth; month <= 12; month++) {
+          const monthStr = month.toString().padStart(2, '0');
+          const yearStr = currentYear.toString();
 
-        if (!existing) {
-          const dueDay = plan.dueDay || 10;
-          const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
-          
-          const payload = { 
-            description: `Mensalidade ${monthStr}/${yearStr}`, 
-            category: 'Mensalidade', 
-            amount: plan.price, 
-            type: TransactionType.INCOME, 
-            date: dueDate, 
-            status: PaymentStatus.PENDING, 
-            student_id: safeId(student.id), 
-            plan_id: safeId(student.planId), 
-            payment_method: PaymentMethod.CASH, 
-            recurrence: 'NONE' 
-          };
-          await supabase.from('transactions').insert([payload]);
+          const existing = transactions.find(t => 
+            t.studentId === student.id && 
+            t.category === 'Mensalidade' &&
+            t.date.startsWith(`${yearStr}-${monthStr}`)
+          );
+
+          if (!existing) {
+            const dueDay = plan.dueDay || 10;
+            const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
+            
+            transactionsToInsert.push({ 
+              description: `Mensalidade ${monthStr}/${yearStr}`, 
+              category: 'Mensalidade', 
+              amount: plan.price, 
+              type: TransactionType.INCOME, 
+              date: dueDate, 
+              status: PaymentStatus.PENDING, 
+              student_id: safeId(student.id), 
+              plan_id: safeId(student.planId), 
+              payment_method: PaymentMethod.CASH, 
+              recurrence: 'NONE' 
+            });
+          }
         }
       }
+
+      if (transactionsToInsert.length > 0) {
+        await supabase.from('transactions').insert(transactionsToInsert);
+      }
+      
       await fetchData(true);
     } catch (err) {
       console.error("Error generating tuitions", err);

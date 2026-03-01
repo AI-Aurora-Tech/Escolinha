@@ -21,7 +21,7 @@ interface StudentsPageProps {
   onUpdateTransaction: (t: Partial<Transaction>) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onAddOccurrence: (studentId: string, description: string, date: string) => Promise<boolean>;
-  onGenerateTuitions: () => Promise<void>;
+  onGenerateTuitions: (studentId?: string) => Promise<void>;
   initialFilter?: string;
   currentUser?: User | null;
 }
@@ -275,11 +275,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.save(`Contrato_Martinica_${student.name.replace(/\s+/g, '_')}.pdf`);
   };
 
-  const handleManualTuitionGen = async () => {
-      if (confirm("Deseja gerar as mensalidades ainda não lançadas deste mês para todos os alunos ativos?")) {
+  const handleManualTuitionGen = async (studentId?: string) => {
+      const isGlobal = !studentId;
+      const msg = isGlobal 
+        ? "Deseja gerar as mensalidades ainda não lançadas até Dezembro para todos os alunos ativos?"
+        : "Deseja gerar as mensalidades ainda não lançadas até Dezembro para este aluno?";
+
+      if (confirm(msg)) {
           setIsGenerating(true);
           try {
-              await onGenerateTuitions();
+              await onGenerateTuitions(studentId);
               alert("Processamento de mensalidades concluído!");
           } catch (error) {
               alert("Erro ao processar mensalidades.");
@@ -923,8 +928,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         {!isGuardian && (
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full md:w-auto">
-                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
-                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
+                <button onClick={() => handleManualTuitionGen()} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
+                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
                     <span>Mensalidades</span>
                 </button>
                 <button onClick={handleBatchSendCharges} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
@@ -1424,9 +1429,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             </div>
                         )}
                         {!isGuardian && (
-                            <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
-                                <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
-                            </button>
+                            <div className="space-y-3">
+                                <button onClick={() => handleManualTuitionGen(editingId!)} disabled={isGenerating} className="w-full py-3 bg-gray-800 text-white rounded-xl font-black hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-gray-200">
+                                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-5 h-5" />} Gerar Mensalidades
+                                </button>
+                                <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
+                                    <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
+                                </button>
+                            </div>
                         )}
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 md:p-6">
