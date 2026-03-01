@@ -69,18 +69,19 @@ const FORMATIONS: Record<string, Omit<LineupPosition, 'studentId'>[]> = {
 export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, students, onSave, onClose }) => {
   const [lineup, setLineup] = useState<Lineup>(activity.lineup || {
     formation: '4-4-2',
-    starting: FORMATIONS['4-4-2'].map(p => ({ ...p, studentId: undefined })),
+    starting: FORMATIONS['4-4-2'].map(p => ({ ...p, studentId: undefined, jerseyNumber: undefined })),
     reserves: []
   });
 
   const [selectedPosId, setSelectedPosId] = useState<string | null>(null);
   const [showPlayerSelect, setShowPlayerSelect] = useState(false);
+  const [jerseyNumber, setJerseyNumber] = useState('');
 
   const participants = students.filter(s => activity.participants?.includes(s.id));
   
   const usedStudentIds = new Set([
     ...lineup.starting.map(p => p.studentId).filter(Boolean),
-    ...lineup.reserves
+    ...lineup.reserves.map(r => r.studentId)
   ]);
 
   const availablePlayers = participants
@@ -92,23 +93,26 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     const newStarting = basePositions.map(base => {
       // Try to keep existing players if possible
       const existing = lineup.starting.find(p => p.id === base.id);
-      return { ...base, studentId: existing?.studentId };
+      return { ...base, studentId: existing?.studentId, jerseyNumber: existing?.jerseyNumber };
     });
     setLineup({ ...lineup, formation, starting: newStarting });
   };
 
   const handleSelectPlayer = (studentId: string) => {
+    const number = jerseyNumber.trim() || undefined;
     if (selectedPosId) {
       const newStarting = lineup.starting.map(p => 
-        p.id === selectedPosId ? { ...p, studentId } : p
+        p.id === selectedPosId ? { ...p, studentId, jerseyNumber: number } : p
       );
       setLineup({ ...lineup, starting: newStarting });
       setSelectedPosId(null);
       setShowPlayerSelect(false);
+      setJerseyNumber('');
     } else {
       // Add to reserves
-      setLineup({ ...lineup, reserves: [...lineup.reserves, studentId] });
+      setLineup({ ...lineup, reserves: [...lineup.reserves, { studentId, jerseyNumber: number }] });
       setShowPlayerSelect(false);
+      setJerseyNumber('');
     }
   };
 
@@ -120,7 +124,7 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
   };
 
   const removePlayerFromReserves = (studentId: string) => {
-    setLineup({ ...lineup, reserves: lineup.reserves.filter(id => id !== studentId) });
+    setLineup({ ...lineup, reserves: lineup.reserves.filter(r => r.studentId !== studentId) });
   };
 
   const handlePrint = async () => {
@@ -239,6 +243,18 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
         doc.setLineWidth(0.3);
         doc.circle(px, py, radius, 'S');
 
+        // Jersey Number Badge in PDF
+        if (pos.jerseyNumber) {
+          const badgeRadius = 2.5;
+          const bx = px + 4;
+          const by = py + 4;
+          doc.setFillColor(0, 100, 0);
+          doc.circle(bx, by, badgeRadius, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(5);
+          doc.text(pos.jerseyNumber, bx, by + 0.5, { align: 'center' });
+        }
+
         // Student Name (below circle)
         doc.setFontSize(8);
         doc.setTextColor(255, 255, 255);
@@ -266,10 +282,11 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    lineup.reserves.forEach((id, i) => {
-      const student = students.find(s => s.id === id);
+    lineup.reserves.forEach((reserve, i) => {
+      const student = students.find(s => s.id === reserve.studentId);
       if (student) {
-        doc.text(`• ${student.name}`, reservesX, 60 + (i * 7));
+        const text = reserve.jerseyNumber ? `${reserve.jerseyNumber} - ${student.name}` : student.name;
+        doc.text(`• ${text}`, reservesX, 60 + (i * 7));
       }
     });
 
@@ -326,13 +343,20 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
                     setShowPlayerSelect(true);
                   }}
                 >
-                  <div className={`w-11 h-11 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all overflow-hidden ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
+                  <div className={`w-11 h-11 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all overflow-hidden relative ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
                     {student ? (
-                      student.photoUrl ? (
-                        <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="text-primary-700 font-bold text-[11px] md:text-[10px]">{pos.label}</span>
-                      )
+                      <>
+                        {student.photoUrl ? (
+                          <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="text-primary-700 font-bold text-[11px] md:text-[10px]">{pos.label}</span>
+                        )}
+                        {pos.jerseyNumber && (
+                          <div className="absolute -bottom-1 -right-1 bg-primary-600 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-sm">
+                            {pos.jerseyNumber}
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <PlusCircle className="w-5 h-5 md:w-4 md:h-4 text-white/50" />
                     )}
@@ -381,15 +405,24 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
               </div>
               <div className="space-y-2">
                 {lineup.reserves.length > 0 ? lineup.reserves
-                  .map(id => students.find(s => s.id === id))
-                  .filter((s): s is Student => !!s)
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map(student => {
+                  .map(r => ({ ...r, student: students.find(s => s.id === r.studentId) }))
+                  .filter((item): item is { studentId: string; jerseyNumber?: string; student: Student } => !!item.student)
+                  .sort((a, b) => a.student.name.localeCompare(b.student.name))
+                  .map(({ student, jerseyNumber }) => {
                   return (
                     <div key={student.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <UserIcon className="w-3 h-3 text-gray-400" />
+                        <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 relative">
+                          {student.photoUrl ? (
+                            <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" />
+                          ) : (
+                            <UserIcon className="w-3 h-3 text-gray-400" />
+                          )}
+                          {jerseyNumber && (
+                            <div className="absolute -bottom-1 -right-1 bg-primary-600 text-white text-[6px] font-bold w-3 h-3 rounded-full flex items-center justify-center border border-white">
+                              {jerseyNumber}
+                            </div>
+                          )}
                         </div>
                         <span className="text-xs font-medium text-gray-700 truncate">{student.name}</span>
                       </div>
@@ -447,9 +480,21 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
                 <h5 className="font-bold text-gray-800">
                   {selectedPosId ? `Selecionar ${lineup.starting.find(p => p.id === selectedPosId)?.label}` : 'Adicionar Reserva'}
                 </h5>
-                <button onClick={() => setShowPlayerSelect(false)} className="p-2"><X className="w-6 h-6 text-gray-400" /></button>
+                <button onClick={() => { setShowPlayerSelect(false); setJerseyNumber(''); }} className="p-2"><X className="w-6 h-6 text-gray-400" /></button>
               </div>
-              <div className="max-h-[60vh] md:max-h-64 overflow-y-auto space-y-2 pr-1 pb-4">
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Nº da Camisa (Opcional)</label>
+                <input 
+                  type="number" 
+                  value={jerseyNumber}
+                  onChange={(e) => setJerseyNumber(e.target.value)}
+                  placeholder="Ex: 10"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
+                />
+              </div>
+
+              <div className="max-h-[50vh] md:max-h-64 overflow-y-auto space-y-2 pr-1 pb-4">
                 {availablePlayers.length > 0 ? availablePlayers.map(s => (
                   <button 
                     key={s.id}
