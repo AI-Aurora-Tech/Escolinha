@@ -282,19 +282,19 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col md:flex-row h-[90vh] animate-in zoom-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-0 md:p-4 overflow-hidden">
+      <div className="bg-white md:rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col md:flex-row h-full md:h-[90vh] animate-in zoom-in duration-200 overflow-hidden">
         
         {/* Left Side: Field */}
-        <div className="flex-1 bg-emerald-800 p-4 relative overflow-hidden flex flex-col">
-          <div className="flex justify-between items-center mb-4 text-white">
-            <h3 className="font-bold text-lg flex items-center gap-2">
-              <Users className="w-5 h-5" /> Campo Tático
+        <div className="flex-[2] bg-emerald-800 p-3 md:p-4 relative overflow-hidden flex flex-col min-h-[400px] md:min-h-0">
+          <div className="flex justify-between items-center mb-3 md:mb-4 text-white">
+            <h3 className="font-bold text-base md:text-lg flex items-center gap-2">
+              <Users className="w-4 h-4 md:w-5 md:h-5" /> Campo Tático
             </h3>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium opacity-80">Esquema:</span>
+              <span className="text-[10px] md:text-xs font-medium opacity-80">Esquema:</span>
               <select 
-                className="bg-emerald-900/50 border border-emerald-600 rounded px-2 py-1 text-xs outline-none"
+                className="bg-emerald-900/50 border border-emerald-600 rounded px-2 py-1 text-[10px] md:text-xs outline-none"
                 value={lineup.formation}
                 onChange={(e) => handleFormationChange(e.target.value)}
               >
@@ -326,23 +326,23 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
                     setShowPlayerSelect(true);
                   }}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all overflow-hidden ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
+                  <div className={`w-11 h-11 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all overflow-hidden ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
                     {student ? (
                       student.photoUrl ? (
                         <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        <span className="text-primary-700 font-bold text-[10px]">{pos.label}</span>
+                        <span className="text-primary-700 font-bold text-[11px] md:text-[10px]">{pos.label}</span>
                       )
                     ) : (
-                      <PlusCircle className="w-5 h-5 text-white/50" />
+                      <PlusCircle className="w-5 h-5 md:w-4 md:h-4 text-white/50" />
                     )}
                   </div>
-                  <div className="mt-1 px-2 py-0.5 bg-black/60 rounded text-[10px] text-white font-medium whitespace-nowrap max-w-[80px] truncate">
+                  <div className="mt-1 px-2 py-0.5 bg-black/60 rounded text-[9px] md:text-[10px] text-white font-medium whitespace-nowrap max-w-[70px] md:max-w-[80px] truncate">
                     {student ? student.name : pos.label}
                   </div>
                   {student && (
                     <button 
-                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 md:p-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity shadow-md"
                       onClick={(e) => {
                         e.stopPropagation();
                         removePlayerFromPosition(pos.id);
@@ -358,10 +358,10 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
         </div>
 
         {/* Right Side: Controls & Reserves */}
-        <div className="w-full md:w-80 bg-gray-50 border-l flex flex-col">
-          <div className="p-4 border-b flex justify-between items-center bg-white">
-            <h4 className="font-bold text-gray-800">Escalação</h4>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        <div className="w-full md:w-80 bg-gray-50 border-t md:border-t-0 md:border-l flex flex-col h-[40vh] md:h-auto">
+          <div className="p-3 md:p-4 border-b flex justify-between items-center bg-white sticky top-0 z-10">
+            <h4 className="font-bold text-gray-800 text-sm md:text-base">Escalação</h4>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-5 h-5 md:w-6 md:h-6" /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -421,46 +421,52 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
           </div>
 
           {/* Footer Actions */}
-          <div className="p-4 border-t bg-white space-y-2">
-            <button 
-              onClick={handlePrint}
-              className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors"
-            >
-              <Printer className="w-4 h-4" /> Imprimir Escalação
-            </button>
-            <button 
-              onClick={() => onSave(lineup)}
-              className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white py-3 rounded-xl font-black shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all uppercase tracking-tight"
-            >
-              <Save className="w-4 h-4" /> Salvar Escalação
-            </button>
+          <div className="p-3 md:p-4 border-t bg-white space-y-2 sticky bottom-0 z-10">
+            <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
+              <button 
+                onClick={handlePrint}
+                className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl text-xs md:text-sm font-bold hover:bg-gray-200 transition-colors"
+              >
+                <Printer className="w-4 h-4" /> <span className="hidden md:inline">Imprimir</span><span className="md:hidden">PDF</span>
+              </button>
+              <button 
+                onClick={() => onSave(lineup)}
+                className="flex items-center justify-center gap-2 bg-primary-600 text-white py-2.5 rounded-xl text-xs md:text-sm font-black shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all uppercase tracking-tight"
+              >
+                <Save className="w-4 h-4" /> Salvar
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Player Selection Modal Overlay */}
         {showPlayerSelect && (
-          <div className="absolute inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-xl shadow-2xl w-full max-w-sm p-4 animate-in slide-in-from-bottom-full md:slide-in-from-bottom-4 duration-300">
               <div className="flex justify-between items-center mb-4">
                 <h5 className="font-bold text-gray-800">
                   {selectedPosId ? `Selecionar ${lineup.starting.find(p => p.id === selectedPosId)?.label}` : 'Adicionar Reserva'}
                 </h5>
-                <button onClick={() => setShowPlayerSelect(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                <button onClick={() => setShowPlayerSelect(false)} className="p-2"><X className="w-6 h-6 text-gray-400" /></button>
               </div>
-              <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+              <div className="max-h-[60vh] md:max-h-64 overflow-y-auto space-y-2 pr-1 pb-4">
                 {availablePlayers.length > 0 ? availablePlayers.map(s => (
                   <button 
                     key={s.id}
                     onClick={() => handleSelectPlayer(s.id)}
-                    className="w-full text-left p-2.5 hover:bg-primary-50 rounded-lg text-sm font-medium text-gray-700 transition-colors flex items-center gap-3 border border-transparent hover:border-primary-100"
+                    className="w-full text-left p-3.5 hover:bg-primary-50 rounded-xl text-sm font-medium text-gray-700 transition-colors flex items-center gap-3 border border-gray-100 hover:border-primary-100 shadow-sm"
                   >
-                    <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                      <UserIcon className="w-4 h-4 text-gray-400" />
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {s.photoUrl ? (
+                        <img src={s.photoUrl} alt={s.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <UserIcon className="w-5 h-5 text-gray-400" />
+                      )}
                     </div>
-                    {s.name}
+                    <span className="truncate">{s.name}</span>
                   </button>
                 )) : (
-                  <div className="text-center py-8 text-gray-400 text-sm">
+                  <div className="text-center py-12 text-gray-400 text-sm">
                     Nenhum jogador disponível.
                   </div>
                 )}
