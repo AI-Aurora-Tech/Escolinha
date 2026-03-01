@@ -817,7 +817,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
 
-  const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const studentTransactions = transactions
+    .filter(t => t.studentId === editingId)
+    .sort((a, b) => b.date.localeCompare(a.date));
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
   const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
@@ -1443,7 +1445,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                  <p className="font-bold text-gray-900">{tx.description}</p>
                                                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
                                                      <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
-                                                     {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
+                                                     {tx.status === PaymentStatus.PAID && (
+                                                          <div className="flex items-center gap-2">
+                                                              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>
+                                                              {tx.paymentDate && (
+                                                                  <span className="flex items-center gap-1 text-green-600 font-bold">
+                                                                      <CalendarCheck className="w-3 h-3" /> Pago em: {formatDate(tx.paymentDate)}
+                                                                  </span>
+                                                              )}
+                                                          </div>
+                                                      )}
                                                      {isCancelled && <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded font-black uppercase text-[9px]">Cancelado</span>}
                                                      {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
                                                  </div>
