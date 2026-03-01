@@ -83,7 +83,9 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     ...lineup.reserves
   ]);
 
-  const availablePlayers = participants.filter(s => !usedStudentIds.has(s.id));
+  const availablePlayers = participants
+    .filter(s => !usedStudentIds.has(s.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const handleFormationChange = (formation: string) => {
     const basePositions = FORMATIONS[formation];
@@ -126,29 +128,90 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     const title = `Escalação: ${activity.title}`;
     const date = new Date(activity.date).toLocaleDateString('pt-BR');
     
-    doc.setFontSize(18);
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(40, 40, 40);
     doc.text(title, 14, 20);
-    doc.setFontSize(12);
-    doc.text(`Data: ${date} | Adversário: ${activity.opponent || 'N/A'}`, 14, 28);
-    doc.text(`Esquema: ${lineup.formation}`, 14, 34);
-
-    doc.setFontSize(14);
-    doc.text('Titulares:', 14, 45);
+    
     doc.setFontSize(11);
-    lineup.starting.forEach((p, i) => {
-      const student = students.find(s => s.id === p.studentId);
-      const name = student ? student.name : '---';
-      doc.text(`${p.label}: ${name}`, 14, 52 + (i * 6));
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Data: ${date} | Adversário: ${activity.opponent || 'N/A'}`, 14, 28);
+    doc.text(`Esquema Tático: ${lineup.formation}`, 14, 34);
+
+    // Field Dimensions & Position
+    const fieldX = 14;
+    const fieldY = 45;
+    const fieldW = 110;
+    const fieldH = 160;
+
+    // Draw Field Background
+    doc.setFillColor(16, 120, 60); // Emerald-700
+    doc.rect(fieldX, fieldY, fieldW, fieldH, 'F');
+    
+    // Draw Field Markings
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.5);
+    doc.rect(fieldX, fieldY, fieldW, fieldH); // Border
+    
+    // Mid line
+    doc.line(fieldX, fieldY + fieldH/2, fieldX + fieldW, fieldY + fieldH/2);
+    // Center circle
+    doc.circle(fieldX + fieldW/2, fieldY + fieldH/2, 15);
+    
+    // Penalty areas
+    doc.rect(fieldX + fieldW/6, fieldY, fieldW * 2/3, 20); // Top
+    doc.rect(fieldX + fieldW/6, fieldY + fieldH - 20, fieldW * 2/3, 20); // Bottom
+
+    // Draw Players on Field
+    lineup.starting.forEach(pos => {
+      const student = students.find(s => s.id === pos.studentId);
+      const px = fieldX + (pos.x / 100) * fieldW;
+      const py = fieldY + (pos.y / 100) * fieldH;
+      
+      // Player Circle
+      doc.setFillColor(255, 255, 255);
+      doc.circle(px, py, 5, 'F');
+      doc.setDrawColor(0, 100, 0);
+      doc.setLineWidth(0.3);
+      doc.circle(px, py, 5, 'S');
+      
+      // Position Label (inside circle)
+      doc.setFontSize(7);
+      doc.setTextColor(0, 100, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(pos.label, px, py + 1, { align: 'center' });
+      
+      // Student Name (below circle)
+      if (student) {
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        // Use only first name or limited characters to avoid overlap
+        const displayName = student.name.length > 12 ? student.name.substring(0, 10) + '..' : student.name;
+        doc.text(displayName, px, py + 8, { align: 'center' });
+      }
     });
 
-    const reservesY = 52 + (lineup.starting.length * 6) + 10;
+    // Reserves Section (to the right of the field)
+    const reservesX = 135;
+    doc.setTextColor(40, 40, 40);
     doc.setFontSize(14);
-    doc.text('Reservas:', 14, reservesY);
-    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Reservas:', reservesX, 50);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
     lineup.reserves.forEach((id, i) => {
       const student = students.find(s => s.id === id);
-      doc.text(`• ${student?.name || '---'}`, 14, reservesY + 7 + (i * 6));
+      if (student) {
+        doc.text(`• ${student.name}`, reservesX, 60 + (i * 7));
+      }
     });
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Gerado por Garotos do Martinica', 14, 285);
 
     doc.save(`Escalacao_${activity.title}_${activity.date}.pdf`);
   };
@@ -248,18 +311,21 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
                 </button>
               </div>
               <div className="space-y-2">
-                {lineup.reserves.length > 0 ? lineup.reserves.map(id => {
-                  const student = students.find(s => s.id === id);
+                {lineup.reserves.length > 0 ? lineup.reserves
+                  .map(id => students.find(s => s.id === id))
+                  .filter((s): s is Student => !!s)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(student => {
                   return (
-                    <div key={id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                    <div key={student.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
                       <div className="flex items-center gap-2 overflow-hidden">
                         <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
                           <UserIcon className="w-3 h-3 text-gray-400" />
                         </div>
-                        <span className="text-xs font-medium text-gray-700 truncate">{student?.name}</span>
+                        <span className="text-xs font-medium text-gray-700 truncate">{student.name}</span>
                       </div>
                       <button 
-                        onClick={() => removePlayerFromReserves(id)}
+                        onClick={() => removePlayerFromReserves(student.id)}
                         className="text-gray-300 hover:text-red-500 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

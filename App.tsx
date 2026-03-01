@@ -137,7 +137,8 @@ const AppContent: React.FC = () => {
                 endTime: a.end_time,
                 recurrence: a.recurrence || 'none',
                 attendance: a.attendance || [],
-                feePayments: a.fee_payments || []
+                feePayments: a.fee_payments || [],
+                lineup: a.lineup
             } as Activity)));
         }
     } catch (error) {
@@ -461,7 +462,8 @@ const AppContent: React.FC = () => {
           end_time: a.endTime, 
           recurrence: a.recurrence || 'none', 
           attendance: a.attendance || [], 
-          fee_payments: a.feePayments || [] 
+          fee_payments: a.feePayments || [],
+          lineup: a.lineup
       };
       
       const { data: newActivityData, error } = await supabase
@@ -515,7 +517,7 @@ const AppContent: React.FC = () => {
           away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), 
           participants: a.participants, date: a.date, start_time: a.startTime, 
           end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, 
-          fee_payments: a.feePayments 
+          fee_payments: a.feePayments, lineup: a.lineup 
       };
       await supabase.from('activities').update(payload).eq('id', a.id);
 
