@@ -207,6 +207,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     if (!selectedActivity) return;
     onUpdateActivity({ ...selectedActivity, lineup });
     setShowLineupModal(false);
+    alert("Escalação salva com sucesso!");
   };
 
   const handleManualSearchChange = (val: string) => {

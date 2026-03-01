@@ -123,11 +123,29 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     setLineup({ ...lineup, reserves: lineup.reserves.filter(id => id !== studentId) });
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const doc = new jsPDF();
     const title = `Escalação: ${activity.title}`;
     const date = new Date(activity.date).toLocaleDateString('pt-BR');
     
+    // Helper to load image as base64
+    const loadImage = (url: string): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+    };
+
     // Header
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 40);
@@ -163,34 +181,54 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
     doc.rect(fieldX + fieldW/6, fieldY + fieldH - 20, fieldW * 2/3, 20); // Bottom
 
     // Draw Players on Field
-    lineup.starting.forEach(pos => {
+    for (const pos of lineup.starting) {
       const student = students.find(s => s.id === pos.studentId);
       const px = fieldX + (pos.x / 100) * fieldW;
       const py = fieldY + (pos.y / 100) * fieldH;
       
       // Player Circle
       doc.setFillColor(255, 255, 255);
-      doc.circle(px, py, 5, 'F');
+      doc.circle(px, py, 6, 'F');
       doc.setDrawColor(0, 100, 0);
       doc.setLineWidth(0.3);
-      doc.circle(px, py, 5, 'S');
+      doc.circle(px, py, 6, 'S');
       
-      // Position Label (inside circle)
-      doc.setFontSize(7);
-      doc.setTextColor(0, 100, 0);
-      doc.setFont('helvetica', 'bold');
-      doc.text(pos.label, px, py + 1, { align: 'center' });
-      
-      // Student Name (below circle)
       if (student) {
+        // Try to add photo
+        if (student.photoUrl) {
+          try {
+            const base64 = await loadImage(student.photoUrl);
+            // Draw circular image clip (approximation with square for now or just draw)
+            doc.addImage(base64, 'JPEG', px - 5, py - 5, 10, 10);
+          } catch (e) {
+            console.warn("Could not load student photo for PDF", e);
+            // Fallback to label
+            doc.setFontSize(7);
+            doc.setTextColor(0, 100, 0);
+            doc.setFont('helvetica', 'bold');
+            doc.text(pos.label, px, py + 1, { align: 'center' });
+          }
+        } else {
+          // Position Label (inside circle)
+          doc.setFontSize(7);
+          doc.setTextColor(0, 100, 0);
+          doc.setFont('helvetica', 'bold');
+          doc.text(pos.label, px, py + 1, { align: 'center' });
+        }
+        
+        // Student Name (below circle)
         doc.setFontSize(8);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
-        // Use only first name or limited characters to avoid overlap
         const displayName = student.name.length > 12 ? student.name.substring(0, 10) + '..' : student.name;
-        doc.text(displayName, px, py + 8, { align: 'center' });
+        doc.text(displayName, px, py + 9, { align: 'center' });
+      } else {
+        // Empty position label
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(pos.label, px, py + 1, { align: 'center' });
       }
-    });
+    }
 
     // Reserves Section (to the right of the field)
     const reservesX = 135;
@@ -261,9 +299,13 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
                     setShowPlayerSelect(true);
                   }}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all overflow-hidden ${student ? 'bg-white border-primary-600 scale-110' : 'bg-emerald-600/50 border-white/30 hover:bg-emerald-500/50'}`}>
                     {student ? (
-                      <span className="text-primary-700 font-bold text-[10px]">{pos.label}</span>
+                      student.photoUrl ? (
+                        <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="text-primary-700 font-bold text-[10px]">{pos.label}</span>
+                      )
                     ) : (
                       <PlusCircle className="w-5 h-5 text-white/50" />
                     )}

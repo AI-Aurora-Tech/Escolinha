@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.activities (
     recurrence text DEFAULT 'none',
     attendance uuid[] DEFAULT '{}',
     fee_payments uuid[] DEFAULT '{}',
+    lineup jsonb,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -31,6 +32,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='attendance') THEN
         ALTER TABLE public.activities ADD COLUMN attendance uuid[] DEFAULT '{}';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='lineup') THEN
+        ALTER TABLE public.activities ADD COLUMN lineup jsonb;
     END IF;
 END $$;
 
