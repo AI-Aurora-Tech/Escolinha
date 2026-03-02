@@ -87,6 +87,7 @@ export interface Student {
   positions: string[];
   active: boolean;
   documents: StudentDocuments;
+  createdAt?: string;
 }
 
 export interface LineupPosition {

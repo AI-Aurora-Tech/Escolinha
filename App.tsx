@@ -76,8 +76,8 @@ const AppContent: React.FC = () => {
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             // Increased limit to 10000 to ensure all transactions are fetched
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).limit(10000);
+             // Increased limit to 50000 to ensure all transactions are fetched
+             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).limit(50000);
              studentsData = allStudents;
              transactionsData = allTxs || [];
         }
@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
                  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 positions: s.positions || [], active: s.active, documents: s.documents || {}
+                 positions: s.positions || [], active: s.active, documents: s.documents || {}, createdAt: s.created_at
              } as Student)));
         }
 
@@ -412,7 +412,6 @@ const AppContent: React.FC = () => {
       
       const now = new Date();
       const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1; // 1-12
       
       const transactionsToInsert = [];
 
@@ -421,33 +420,50 @@ const AppContent: React.FC = () => {
         const plan = plans.find(p => p.id === student.planId);
         if (!plan || plan.price <= 0) continue;
 
-        for (let month = currentMonth; month <= 12; month++) {
-          const monthStr = month.toString().padStart(2, '0');
-          const yearStr = currentYear.toString();
+        let startYear = currentYear;
+        let startMonth = 1;
 
-          const existing = transactions.find(t => 
-            t.studentId === student.id && 
-            t.category === 'Mensalidade' &&
-            t.date.startsWith(`${yearStr}-${monthStr}`)
-          );
+        if (student.createdAt) {
+            const createdDate = new Date(student.createdAt);
+            startYear = createdDate.getFullYear();
+            startMonth = createdDate.getMonth() + 1;
+        }
 
-          if (!existing) {
-            const dueDay = plan.dueDay || 10;
-            const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
-            
-            transactionsToInsert.push({ 
-              description: `Mensalidade ${student.name} - ${monthStr}/${yearStr}`, 
-              category: 'Mensalidade', 
-              amount: plan.price, 
-              type: TransactionType.INCOME, 
-              date: dueDate, 
-              status: PaymentStatus.PENDING, 
-              student_id: safeId(student.id), 
-              plan_id: safeId(student.planId), 
-              payment_method: PaymentMethod.CASH, 
-              recurrence: 'NONE' 
-            });
-          }
+        for (let year = startYear; year <= currentYear; year++) {
+            const monthStart = (year === startYear) ? startMonth : 1;
+            const monthEnd = 12;
+
+            for (let month = monthStart; month <= monthEnd; month++) {
+                const monthStr = month.toString().padStart(2, '0');
+                const yearStr = year.toString();
+
+                const existing = transactions.find(t => 
+                    t.studentId === student.id && 
+                    (t.category === 'Mensalidade' || t.description.includes('Mensalidade')) &&
+                    t.date.startsWith(`${yearStr}-${monthStr}`)
+                );
+
+                if (!existing) {
+                    const dueDay = plan.dueDay || 10;
+                    const lastDayOfMonth = new Date(year, month, 0).getDate();
+                    const day = Math.min(dueDay, lastDayOfMonth);
+                    
+                    const dueDate = `${yearStr}-${monthStr}-${day.toString().padStart(2, '0')}`;
+                    
+                    transactionsToInsert.push({ 
+                        description: `Mensalidade ${student.name} - ${monthStr}/${yearStr}`, 
+                        category: 'Mensalidade', 
+                        amount: plan.price, 
+                        type: TransactionType.INCOME, 
+                        date: dueDate, 
+                        status: PaymentStatus.PENDING, 
+                        student_id: safeId(student.id), 
+                        plan_id: safeId(student.planId), 
+                        payment_method: PaymentMethod.CASH, 
+                        recurrence: 'MONTHLY' 
+                    });
+                }
+            }
         }
       }
 
