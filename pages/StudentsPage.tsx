@@ -21,7 +21,7 @@ interface StudentsPageProps {
   onUpdateTransaction: (t: Partial<Transaction>) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onAddOccurrence: (studentId: string, description: string, date: string) => Promise<boolean>;
-  onGenerateTuitions: () => Promise<void>;
+  onGenerateTuitions: (studentId?: string) => Promise<void>;
   initialFilter?: string;
   currentUser?: User | null;
 }
@@ -275,11 +275,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     doc.save(`Contrato_Martinica_${student.name.replace(/\s+/g, '_')}.pdf`);
   };
 
-  const handleManualTuitionGen = async () => {
-      if (confirm("Deseja gerar as mensalidades ainda não lançadas deste mês para todos os alunos ativos?")) {
+  const handleManualTuitionGen = async (studentId?: string) => {
+      const isGlobal = !studentId;
+      const msg = isGlobal 
+        ? "Deseja gerar as mensalidades ainda não lançadas até Dezembro para todos os alunos ativos?"
+        : "Deseja gerar as mensalidades ainda não lançadas até Dezembro para este aluno?";
+
+      if (confirm(msg)) {
           setIsGenerating(true);
           try {
-              await onGenerateTuitions();
+              await onGenerateTuitions(studentId);
               alert("Processamento de mensalidades concluído!");
           } catch (error) {
               alert("Erro ao processar mensalidades.");
@@ -817,7 +822,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const confirmPixPaymentSuccess = () => { setSelectedFinanceIds(new Set()); setShowPixModal(false); setPixData(null); setPixTxIds([]); };
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
 
-  const studentTransactions = transactions.filter(t => t.studentId === editingId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const studentTransactions = useMemo(() => {
+    const txs = transactions
+      .filter(t => t.studentId === editingId)
+      .sort((a, b) => b.date.localeCompare(a.date)); // Sort descending (newest first)
+    console.log(`Student ${editingId} has ${txs.length} transactions`);
+    return txs;
+  }, [transactions, editingId]);
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
   const studentActivities = activities.filter(a => editingId && (a.groupId && (studentForm.groupIds || []).includes(a.groupId) || a.participants?.includes(editingId) || a.attendance?.includes(editingId))).sort((a, b) => new Date(b.date + 'T' + b.startTime).getTime() - new Date(a.date).getTime());
@@ -921,8 +932,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         <h2 className="text-xl md:text-2xl font-bold text-gray-800">{isGuardian ? 'Meus Filhos' : 'Alunos e Responsáveis'}</h2>
         {!isGuardian && (
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full md:w-auto">
-                <button onClick={handleManualTuitionGen} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
-                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
+                <button onClick={() => handleManualTuitionGen()} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-gray-700 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
+                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
                     <span>Mensalidades</span>
                 </button>
                 <button onClick={handleBatchSendCharges} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
@@ -1422,9 +1433,14 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             </div>
                         )}
                         {!isGuardian && (
-                            <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
-                                <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
-                            </button>
+                            <div className="space-y-3">
+                                <button onClick={() => handleManualTuitionGen(editingId!)} disabled={isGenerating} className="w-full py-3 bg-gray-800 text-white rounded-xl font-black hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-gray-200">
+                                    {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-5 h-5" />} Gerar Mensalidades
+                                </button>
+                                <button onClick={() => { setEditingChargeId(null); setManualCharge({ description: '', amount: 0, date: new Date().toISOString().split('T')[0] }); setShowChargeModal(true); }} className="w-full py-3 bg-white text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
+                                    <PlusCircle className="w-5 h-5" /> Lançar Taxa / Avulso
+                                </button>
+                            </div>
                         )}
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -1441,9 +1457,21 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                              </div>
                                              <div>
                                                  <p className="font-bold text-gray-900">{tx.description}</p>
-                                                 <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                                     <span className="flex items-center gap-1 font-bold"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
-                                                     {tx.status === PaymentStatus.PAID && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>}
+                                                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-1">
+                                                     {tx.type === TransactionType.EXPENSE && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200 text-[10px] font-medium">Despesa</span>}
+                                                     {tx.category && <span className="bg-gray-100 px-2 py-0.5 rounded border border-gray-200 text-[10px] font-medium">{tx.category}</span>}
+                                                     {tx.paymentMethod && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 text-[10px] font-medium">{tx.paymentMethod}</span>}
+                                                     <span className="flex items-center gap-1 font-bold ml-1"><Calendar className="w-3 h-3" /> Venc.: {formatDate(tx.date)}</span>
+                                                     {tx.status === PaymentStatus.PAID && (
+                                                          <div className="flex items-center gap-2">
+                                                              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Pago</span>
+                                                              {tx.paymentDate && (
+                                                                  <span className="flex items-center gap-1 text-green-600 font-bold">
+                                                                      <CalendarCheck className="w-3 h-3" /> Pago em: {formatDate(tx.paymentDate)}
+                                                                  </span>
+                                                              )}
+                                                          </div>
+                                                      )}
                                                      {isCancelled && <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded font-black uppercase text-[9px]">Cancelado</span>}
                                                      {isOverdue && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase text-[9px]">Atrasado</span>}
                                                  </div>
