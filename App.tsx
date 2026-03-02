@@ -98,6 +98,7 @@ const AppContent: React.FC = () => {
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
         
         if (transactionsData) {
+            console.log(`Fetched ${transactionsData.length} transactions`);
             setTransactions(transactionsData.map((t: any) => ({ 
                 id: t.id, 
                 description: t.description, 
@@ -412,7 +413,7 @@ const AppContent: React.FC = () => {
       for (const student of targetStudents) {
         if (!student.planId) continue;
         const plan = plans.find(p => p.id === student.planId);
-        if (!plan) continue;
+        if (!plan || plan.price <= 0) continue;
 
         for (let month = currentMonth; month <= 12; month++) {
           const monthStr = month.toString().padStart(2, '0');
@@ -445,7 +446,11 @@ const AppContent: React.FC = () => {
       }
 
       if (transactionsToInsert.length > 0) {
-        await supabase.from('transactions').insert(transactionsToInsert);
+        const { error } = await supabase.from('transactions').insert(transactionsToInsert);
+        if (error) {
+            console.error("Error inserting tuitions:", error);
+            alert("Erro ao gerar mensalidades no banco de dados.");
+        }
       }
       
       await fetchData(true);

@@ -823,9 +823,11 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
 
   const studentTransactions = useMemo(() => {
-    return transactions
+    const txs = transactions
       .filter(t => t.studentId === editingId)
       .sort((a, b) => a.date.localeCompare(b.date));
+    console.log(`Student ${editingId} has ${txs.length} transactions`);
+    return txs;
   }, [transactions, editingId]);
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);
 
