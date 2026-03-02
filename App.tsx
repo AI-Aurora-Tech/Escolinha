@@ -110,7 +110,7 @@ const AppContent: React.FC = () => {
                 studentId: t.student_id, 
                 planId: t.plan_id, 
                 paymentMethod: t.payment_method, 
-                payment_link: t.payment_link, 
+                paymentLink: t.payment_link, 
                 externalReference: t.external_reference, 
                 preferenceId: t.preference_id,
                 recurrence: t.recurrence || 'NONE'
