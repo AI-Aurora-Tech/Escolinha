@@ -429,7 +429,7 @@ const AppContent: React.FC = () => {
             const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
             
             transactionsToInsert.push({ 
-              description: `Mensalidade ${monthStr}/${yearStr}`, 
+              description: `Mensalidade ${student.name} - ${monthStr}/${yearStr}`, 
               category: 'Mensalidade', 
               amount: plan.price, 
               type: TransactionType.INCOME, 
