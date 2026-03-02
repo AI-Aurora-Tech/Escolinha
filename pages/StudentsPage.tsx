@@ -825,7 +825,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const studentTransactions = useMemo(() => {
     const txs = transactions
       .filter(t => t.studentId === editingId)
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => b.date.localeCompare(a.date)); // Sort descending (newest first)
     console.log(`Student ${editingId} has ${txs.length} transactions`);
     return txs;
   }, [transactions, editingId]);
