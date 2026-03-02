@@ -87,27 +87,20 @@ export interface Student {
   positions: string[];
   active: boolean;
   documents: StudentDocuments;
-  createdAt?: string;
 }
 
 export interface LineupPosition {
   id: string; // e.g., 'GK', 'LB', 'CB1', etc.
   label: string;
   studentId?: string;
-  jerseyNumber?: string;
   x: number; // percentage
   y: number; // percentage
-}
-
-export interface LineupReserve {
-  studentId: string;
-  jerseyNumber?: string;
 }
 
 export interface Lineup {
   formation: string; // e.g., '4-4-2'
   starting: LineupPosition[];
-  reserves: LineupReserve[];
+  reserves: string[]; // studentIds
 }
 
 export interface Activity {

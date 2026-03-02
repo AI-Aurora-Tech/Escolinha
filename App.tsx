@@ -71,13 +71,12 @@ const AppContent: React.FC = () => {
 
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds).order('date', { ascending: false });
+                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
                  transactionsData = myTxs || [];
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             // Increased limit to 50000 to ensure all transactions are fetched
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).limit(50000);
+             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
              studentsData = allStudents;
              transactionsData = allTxs || [];
         }
@@ -90,7 +89,7 @@ const AppContent: React.FC = () => {
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
                  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 positions: s.positions || [], active: s.active, documents: s.documents || {}, createdAt: s.created_at
+                 positions: s.positions || [], active: s.active, documents: s.documents || {}
              } as Student)));
         }
 
@@ -99,10 +98,6 @@ const AppContent: React.FC = () => {
         if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
         
         if (transactionsData) {
-            console.log(`Fetched ${transactionsData.length} transactions`);
-            if (transactionsData.length > 0) {
-                console.log("Sample transaction:", transactionsData[0]);
-            }
             setTransactions(transactionsData.map((t: any) => ({ 
                 id: t.id, 
                 description: t.description, 
@@ -115,13 +110,11 @@ const AppContent: React.FC = () => {
                 studentId: t.student_id, 
                 planId: t.plan_id, 
                 paymentMethod: t.payment_method, 
-                paymentLink: t.payment_link, 
+                payment_link: t.payment_link, 
                 externalReference: t.external_reference, 
                 preferenceId: t.preference_id,
                 recurrence: t.recurrence || 'NONE'
             } as Transaction)));
-        } else {
-            console.log("No transactions data returned from Supabase");
         }
 
         const { data: activitiesData } = await supabase.from('activities').select('*');
@@ -403,78 +396,46 @@ const AppContent: React.FC = () => {
     await fetchData(true);
   };
 
-  const handleGenerateGlobalTuitions = async (studentId?: string) => {
+  const handleGenerateGlobalTuitions = async () => {
     setIsLoading(true);
     try {
-      const targetStudents = studentId 
-        ? students.filter(s => s.id === studentId && s.active)
-        : students.filter(s => s.active);
-      
+      const activeStudents = students.filter(s => s.active);
       const now = new Date();
+      const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
+      const monthStr = currentMonth.toString().padStart(2, '0');
+      const yearStr = currentYear.toString();
       
-      const transactionsToInsert = [];
-
-      for (const student of targetStudents) {
+      for (const student of activeStudents) {
         if (!student.planId) continue;
         const plan = plans.find(p => p.id === student.planId);
-        if (!plan || plan.price <= 0) continue;
+        if (!plan) continue;
 
-        let startYear = currentYear;
-        let startMonth = 1;
+        const existing = transactions.find(t => 
+          t.studentId === student.id && 
+          t.category === 'Mensalidade' &&
+          t.date.startsWith(`${yearStr}-${monthStr}`)
+        );
 
-        if (student.createdAt) {
-            const createdDate = new Date(student.createdAt);
-            startYear = createdDate.getFullYear();
-            startMonth = createdDate.getMonth() + 1;
-        }
-
-        for (let year = startYear; year <= currentYear; year++) {
-            const monthStart = (year === startYear) ? startMonth : 1;
-            const monthEnd = 12;
-
-            for (let month = monthStart; month <= monthEnd; month++) {
-                const monthStr = month.toString().padStart(2, '0');
-                const yearStr = year.toString();
-
-                const existing = transactions.find(t => 
-                    t.studentId === student.id && 
-                    (t.category === 'Mensalidade' || t.description.includes('Mensalidade')) &&
-                    t.date.startsWith(`${yearStr}-${monthStr}`)
-                );
-
-                if (!existing) {
-                    const dueDay = plan.dueDay || 10;
-                    const lastDayOfMonth = new Date(year, month, 0).getDate();
-                    const day = Math.min(dueDay, lastDayOfMonth);
-                    
-                    const dueDate = `${yearStr}-${monthStr}-${day.toString().padStart(2, '0')}`;
-                    
-                    transactionsToInsert.push({ 
-                        description: `Mensalidade ${student.name} - ${monthStr}/${yearStr}`, 
-                        category: 'Mensalidade', 
-                        amount: plan.price, 
-                        type: TransactionType.INCOME, 
-                        date: dueDate, 
-                        status: PaymentStatus.PENDING, 
-                        student_id: safeId(student.id), 
-                        plan_id: safeId(student.planId), 
-                        payment_method: PaymentMethod.CASH, 
-                        recurrence: 'MONTHLY' 
-                    });
-                }
-            }
+        if (!existing) {
+          const dueDay = plan.dueDay || 10;
+          const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
+          
+          const payload = { 
+            description: `Mensalidade ${monthStr}/${yearStr}`, 
+            category: 'Mensalidade', 
+            amount: plan.price, 
+            type: TransactionType.INCOME, 
+            date: dueDate, 
+            status: PaymentStatus.PENDING, 
+            student_id: safeId(student.id), 
+            plan_id: safeId(student.planId), 
+            payment_method: PaymentMethod.CASH, 
+            recurrence: 'NONE' 
+          };
+          await supabase.from('transactions').insert([payload]);
         }
       }
-
-      if (transactionsToInsert.length > 0) {
-        const { error } = await supabase.from('transactions').insert(transactionsToInsert);
-        if (error) {
-            console.error("Error inserting tuitions:", error);
-            alert("Erro ao gerar mensalidades no banco de dados.");
-        }
-      }
-      
       await fetchData(true);
     } catch (err) {
       console.error("Error generating tuitions", err);
