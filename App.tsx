@@ -71,12 +71,13 @@ const AppContent: React.FC = () => {
 
              if (studentsData && studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
+                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds).order('date', { ascending: false });
                  transactionsData = myTxs || [];
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
+             // Increased limit to 10000 to ensure all transactions are fetched
+             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).limit(10000);
              studentsData = allStudents;
              transactionsData = allTxs || [];
         }
@@ -99,6 +100,9 @@ const AppContent: React.FC = () => {
         
         if (transactionsData) {
             console.log(`Fetched ${transactionsData.length} transactions`);
+            if (transactionsData.length > 0) {
+                console.log("Sample transaction:", transactionsData[0]);
+            }
             setTransactions(transactionsData.map((t: any) => ({ 
                 id: t.id, 
                 description: t.description, 
@@ -116,6 +120,8 @@ const AppContent: React.FC = () => {
                 preferenceId: t.preference_id,
                 recurrence: t.recurrence || 'NONE'
             } as Transaction)));
+        } else {
+            console.log("No transactions data returned from Supabase");
         }
 
         const { data: activitiesData } = await supabase.from('activities').select('*');
