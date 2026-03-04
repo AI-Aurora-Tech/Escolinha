@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { Activity, Student } from '../../types';
+import { sendZApiMessage } from '../../services/zapiService';
 import { CheckCircle, XCircle, Calendar, MapPin, Clock, Trophy, Loader2 } from 'lucide-react';
 
 export const RSVPPage: React.FC = () => {
@@ -43,7 +44,7 @@ export const RSVPPage: React.FC = () => {
   }, [activityId, studentId]);
 
   const handleResponse = async (newStatus: 'CONFIRMED' | 'DECLINED') => {
-    if (!activityId || !studentId) return;
+    if (!activityId || !studentId || !student || !activity) return;
     setProcessing(true);
     try {
       // Upsert RSVP
@@ -54,6 +55,19 @@ export const RSVPPage: React.FC = () => {
 
       if (error) throw error;
       setStatus(newStatus);
+
+      // Send WhatsApp Confirmation
+      const firstName = student.guardian.name.split(' ')[0];
+      let msg = '';
+      if (newStatus === 'CONFIRMED') {
+          msg = `Olá ${firstName}! Recebemos a confirmação de presença do atleta *${student.name}* para o jogo *${activity.title}*. ⚽🔥\n\nContamos com a torcida!`;
+      } else {
+          msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
+      }
+      
+      // Fire and forget to not block UI
+      sendZApiMessage(student.guardian.phone, msg).catch(err => console.error("Erro ao enviar confirmação zap:", err));
+
     } catch (err) {
       alert('Erro ao salvar resposta. Tente novamente.');
       console.error(err);
