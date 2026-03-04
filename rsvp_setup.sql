@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS public.activity_rsvps (
 -- Enable RLS
 ALTER TABLE public.activity_rsvps ENABLE ROW LEVEL SECURITY;
 
+-- Add to publication for Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_rsvps;
+
 -- Policies
 CREATE POLICY "Enable read access for all users" ON public.activity_rsvps FOR SELECT USING (true);
 CREATE POLICY "Enable insert for all users" ON public.activity_rsvps FOR INSERT WITH CHECK (true);

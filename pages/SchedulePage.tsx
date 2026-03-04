@@ -21,15 +21,25 @@ interface SchedulePageProps {
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (transaction: Partial<Transaction>) => void;
   currentUser?: User | null;
+  onRefresh?: () => Promise<void>;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser, onRefresh }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    if (onRefresh) {
+        setIsRefreshing(true);
+        await onRefresh();
+        setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
   
   const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -495,6 +505,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
+                <button onClick={handleManualRefresh} className={`flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors ${isRefreshing ? 'opacity-50 cursor-wait' : ''}`} disabled={isRefreshing} title="Atualizar Dados"><Repeat className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />{isRefreshing ? 'Atualizando...' : 'Atualizar'}</button>
                 <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"><FileText className="w-4 h-4" />Relatórios</button>
                 <button onClick={handleOpenAdd} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm shadow-sm hover:bg-primary-700 transition-colors"><CalendarIcon className="w-4 h-4" />Agendar</button>
             </div>
