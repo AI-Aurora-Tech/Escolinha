@@ -96,24 +96,38 @@ export const RSVPPage: React.FC = () => {
           if (activity.fee && activity.fee > 0) {
               setGeneratingPix(true);
               try {
-                  const externalRef = `RSVP-${activityId}-${studentId}-${Date.now()}`;
+                  // Use deterministic reference to prevent duplicates
+                  const externalRef = `GAME-${activityId}-${studentId}`;
                   
-                  // Create Transaction
-                  const { error: txError } = await supabase.from('transactions').insert({
-                      description: `Taxa Jogo: ${activity.title}`,
-                      amount: activity.fee,
-                      type: TransactionType.INCOME,
-                      date: new Date().toISOString().split('T')[0],
-                      status: PaymentStatus.PENDING,
-                      student_id: studentId,
-                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                      external_reference: externalRef
-                  });
+                  // Check if transaction already exists
+                  const { data: existingTx } = await supabase
+                      .from('transactions')
+                      .select('*')
+                      .eq('external_reference', externalRef)
+                      .maybeSingle();
 
-                  if (txError) {
-                      console.error("Erro ao criar transação:", txError);
+                  if (existingTx && existingTx.status === PaymentStatus.PAID) {
+                      setPaymentConfirmed(true);
+                      msg += `\n\n✅ *Pagamento já realizado!*`;
                   } else {
+                      // If not exists, create it
+                      if (!existingTx) {
+                          const { error: txError } = await supabase.from('transactions').insert({
+                              description: `Taxa Jogo: ${activity.title}`,
+                              amount: activity.fee,
+                              type: TransactionType.INCOME,
+                              date: new Date().toISOString().split('T')[0],
+                              status: PaymentStatus.PENDING,
+                              student_id: studentId,
+                              payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                              external_reference: externalRef
+                          });
+                          if (txError) throw txError;
+                      }
+
                       setExternalRef(externalRef); // Start polling
+
+                      // Generate PIX (idempotent on MP side if we used same key, but here we just want a fresh code for the same ref)
                       const pixResult = await createPixPayment({
                           title: `Taxa Jogo: ${activity.title}`,
                           price: activity.fee,
