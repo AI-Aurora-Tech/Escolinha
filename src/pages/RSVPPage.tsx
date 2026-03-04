@@ -121,19 +121,30 @@ export const RSVPPage: React.FC = () => {
           {status ? (
             <div className={`p-6 rounded-xl text-center animate-in zoom-in duration-300 ${status === 'CONFIRMED' ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'}`}>
                 {status === 'CONFIRMED' ? (
-                    <>
-                        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                    <div className="flex flex-col items-center">
+                        <CheckCircle className="w-12 h-12 text-green-500 mb-2" />
                         <h3 className="text-lg font-black text-green-700 uppercase">Presença Confirmada!</h3>
                         <p className="text-sm text-green-600 mt-1">Bom jogo, craque! ⚽🔥</p>
-                    </>
+                    </div>
                 ) : (
-                    <>
-                        <XCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                    <div className="flex flex-col items-center">
+                        <XCircle className="w-12 h-12 text-red-500 mb-2" />
                         <h3 className="text-lg font-black text-red-700 uppercase">Ausência Informada</h3>
                         <p className="text-sm text-red-600 mt-1">Que pena! Nos vemos na próxima.</p>
-                    </>
+                    </div>
                 )}
-                <button onClick={() => setStatus(null)} className="mt-4 text-xs font-bold text-gray-400 underline hover:text-gray-600">Alterar resposta</button>
+                
+                <div className="mt-6 flex flex-col gap-3">
+                    <button 
+                        onClick={() => window.close()} 
+                        className={`w-full py-3 rounded-xl font-black uppercase text-sm shadow-sm transition-all ${status === 'CONFIRMED' ? 'bg-green-600 text-white hover:bg-green-700 shadow-green-200' : 'bg-red-600 text-white hover:bg-red-700 shadow-red-200'}`}
+                    >
+                        Fechar Janela
+                    </button>
+                    <button onClick={() => setStatus(null)} className="text-xs font-bold text-gray-400 underline hover:text-gray-600">
+                        Alterar resposta
+                    </button>
+                </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
