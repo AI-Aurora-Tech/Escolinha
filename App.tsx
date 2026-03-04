@@ -17,7 +17,7 @@ import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2 } from 'lucide-react';
 import { sendZApiMessage } from './services/zapiService';
 
-const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id, recurrence';
+const TX_SELECT_FIELDS = '*';
 
 function App() {
   return (
@@ -279,7 +279,7 @@ const AppContent: React.FC = () => {
         };
         const { error } = await supabase.from('students').insert([payload]);
         if (error) throw error;
-        // await fetchData(true);
+        await fetchData(true);
         alert("Atleta cadastrado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
@@ -305,36 +305,36 @@ const AppContent: React.FC = () => {
         };
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
-        // await fetchData(true);
+        await fetchData(true);
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
 
   const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
       await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]);
-      // await fetchData(true);
+      await fetchData(true);
   };
   const handleUpdatePlan = async (p: Plan) => {
       await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id);
-      // await fetchData(true);
+      await fetchData(true);
   };
   const handleDeletePlan = async (id: string) => {
       await supabase.from('plans').delete().eq('id', id);
-      // await fetchData(true);
+      await fetchData(true);
   };
 
   const handleAddGroup = async (g: Group) => {
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select();
-      // await fetchData(true);
+      await fetchData(true);
       return data?.[0]?.id || null;
   };
   const handleUpdateGroup = async (g: Group) => {
       await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
-      // await fetchData(true);
+      await fetchData(true);
   };
   const handleDeleteGroup = async (id: string) => {
       await supabase.from('groups').delete().eq('id', id);
-      // await fetchData(true);
+      await fetchData(true);
   };
 
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
@@ -349,20 +349,20 @@ const AppContent: React.FC = () => {
           const nextGroups = (s.groupIds || []).filter(id => id !== groupId);
           await supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id);
       }
-      // await fetchData(true);
+      await fetchData(true);
   };
 
   const handleAddUser = async (u: Omit<User, 'id'>) => {
       await supabase.from('app_users').insert([u]);
-      // await fetchData(true);
+      await fetchData(true);
   };
   const handleUpdateUser = async (u: User) => {
       await supabase.from('app_users').update(u).eq('id', u.id);
-      // await fetchData(true);
+      await fetchData(true);
   };
   const handleDeleteUser = async (id: string) => {
       await supabase.from('app_users').delete().eq('id', id);
-      // await fetchData(true);
+      await fetchData(true);
   };
 
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
@@ -395,14 +395,14 @@ const AppContent: React.FC = () => {
                 sendZApiMessage(student.guardian.phone, msg);
             }
         }
-        // await fetchData(true);
+        await fetchData(true);
       }
   };
 
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
     const payload = { description: t.description, category: t.category || 'Outros', amount: t.amount, type: t.type, date: t.date, payment_date: t.paymentDate, status: t.status, student_id: safeId(t.studentId), plan_id: safeId(t.planId), payment_method: t.paymentMethod, recurrence: t.recurrence || 'NONE' };
     await supabase.from('transactions').insert([payload]);
-    // await fetchData(true);
+    await fetchData(true);
   };
 
   const handleGenerateGlobalTuitions = async () => {
