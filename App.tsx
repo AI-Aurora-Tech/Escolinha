@@ -728,7 +728,11 @@ const AppContent: React.FC = () => {
 
   // Special case for RSVP page (Public)
   if (location.pathname.startsWith('/rsvp/')) {
-    return <RSVPPage />;
+    return (
+      <Routes>
+        <Route path="/rsvp/:activityId/:studentId" element={<RSVPPage />} />
+      </Routes>
+    );
   }
 
   if (!isAuthenticated) {
