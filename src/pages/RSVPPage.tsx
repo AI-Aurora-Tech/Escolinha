@@ -99,11 +99,12 @@ export const RSVPPage: React.FC = () => {
                   // Use deterministic reference to prevent duplicates
                   const externalRef = `GAME-${activityId}-${studentId}`;
                   
-                  // Check if transaction already exists
+                  // Check if transaction already exists (ignoring cancelled ones)
                   const { data: existingTx } = await supabase
                       .from('transactions')
                       .select('*')
                       .eq('external_reference', externalRef)
+                      .neq('status', PaymentStatus.CANCELLED)
                       .maybeSingle();
 
                   if (existingTx && existingTx.status === PaymentStatus.PAID) {
@@ -122,7 +123,12 @@ export const RSVPPage: React.FC = () => {
                               payment_method: PaymentMethod.PIX_MERCADO_PAGO,
                               external_reference: externalRef
                           });
-                          if (txError) throw txError;
+                          
+                          if (txError) {
+                              console.error("Erro ao criar transação:", txError);
+                              alert("Erro ao criar taxa de jogo. Tente novamente.");
+                              throw txError;
+                          }
                       }
 
                       setExternalRef(externalRef); // Start polling
