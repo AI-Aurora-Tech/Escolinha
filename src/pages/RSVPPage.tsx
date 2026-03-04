@@ -15,6 +15,30 @@ export const RSVPPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [pixData, setPixData] = useState<{ copyPaste: string, qrCodeBase64: string } | null>(null);
   const [generatingPix, setGeneratingPix] = useState(false);
+  const [externalRef, setExternalRef] = useState<string | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  useEffect(() => {
+    if (!externalRef || paymentConfirmed) return;
+
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/payment-status/${externalRef}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.status === 'approved') {
+                    setPaymentConfirmed(true);
+                    setPixData(null);
+                    clearInterval(interval);
+                }
+            }
+        } catch (e) {
+            console.error("Error polling payment status", e);
+        }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [externalRef, paymentConfirmed]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -89,6 +113,7 @@ export const RSVPPage: React.FC = () => {
                   if (txError) {
                       console.error("Erro ao criar transação:", txError);
                   } else {
+                      setExternalRef(externalRef); // Start polling
                       const pixResult = await createPixPayment({
                           title: `Taxa Jogo: ${activity.title}`,
                           price: activity.fee,
@@ -215,7 +240,14 @@ export const RSVPPage: React.FC = () => {
                             </div>
                         )}
 
-                        {pixData && (
+                        {paymentConfirmed && (
+                             <div className="mt-4 bg-green-100 text-green-800 p-3 rounded-lg font-bold text-sm flex items-center gap-2 animate-in fade-in zoom-in">
+                                <CheckCircle className="w-4 h-4" />
+                                Pagamento Recebido!
+                             </div>
+                        )}
+
+                        {pixData && !paymentConfirmed && (
                             <div className="mt-6 w-full bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                                 <h4 className="font-bold text-gray-800 mb-2 flex items-center justify-center gap-2">
                                     <QrCode className="w-4 h-4" />
