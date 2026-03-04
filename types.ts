@@ -110,6 +110,14 @@ export interface Lineup {
   reserves: LineupReserve[];
 }
 
+export interface ActivityRSVP {
+  id: string;
+  activityId: string;
+  studentId: string;
+  status: 'CONFIRMED' | 'DECLINED';
+  createdAt: string;
+}
+
 export interface Activity {
   id: string;
   title: string;
@@ -131,6 +139,7 @@ export interface Activity {
   attendance: string[]; 
   feePayments?: string[]; 
   lineup?: Lineup;
+  rsvps?: ActivityRSVP[]; // Novo campo para armazenar confirmações
 }
 
 export interface Transaction {

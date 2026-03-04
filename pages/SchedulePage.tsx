@@ -21,15 +21,25 @@ interface SchedulePageProps {
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (transaction: Partial<Transaction>) => void;
   currentUser?: User | null;
+  onRefresh?: () => Promise<void>;
 }
 
-export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser }) => {
+export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser, onRefresh }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    if (onRefresh) {
+        setIsRefreshing(true);
+        await onRefresh();
+        setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
   
   const [targetType, setTargetType] = useState<'GROUP' | 'INDIVIDUAL'>('GROUP');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -449,6 +459,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           } else {
               const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
               const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+              const rsvpLink = `${window.location.origin}/rsvp/${notifyActivity.id}/${student.id}`;
+              
               msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
               if (notifyActivity.type === 'GAME') msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; else msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
               if (notifyActivity.type === 'GAME') {
@@ -463,7 +475,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   }
               }
               if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-              if (notifyActivity.type === 'GAME') msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+              if (notifyActivity.type === 'GAME') {
+                  msg += `\n✅ *CONFIRMAÇÃO DE PRESENÇA OBRIGATÓRIA*\nClique no link abaixo para confirmar ou justificar ausência:\n${rsvpLink}`;
+              } else {
+                  msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+              }
               msg += `\n\nContamos com a presença!`;
           }
           
@@ -489,6 +505,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         <h2 className="text-2xl font-bold text-gray-800">Agenda de Atividades</h2>
         {!isGuardian && (
             <div className="flex gap-2 w-full md:w-auto">
+                <button onClick={handleManualRefresh} className={`flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors ${isRefreshing ? 'opacity-50 cursor-wait' : ''}`} disabled={isRefreshing} title="Atualizar Dados"><Repeat className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />{isRefreshing ? 'Atualizando...' : 'Atualizar'}</button>
                 <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-white text-gray-700 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"><FileText className="w-4 h-4" />Relatórios</button>
                 <button onClick={handleOpenAdd} className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm shadow-sm hover:bg-primary-700 transition-colors"><CalendarIcon className="w-4 h-4" />Agendar</button>
             </div>
@@ -591,11 +608,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             ).length;
                             const isCriticalDefaulter = overdueCount >= 3;
 
+                            // RSVP Status
+                            const rsvp = selectedActivity.rsvps?.find(r => r.studentId === s.id);
+                            const rsvpStatus = rsvp?.status || 'PENDING';
+
                             return (
                                 <div key={s.id} className={`flex items-center justify-between p-3 border-b last:border-0 transition-colors rounded-lg ${isCriticalDefaulter ? 'bg-red-50 hover:bg-red-100 border-red-200 shadow-inner' : 'hover:bg-gray-50'}`}>
                                     <div className="flex items-center gap-2 min-w-0">
                                         <div className="relative">
-                                            <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                {selectedActivity.type === 'GAME' && (
+                                                    <div title={rsvpStatus === 'CONFIRMED' ? 'Presença Confirmada' : rsvpStatus === 'DECLINED' ? 'Ausência Informada' : 'Aguardando Confirmação'}>
+                                                        {rsvpStatus === 'CONFIRMED' ? <CheckCircle className="w-4 h-4 text-green-500" /> : 
+                                                         rsvpStatus === 'DECLINED' ? <XCircle className="w-4 h-4 text-red-500" /> : 
+                                                         <Clock className="w-4 h-4 text-gray-300" />}
+                                                    </div>
+                                                )}
+                                                <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                            </div>
                                             {isCriticalDefaulter && (
                                                 <div className="flex items-center gap-1 mt-0.5">
                                                     <AlertTriangle className="w-3 h-3 text-red-600 animate-pulse" />
@@ -617,7 +647,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         })}
                     </div>
                     <div className="p-4 bg-gray-50 border-t rounded-b-xl space-y-2">
-                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider"><div className="flex gap-4"><span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span><span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span></div></div>
+                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                            <div className="flex flex-wrap gap-4">
+                                <span className="flex items-center gap-1" title="Presença confirmada manualmente no local"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span>
+                                <span className="flex items-center gap-1" title="Ausentes (não marcados como presentes)"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span>
+                                {selectedActivity.type === 'GAME' && (
+                                    <>
+                                        <span className="flex items-center gap-1 text-blue-600" title="Confirmaram presença via WhatsApp"><CheckSquare className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'CONFIRMED').length || 0)} Confirmados</span>
+                                        <span className="flex items-center gap-1 text-orange-600" title="Recusaram via WhatsApp"><XCircle className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'DECLINED').length || 0)} Recusados</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                         {selectedActivity.fee && !isGuardian && (<div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase"><span>Arrecadação:</span><span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span></div>)}
                     </div>
                 </div>
