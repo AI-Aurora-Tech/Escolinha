@@ -647,7 +647,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         })}
                     </div>
                     <div className="p-4 bg-gray-50 border-t rounded-b-xl space-y-2">
-                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider"><div className="flex gap-4"><span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span><span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span></div></div>
+                        <div className="flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                            <div className="flex flex-wrap gap-4">
+                                <span className="flex items-center gap-1" title="Presença confirmada manualmente no local"><CheckCircle className="w-3.5 h-3.5 text-green-600" /> {selectedActivity.attendance.length} Presentes</span>
+                                <span className="flex items-center gap-1" title="Ausentes (não marcados como presentes)"><XCircle className="w-3.5 h-3.5 text-red-500" /> {getAttendeesList(selectedActivity).length - selectedActivity.attendance.length} Ausentes</span>
+                                {selectedActivity.type === 'GAME' && (
+                                    <>
+                                        <span className="flex items-center gap-1 text-blue-600" title="Confirmaram presença via WhatsApp"><CheckSquare className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'CONFIRMED').length || 0)} Confirmados</span>
+                                        <span className="flex items-center gap-1 text-orange-600" title="Recusaram via WhatsApp"><XCircle className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'DECLINED').length || 0)} Recusados</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                         {selectedActivity.fee && !isGuardian && (<div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase"><span>Arrecadação:</span><span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span></div>)}
                     </div>
                 </div>
