@@ -85,6 +85,17 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
     return { payerPayload, phoneObject, cleanedCpf };
 };
 
+// Helper para garantir URL pública para o Webhook (substitui ais-dev por ais-pre)
+const getWebhookUrl = () => {
+    let url = window.location.origin;
+    // Se estiver no ambiente de dev (autenticado), muda para o de preview (público)
+    if (url.includes('ais-dev-')) {
+        url = url.replace('ais-dev-', 'ais-pre-');
+    }
+    console.log("Webhook URL gerada:", `${url}/api/mp-webhook`);
+    return `${url}/api/mp-webhook`;
+};
+
 export const createMPPreference = async (data: CreatePreferenceData): Promise<{ init_point: string, id: string } | null> => {
   const token = await getMPAccessToken();
   if (!token) return null;
@@ -99,6 +110,8 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         identification: payerPayload.identification,
         phone: phoneObject
     };
+
+    const webhookUrl = getWebhookUrl();
 
     const response = await fetch('/api/mp/checkout/preferences', {
       method: 'POST',
@@ -117,7 +130,7 @@ export const createMPPreference = async (data: CreatePreferenceData): Promise<{ 
         ],
         payer: preferencesPayer,
         external_reference: data.externalReference,
-        notification_url: `${window.location.origin}/api/mp-webhook`,
+        notification_url: webhookUrl,
         back_urls: {
           success: window.location.origin,
           failure: window.location.origin,
@@ -163,6 +176,8 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
             return null;
         }
 
+        const webhookUrl = getWebhookUrl();
+
         const body = {
             transaction_amount: Number(Number(data.price).toFixed(2)),
             description: data.title.substring(0, 250),
@@ -174,7 +189,7 @@ export const createPixPayment = async (data: CreatePreferenceData): Promise<{ qr
                 identification: payerPayload.identification
             },
             external_reference: data.externalReference,
-            notification_url: `${window.location.origin}/api/mp-webhook`
+            notification_url: webhookUrl
         };
 
         const response = await fetch('/api/mp/v1/payments', {
