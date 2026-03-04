@@ -78,7 +78,10 @@ const AppContent: React.FC = () => {
              } else transactionsData = [];
         } else {
              const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS);
+             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false });
+             
+             console.log("Fetched All Transactions:", allTxs?.length);
+             
              studentsData = allStudents;
              transactionsData = allTxs || [];
         }
@@ -115,7 +118,8 @@ const AppContent: React.FC = () => {
                 payment_link: t.payment_link, 
                 externalReference: t.external_reference, 
                 preferenceId: t.preference_id,
-                recurrence: t.recurrence || 'NONE'
+                recurrence: t.recurrence || 'NONE',
+                createdAt: t.created_at
             } as Transaction)));
         }
 

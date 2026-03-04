@@ -158,6 +158,7 @@ export interface Transaction {
   externalReference?: string; 
   preferenceId?: string; 
   recurrence?: 'NONE' | 'MONTHLY'; // Novo campo
+  createdAt?: string;
 }
 
 export interface Occurrence {
