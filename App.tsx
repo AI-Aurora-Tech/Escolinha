@@ -10,14 +10,13 @@ import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
 import { AICoachPage } from './pages/AICoachPage';
-import { RSVPPage } from './src/pages/RSVPPage';
 import LogsPage from './src/pages/LogsPage';
 import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2 } from 'lucide-react';
 import { sendZApiMessage } from './services/zapiService';
 
-const TX_SELECT_FIELDS = '*';
+const TX_SELECT_FIELDS = 'id, description, category, amount, type, date, payment_date, status, student_id, plan_id, payment_method, payment_link, external_reference, preference_id, recurrence';
 
 function App() {
   return (
@@ -56,11 +55,10 @@ const AppContent: React.FC = () => {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-        const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }, { data: rsvpsData }] = await Promise.all([
+        const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }] = await Promise.all([
           supabase.from('groups').select('*'),
           supabase.from('plans').select('*'),
-          supabase.from('student_occurrences').select('*'),
-          supabase.from('activity_rsvps').select('*')
+          supabase.from('student_occurrences').select('*')
         ]);
         
         let studentsData;
@@ -140,14 +138,7 @@ const AppContent: React.FC = () => {
                 recurrence: a.recurrence || 'none',
                 attendance: a.attendance || [],
                 feePayments: a.fee_payments || [],
-                lineup: a.lineup,
-                rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
-                    id: r.id,
-                    activityId: r.activity_id,
-                    studentId: r.student_id,
-                    status: r.status,
-                    createdAt: r.created_at
-                }))
+                lineup: a.lineup
             } as Activity)));
         }
     } catch (error) {
@@ -279,7 +270,7 @@ const AppContent: React.FC = () => {
         };
         const { error } = await supabase.from('students').insert([payload]);
         if (error) throw error;
-        await fetchData(true);
+        // await fetchData(true);
         alert("Atleta cadastrado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
@@ -305,36 +296,36 @@ const AppContent: React.FC = () => {
         };
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
-        await fetchData(true);
+        // await fetchData(true);
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
 
   const handleAddPlan = async (p: Omit<Plan, 'id'>) => {
       await supabase.from('plans').insert([{ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }]);
-      await fetchData(true);
+      // await fetchData(true);
   };
   const handleUpdatePlan = async (p: Plan) => {
       await supabase.from('plans').update({ name: p.name, price: p.price, due_day: p.dueDay, description: p.description }).eq('id', p.id);
-      await fetchData(true);
+      // await fetchData(true);
   };
   const handleDeletePlan = async (id: string) => {
       await supabase.from('plans').delete().eq('id', id);
-      await fetchData(true);
+      // await fetchData(true);
   };
 
   const handleAddGroup = async (g: Group) => {
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select();
-      await fetchData(true);
+      // await fetchData(true);
       return data?.[0]?.id || null;
   };
   const handleUpdateGroup = async (g: Group) => {
       await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
-      await fetchData(true);
+      // await fetchData(true);
   };
   const handleDeleteGroup = async (id: string) => {
       await supabase.from('groups').delete().eq('id', id);
-      await fetchData(true);
+      // await fetchData(true);
   };
 
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
@@ -349,20 +340,20 @@ const AppContent: React.FC = () => {
           const nextGroups = (s.groupIds || []).filter(id => id !== groupId);
           await supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id);
       }
-      await fetchData(true);
+      // await fetchData(true);
   };
 
   const handleAddUser = async (u: Omit<User, 'id'>) => {
       await supabase.from('app_users').insert([u]);
-      await fetchData(true);
+      // await fetchData(true);
   };
   const handleUpdateUser = async (u: User) => {
       await supabase.from('app_users').update(u).eq('id', u.id);
-      await fetchData(true);
+      // await fetchData(true);
   };
   const handleDeleteUser = async (id: string) => {
       await supabase.from('app_users').delete().eq('id', id);
-      await fetchData(true);
+      // await fetchData(true);
   };
 
   const handleUpdateTransaction = async (t: Partial<Transaction>) => { 
@@ -395,14 +386,14 @@ const AppContent: React.FC = () => {
                 sendZApiMessage(student.guardian.phone, msg);
             }
         }
-        await fetchData(true);
+        // await fetchData(true);
       }
   };
 
   const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
     const payload = { description: t.description, category: t.category || 'Outros', amount: t.amount, type: t.type, date: t.date, payment_date: t.paymentDate, status: t.status, student_id: safeId(t.studentId), plan_id: safeId(t.planId), payment_method: t.paymentMethod, recurrence: t.recurrence || 'NONE' };
     await supabase.from('transactions').insert([payload]);
-    await fetchData(true);
+    // await fetchData(true);
   };
 
   const handleGenerateGlobalTuitions = async () => {
@@ -726,15 +717,6 @@ const AppContent: React.FC = () => {
     return <LogsPage />;
   }
 
-  // Special case for RSVP page (Public)
-  if (location.pathname.startsWith('/rsvp/')) {
-    return (
-      <Routes>
-        <Route path="/rsvp/:activityId/:studentId" element={<RSVPPage />} />
-      </Routes>
-    );
-  }
-
   if (!isAuthenticated) {
     return (
         <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -781,7 +763,7 @@ const AppContent: React.FC = () => {
           <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
           <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
           <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />} />
-          <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
+          <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} />} />
           <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />
           <Route path="/plans" element={<PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />} />
           <Route path="/users" element={<UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />} />

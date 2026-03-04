@@ -31,7 +31,7 @@ async function startServer() {
   });
 
   // --- WEBHOOK MERCADO PAGO ---
-  app.all('/api/mp-webhook', async (req, res) => {
+  app.all('/webhook-mp', async (req, res) => {
     console.log(`[MP Webhook] Chamada recebida: ${req.method}`);
     
     if (req.method === 'GET') {
@@ -91,37 +91,6 @@ async function startServer() {
 
   // --- API ROUTES ---
   app.get('/api/logs', (req, res) => res.json(serverLogs));
-
-  // Proxy para Mercado Pago (para funcionar em produção sem Vite)
-  app.use('/api/mp', async (req, res) => {
-    const targetUrl = `https://api.mercadopago.com${req.url}`;
-    // console.log(`[MP Proxy] Proxying to: ${targetUrl}`);
-    
-    try {
-        const response = await fetch(targetUrl, {
-            method: req.method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers.authorization || '',
-                'X-Idempotency-Key': req.headers['x-idempotency-key'] as string || ''
-            },
-            body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? JSON.stringify(req.body) : undefined
-        });
-
-        // Tenta ler como JSON, se falhar lê como texto
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            const data = await response.json();
-            res.status(response.status).json(data);
-        } else {
-            const text = await response.text();
-            res.status(response.status).send(text);
-        }
-    } catch (error) {
-        console.error('[MP Proxy] Error:', error);
-        res.status(500).json({ error: 'Proxy error' });
-    }
-  });
 
   // Endpoint para o frontend consultar o status de um pagamento (contorna o erro 302 do webhook)
   app.get('/api/payment-status/:ref', async (req, res) => {
