@@ -51,12 +51,14 @@ export const RSVPPage: React.FC = () => {
         ]);
 
         if (actRes.data) {
+            console.log("Activity Data:", actRes.data);
             setActivity({
                 ...actRes.data,
                 startTime: actRes.data.start_time,
                 endTime: actRes.data.end_time,
                 presentationTime: actRes.data.presentation_time,
-                type: actRes.data.activity_type
+                type: actRes.data.activity_type,
+                fee: Number(actRes.data.fee) // Ensure fee is a number
             } as any);
         }
         if (stuRes.data) setStudent(stuRes.data as any);
@@ -92,29 +94,40 @@ export const RSVPPage: React.FC = () => {
       if (newStatus === 'CONFIRMED') {
           msg = `Olá ${firstName}! Recebemos a confirmação de presença do atleta *${student.name}* para o jogo *${activity.title}*. ⚽🔥\n\nContamos com a torcida!`;
 
+          console.log("Checking fee for transaction creation:", activity.fee);
+
           // Generate PIX if fee exists
           if (activity.fee && activity.fee > 0) {
+              console.log("Fee exists, proceeding to create transaction...");
               setGeneratingPix(true);
               try {
                   // Use deterministic reference to prevent duplicates
                   const externalRef = `GAME-${activityId}-${studentId}`;
+                  console.log("External Reference:", externalRef);
                   
                   // Check if transaction already exists (ignoring cancelled ones)
-                  const { data: existingTx } = await supabase
+                  const { data: existingTx, error: checkError } = await supabase
                       .from('transactions')
                       .select('*')
                       .eq('external_reference', externalRef)
                       .neq('status', PaymentStatus.CANCELLED)
                       .maybeSingle();
 
+                  if (checkError) {
+                      console.error("Error checking existing transaction:", checkError);
+                  }
+
                   if (existingTx && existingTx.status === PaymentStatus.PAID) {
+                      console.log("Transaction already paid:", existingTx);
                       setPaymentConfirmed(true);
                       msg += `\n\n✅ *Pagamento já realizado!*`;
                   } else {
                       // If not exists, create it
                       if (!existingTx) {
+                          console.log("Creating new transaction...");
                           const { error: txError } = await supabase.from('transactions').insert({
                               description: `Taxa Jogo: ${activity.title}`,
+                              category: 'Taxa de Atividade',
                               amount: activity.fee,
                               type: TransactionType.INCOME,
                               date: new Date().toISOString().split('T')[0],
@@ -125,10 +138,13 @@ export const RSVPPage: React.FC = () => {
                           });
                           
                           if (txError) {
-                              console.error("Erro ao criar transação:", txError);
-                              alert("Erro ao criar taxa de jogo. Tente novamente.");
+                              console.error("Erro ao criar transação (INSERT failed):", txError);
+                              alert(`Erro ao criar taxa de jogo: ${txError.message}`);
                               throw txError;
                           }
+                          console.log("Transaction created successfully.");
+                      } else {
+                          console.log("Pending transaction found, reusing...");
                       }
 
                       setExternalRef(externalRef); // Start polling
