@@ -10,6 +10,7 @@ import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
 import { AICoachPage } from './pages/AICoachPage';
+import { RSVPPage } from './src/pages/RSVPPage';
 import LogsPage from './src/pages/LogsPage';
 import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
 import { supabase } from './lib/supabaseClient';
@@ -55,10 +56,11 @@ const AppContent: React.FC = () => {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-        const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }] = await Promise.all([
+        const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }, { data: rsvpsData }] = await Promise.all([
           supabase.from('groups').select('*'),
           supabase.from('plans').select('*'),
-          supabase.from('student_occurrences').select('*')
+          supabase.from('student_occurrences').select('*'),
+          supabase.from('activity_rsvps').select('*')
         ]);
         
         let studentsData;
@@ -138,7 +140,14 @@ const AppContent: React.FC = () => {
                 recurrence: a.recurrence || 'none',
                 attendance: a.attendance || [],
                 feePayments: a.fee_payments || [],
-                lineup: a.lineup
+                lineup: a.lineup,
+                rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
+                    id: r.id,
+                    activityId: r.activity_id,
+                    studentId: r.student_id,
+                    status: r.status,
+                    createdAt: r.created_at
+                }))
             } as Activity)));
         }
     } catch (error) {
@@ -715,6 +724,11 @@ const AppContent: React.FC = () => {
   // Special case for logs page to render outside the main layout
   if (location.pathname === '/logs') {
     return <LogsPage />;
+  }
+
+  // Special case for RSVP page (Public)
+  if (location.pathname.startsWith('/rsvp/')) {
+    return <RSVPPage />;
   }
 
   if (!isAuthenticated) {

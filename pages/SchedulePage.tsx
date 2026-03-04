@@ -449,6 +449,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           } else {
               const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
               const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
+              const rsvpLink = `${window.location.origin}/rsvp/${notifyActivity.id}/${student.id}`;
+              
               msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
               if (notifyActivity.type === 'GAME') msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; else msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
               if (notifyActivity.type === 'GAME') {
@@ -463,7 +465,11 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   }
               }
               if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
-              if (notifyActivity.type === 'GAME') msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+              if (notifyActivity.type === 'GAME') {
+                  msg += `\n✅ *CONFIRMAÇÃO DE PRESENÇA OBRIGATÓRIA*\nClique no link abaixo para confirmar ou justificar ausência:\n${rsvpLink}`;
+              } else {
+                  msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+              }
               msg += `\n\nContamos com a presença!`;
           }
           
@@ -591,11 +597,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                             ).length;
                             const isCriticalDefaulter = overdueCount >= 3;
 
+                            // RSVP Status
+                            const rsvp = selectedActivity.rsvps?.find(r => r.studentId === s.id);
+                            const rsvpStatus = rsvp?.status || 'PENDING';
+
                             return (
                                 <div key={s.id} className={`flex items-center justify-between p-3 border-b last:border-0 transition-colors rounded-lg ${isCriticalDefaulter ? 'bg-red-50 hover:bg-red-100 border-red-200 shadow-inner' : 'hover:bg-gray-50'}`}>
                                     <div className="flex items-center gap-2 min-w-0">
                                         <div className="relative">
-                                            <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                {selectedActivity.type === 'GAME' && (
+                                                    <div title={rsvpStatus === 'CONFIRMED' ? 'Presença Confirmada' : rsvpStatus === 'DECLINED' ? 'Ausência Informada' : 'Aguardando Confirmação'}>
+                                                        {rsvpStatus === 'CONFIRMED' ? <CheckCircle className="w-4 h-4 text-green-500" /> : 
+                                                         rsvpStatus === 'DECLINED' ? <XCircle className="w-4 h-4 text-red-500" /> : 
+                                                         <Clock className="w-4 h-4 text-gray-300" />}
+                                                    </div>
+                                                )}
+                                                <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                            </div>
                                             {isCriticalDefaulter && (
                                                 <div className="flex items-center gap-1 mt-0.5">
                                                     <AlertTriangle className="w-3 h-3 text-red-600 animate-pulse" />
