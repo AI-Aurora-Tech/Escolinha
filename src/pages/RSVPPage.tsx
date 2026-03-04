@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
-import { Activity, Student } from '../../types';
+import { Activity, Student, TransactionType, PaymentStatus, PaymentMethod } from '../../types';
 import { sendZApiMessage } from '../../services/zapiService';
-import { CheckCircle, XCircle, Calendar, MapPin, Clock, Trophy, Loader2 } from 'lucide-react';
+import { createPixPayment } from '../../services/mercadoPago';
+import { CheckCircle, XCircle, Calendar, MapPin, Clock, Trophy, Loader2, Copy, QrCode } from 'lucide-react';
 
 export const RSVPPage: React.FC = () => {
   const { activityId, studentId } = useParams<{ activityId: string; studentId: string }>();
@@ -12,6 +13,8 @@ export const RSVPPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'PENDING' | 'CONFIRMED' | 'DECLINED' | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [pixData, setPixData] = useState<{ copyPaste: string, qrCodeBase64: string } | null>(null);
+  const [generatingPix, setGeneratingPix] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -46,6 +49,8 @@ export const RSVPPage: React.FC = () => {
   const handleResponse = async (newStatus: 'CONFIRMED' | 'DECLINED') => {
     if (!activityId || !studentId || !student || !activity) return;
     setProcessing(true);
+    setPixData(null); // Reset PIX data on new response
+
     try {
       // Upsert RSVP
       const { error } = await supabase.from('activity_rsvps').upsert(
@@ -59,8 +64,57 @@ export const RSVPPage: React.FC = () => {
       // Send WhatsApp Confirmation
       const firstName = student.guardian.name.split(' ')[0];
       let msg = '';
+      
       if (newStatus === 'CONFIRMED') {
           msg = `Olá ${firstName}! Recebemos a confirmação de presença do atleta *${student.name}* para o jogo *${activity.title}*. ⚽🔥\n\nContamos com a torcida!`;
+
+          // Generate PIX if fee exists
+          if (activity.fee && activity.fee > 0) {
+              setGeneratingPix(true);
+              try {
+                  const externalRef = `RSVP-${activityId}-${studentId}-${Date.now()}`;
+                  
+                  // Create Transaction
+                  const { error: txError } = await supabase.from('transactions').insert({
+                      description: `Taxa Jogo: ${activity.title}`,
+                      amount: activity.fee,
+                      type: TransactionType.INCOME,
+                      date: new Date().toISOString().split('T')[0],
+                      status: PaymentStatus.PENDING,
+                      student_id: studentId,
+                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                      external_reference: externalRef
+                  });
+
+                  if (txError) {
+                      console.error("Erro ao criar transação:", txError);
+                  } else {
+                      const pixResult = await createPixPayment({
+                          title: `Taxa Jogo: ${activity.title}`,
+                          price: activity.fee,
+                          externalReference: externalRef,
+                          payer: {
+                              name: student.guardian.name,
+                              email: student.guardian.email,
+                              phone: student.guardian.phone,
+                              identification: { type: 'CPF', number: student.guardian.cpf || '' }
+                          }
+                      });
+
+                      if (pixResult) {
+                          setPixData({
+                              copyPaste: pixResult.qrCode,
+                              qrCodeBase64: pixResult.qrCodeBase64
+                          });
+                          msg += `\n\n💰 *Pagamento Pendente*\nValor: R$ ${activity.fee.toFixed(2)}\n\nUtilize o código PIX Copia e Cola abaixo para pagar:\n\n${pixResult.qrCode}`;
+                      }
+                  }
+              } catch (pixErr) {
+                  console.error("Erro ao gerar PIX:", pixErr);
+              } finally {
+                  setGeneratingPix(false);
+              }
+          }
       } else {
           msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
       }
@@ -74,6 +128,13 @@ export const RSVPPage: React.FC = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const copyToClipboard = () => {
+      if (pixData?.copyPaste) {
+          navigator.clipboard.writeText(pixData.copyPaste);
+          alert('Código PIX copiado!');
+      }
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-8 h-8 animate-spin text-primary-600" /></div>;
@@ -130,6 +191,13 @@ export const RSVPPage: React.FC = () => {
                     <p className="font-bold text-gray-800">{activity.opponent}</p>
                 </div>
             )}
+            
+            {activity.fee && activity.fee > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center">
+                    <p className="text-xs font-bold text-gray-400 uppercase">Taxa do Jogo</p>
+                    <p className="font-bold text-green-600">R$ {activity.fee.toFixed(2)}</p>
+                </div>
+            )}
           </div>
 
           {status ? (
@@ -139,6 +207,46 @@ export const RSVPPage: React.FC = () => {
                         <CheckCircle className="w-12 h-12 text-green-500 mb-2" />
                         <h3 className="text-lg font-black text-green-700 uppercase">Presença Confirmada!</h3>
                         <p className="text-sm text-green-600 mt-1">Bom jogo, craque! ⚽🔥</p>
+                        
+                        {generatingPix && (
+                            <div className="mt-4 flex items-center gap-2 text-gray-500 text-sm">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Gerando código PIX...
+                            </div>
+                        )}
+
+                        {pixData && (
+                            <div className="mt-6 w-full bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 className="font-bold text-gray-800 mb-2 flex items-center justify-center gap-2">
+                                    <QrCode className="w-4 h-4" />
+                                    Pagamento via PIX
+                                </h4>
+                                <p className="text-xs text-gray-500 mb-4">Escaneie o QR Code ou copie o código abaixo para pagar a taxa do jogo.</p>
+                                
+                                <div className="flex justify-center mb-4">
+                                    <img 
+                                        src={`data:image/png;base64,${pixData.qrCodeBase64}`} 
+                                        alt="QR Code PIX" 
+                                        className="w-48 h-48 object-contain border border-gray-100 rounded-lg"
+                                    />
+                                </div>
+
+                                <div className="relative">
+                                    <textarea 
+                                        readOnly 
+                                        value={pixData.copyPaste}
+                                        className="w-full h-20 bg-gray-50 border border-gray-200 rounded-lg p-2 text-[10px] text-gray-500 break-all resize-none focus:outline-none"
+                                    />
+                                    <button 
+                                        onClick={copyToClipboard}
+                                        className="absolute bottom-2 right-2 bg-green-600 text-white text-xs font-bold py-1 px-3 rounded-md shadow-sm hover:bg-green-700 transition-colors flex items-center gap-1"
+                                    >
+                                        <Copy className="w-3 h-3" />
+                                        Copiar
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-col items-center">
@@ -155,9 +263,11 @@ export const RSVPPage: React.FC = () => {
                     >
                         Fechar Janela
                     </button>
-                    <button onClick={() => setStatus(null)} className="text-xs font-bold text-gray-400 underline hover:text-gray-600">
-                        Alterar resposta
-                    </button>
+                    {!pixData && (
+                        <button onClick={() => setStatus(null)} className="text-xs font-bold text-gray-400 underline hover:text-gray-600">
+                            Alterar resposta
+                        </button>
+                    )}
                 </div>
             </div>
           ) : (
