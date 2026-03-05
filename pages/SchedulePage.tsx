@@ -523,9 +523,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation();
-      const targetStudents = getAttendeesList(activity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
+      // Garante que estamos usando a versão mais atualizada da atividade (com descrição recém-salva)
+      const currentActivity = activities.find(a => a.id === activity.id) || activity;
+      
+      const targetStudents = getAttendeesList(currentActivity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
       if (confirm(`Convocar ${targetStudents.length} atletas via Z-API?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`)) {
-          setNotifyActivity(activity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
+          setNotifyActivity(currentActivity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
       }
   };
 
