@@ -49,11 +49,29 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
+  const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
+
+  const visibleActivities = useMemo(() => {
+    if (isGuardian && currentUser?.cpf) {
+        const cleanCpf = currentUser.cpf.replace(/\D/g, '');
+        const myStudents = students.filter(s => s.guardian.cpf?.replace(/\D/g, '') === cleanCpf);
+        const myStudentIds = myStudents.map(s => s.id);
+        const myGroupIds = myStudents.flatMap(s => s.groupIds || []);
+
+        return activities.filter(a => {
+            if (a.groupId && myGroupIds.includes(a.groupId)) return true;
+            if (a.participants && a.participants.some(pId => myStudentIds.includes(pId))) return true;
+            return false;
+        });
+    }
+    return activities;
+  }, [activities, currentUser, students, isGuardian]);
+
   // --- AUTO FOCUS ON NEXT ACTIVITY FOR GUARDIANS ---
   useEffect(() => {
-    if (currentUser?.role === UserRole.RESPONSAVEL && activities.length > 0) {
+    if (currentUser?.role === UserRole.RESPONSAVEL && visibleActivities.length > 0) {
         const now = new Date();
-        const futureActivities = activities
+        const futureActivities = visibleActivities
             .filter(a => new Date(a.date + 'T' + a.startTime) >= now)
             .sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
         
@@ -62,7 +80,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             setSelectedActivityId(futureActivities[0].id);
         }
     }
-  }, [activities.length, currentUser?.role]);
+  }, [visibleActivities, currentUser?.role]);
 
   // --- REPORT STATE ---
   const [showReportModal, setShowReportModal] = useState(false);
@@ -85,10 +103,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
   });
 
-  const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
-  const selectedActivity = selectedActivityId ? activities.find(a => a.id === selectedActivityId) || null : null;
-  const dailyActivities = activities.filter(a => a.date === selectedDate).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
-  const allSortedActivities = [...activities].sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
+  const selectedActivity = selectedActivityId ? visibleActivities.find(a => a.id === selectedActivityId) || null : null;
+  const dailyActivities = visibleActivities.filter(a => a.date === selectedDate).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
+  const allSortedActivities = [...visibleActivities].sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   const filteredStudents = students.filter(s => s.active && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.guardian.name.toLowerCase().includes(studentSearch.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
 
   const formatDate = (dateString: string) => {
@@ -620,7 +637,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       setNotifyCountdown(10);
   };
 
-  const gamesForSelect = activities.filter(a => 
+  const gamesForSelect = visibleActivities.filter(a => 
     a.type === 'GAME' && 
     a.date >= reportStartDate && 
     a.date <= reportEndDate
