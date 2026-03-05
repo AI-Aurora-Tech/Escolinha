@@ -581,6 +581,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   }
               }
               if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
+              if (notifyActivity.description) msg += `\n📝 *Observação:* ${notifyActivity.description}\n`;
               if (notifyActivity.type === 'GAME') {
                   msg += `\n✅ *CONFIRMAÇÃO DE PRESENÇA OBRIGATÓRIA*\nClique no link abaixo para confirmar ou justificar ausência:\n${rsvpLink}`;
               } else {
