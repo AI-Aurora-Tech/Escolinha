@@ -892,6 +892,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const currentYear = new Date().getFullYear();
   const yearsList = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
+  const handleExportAttendanceExcel = () => {
+    if (!filteredStudentActivities.length) {
+      alert("Não há dados para exportar.");
+      return;
+    }
+
+    const student = students.find(s => s.id === editingId);
+    const studentName = student ? student.name : "Aluno";
+    
+    const data = filteredStudentActivities.map(act => {
+      const isPresent = (act.attendance || []).includes(editingId!);
+      const goals = act.scorers?.filter(s => s === editingId).length || 0;
+      
+      return {
+        "Data": formatDate(act.date),
+        "Hora": act.startTime,
+        "Tipo": act.type === 'GAME' ? 'Jogo' : 'Treino',
+        "Atividade": act.title,
+        "Status": isPresent ? 'Presença' : 'Falta',
+        "Gols": goals > 0 ? goals : '-'
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Frequência");
+    
+    const fileName = `Frequencia_${studentName}_${attendanceMonth === -1 ? 'Todos' : monthsList.find(m => m.value === attendanceMonth)?.label}_${attendanceYear}.xlsx`;
+    
+    XLSX.writeFile(workbook, fileName);
+  };
+
   const handleSendAttendanceReport = async () => {
       const student = students.find(s => s.id === editingId);
       if (!student || !student.guardian.phone) return alert("Responsável sem telefone cadastrado.");
@@ -1536,12 +1568,20 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     <History className="w-4 h-4 text-primary-600" /> Histórico de Atividades
                                 </div>
                                 {!isGuardian && (
-                                    <button 
-                                        onClick={handleSendAttendanceReport}
-                                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors shadow-sm"
-                                    >
-                                        <MessageCircle className="w-3.5 h-3.5" /> ENVIAR P/ RESPONSÁVEL
-                                    </button>
+                                    <>
+                                        <button 
+                                            onClick={handleSendAttendanceReport}
+                                            className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors shadow-sm"
+                                        >
+                                            <MessageCircle className="w-3.5 h-3.5" /> ENVIAR P/ RESPONSÁVEL
+                                        </button>
+                                        <button 
+                                            onClick={handleExportAttendanceExcel}
+                                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors shadow-sm"
+                                        >
+                                            <FileSpreadsheet className="w-3.5 h-3.5" /> EXCEL
+                                        </button>
+                                    </>
                                 )}
                             </div>
                             

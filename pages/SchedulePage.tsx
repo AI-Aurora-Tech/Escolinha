@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Activity, Student, Group, User, UserRole, Transaction, TransactionType, PaymentStatus, PaymentMethod, Lineup } from '../types';
-import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag, AlertTriangle, Layout } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, Users, Repeat, CheckSquare, Square, Search, User as UserIcon, FileText, XCircle, Edit, Trophy, Coins, DollarSign, Trash2, MapPin, Megaphone, X, Play, Pause, Zap, ChevronLeft, ChevronRight, Filter, Minus, PlusCircle, Medal, BarChart3, ChevronDown, DollarSign as CashIcon, Goal, ChevronRight as ChevronRightIcon, Flag, AlertTriangle, Layout, FileSpreadsheet } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { sendZApiMessage } from '../services/zapiService';
 import { createMPPreference } from '../services/mercadoPago';
 import { TacticalLineup } from '../components/TacticalLineup';
@@ -415,6 +416,111 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     doc.save(`Estatisticas_Alfabeticas_${reportStartDate}.pdf`);
   };
 
+  const generateAttendanceExcelReport = () => {
+    const activities = getFilteredActivitiesForReport();
+    if (!activities.length) return alert("Nenhuma atividade no período.");
+
+    const data: any[] = [];
+
+    activities.forEach(act => {
+        const attendees = getAttendeesList(act);
+        attendees.forEach(student => {
+            const isPresent = act.attendance.includes(student.id);
+            const goals = act.scorers?.filter(s => s === student.id).length || 0;
+            const feeStatus = act.fee ? (act.feePayments?.includes(student.id) ? 'Pago' : 'Pendente') : '-';
+            
+            data.push({
+                "Data": formatDate(act.date),
+                "Hora": act.startTime,
+                "Tipo": act.type === 'GAME' ? 'Jogo' : 'Treino',
+                "Atividade": act.title,
+                "Atleta": student.name,
+                "Status": isPresent ? 'Presença' : 'Falta',
+                "Gols": goals > 0 ? goals : '-',
+                "Taxa": act.fee ? `R$ ${act.fee.toFixed(2)}` : '-',
+                "Pagamento Taxa": feeStatus
+            });
+        });
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Geral");
+    
+    const fileName = `Relatorio_Geral_Agenda_${reportStartDate}_${reportEndDate}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  const calculateCategory = (birthDate: string) => {
+    if (!birthDate) return 'N/A';
+    const birthYear = parseInt(birthDate.split('-')[0]);
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - birthYear;
+    return `Sub-${age}`;
+  };
+
+  const generateTrainingGameStatsExcel = () => {
+    const activities = getFilteredActivitiesForReport();
+    if (!activities.length) return alert("Nenhuma atividade no período.");
+
+    const data: any[] = [];
+    const activeStudents = students.filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
+
+    activeStudents.forEach(student => {
+        // Encontra o grupo do aluno (assumindo que o primeiro ID de grupo é o principal, ou "Sem Grupo")
+        const groupName = student.groupIds && student.groupIds.length > 0 
+            ? groups.find(g => g.id === student.groupIds[0])?.name || 'Grupo Removido'
+            : 'Sem Grupo';
+        
+        const category = calculateCategory(student.birthDate);
+
+        let trainingPresence = 0;
+        let trainingAbsence = 0;
+        let gamesPlayed = 0;
+
+        activities.forEach(act => {
+            // Verifica se o aluno deveria participar desta atividade
+            const isParticipant = (act.groupId && (student.groupIds || []).includes(act.groupId)) || 
+                                  (act.participants && act.participants.includes(student.id));
+            
+            if (isParticipant) {
+                const isPresent = act.attendance.includes(student.id);
+
+                if (act.type === 'TRAINING') {
+                    if (isPresent) {
+                        trainingPresence++;
+                    } else {
+                        trainingAbsence++;
+                    }
+                } else if (act.type === 'GAME') {
+                    if (isPresent) {
+                        gamesPlayed++;
+                    }
+                }
+            }
+        });
+
+        // Só adiciona na lista se tiver alguma atividade registrada no período (opcional, mas evita linhas zeradas desnecessárias)
+        // Se o usuário quiser ver TODOS, remova a condição abaixo.
+        // Vou manter todos para garantir que ele veja quem não foi em nada.
+        data.push({
+            "Nome": student.name,
+            "Categoria": category,
+            "Grupo": groupName,
+            "Presença em Treinos": trainingPresence,
+            "Faltas em Treinos": trainingAbsence,
+            "Jogos Disputados": gamesPlayed
+        });
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Estatísticas");
+    
+    const fileName = `Estatisticas_Treino_Jogo_${reportStartDate}_${reportEndDate}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   const handleOpenNotify = (e: React.MouseEvent, activity: Activity) => {
       e.stopPropagation();
       const targetStudents = getAttendeesList(activity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
@@ -691,6 +797,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                 </button>
                 <button onClick={generateStudentStatsReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 rounded-xl transition-all group text-left">
                   <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors"><Goal className="w-5 h-5 text-blue-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-blue-700">Estatísticas de Atletas</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Artilharia e Participações</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
+                </button>
+                <button onClick={generateAttendanceExcelReport} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-green-50 border border-gray-100 hover:border-green-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-200 transition-colors"><FileSpreadsheet className="w-5 h-5 text-green-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-green-700">Exportar Excel (Geral)</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Todas as atividades do período</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-green-500" />
+                </button>
+                <button onClick={generateTrainingGameStatsExcel} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 rounded-xl transition-all group text-left">
+                  <div className="flex items-center gap-3"><div className="p-2 bg-emerald-100 rounded-lg group-hover:bg-emerald-200 transition-colors"><FileSpreadsheet className="w-5 h-5 text-emerald-600" /></div><div><span className="font-bold text-gray-800 block group-hover:text-emerald-700">Estatísticas (Excel)</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-tight">Presença Treino vs Jogo</span></div></div><ChevronRightIcon className="w-5 h-5 text-gray-300 group-hover:text-emerald-500" />
                 </button>
               </div>
             </div>
