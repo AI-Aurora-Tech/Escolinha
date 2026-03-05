@@ -526,8 +526,25 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       // Garante que estamos usando a versão mais atualizada da atividade (com descrição recém-salva)
       const currentActivity = activities.find(a => a.id === activity.id) || activity;
       
-      const targetStudents = getAttendeesList(currentActivity); if (!targetStudents.length) return alert("Sem alunos vinculados.");
-      if (confirm(`Convocar ${targetStudents.length} atletas via Z-API?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`)) {
+      const allAttendees = getAttendeesList(currentActivity); 
+      if (!allAttendees.length) return alert("Sem alunos vinculados.");
+
+      // Filtrar quem já respondeu (CONFIRMED ou DECLINED)
+      const targetStudents = allAttendees.filter(student => {
+          const rsvp = currentActivity.rsvps?.find(r => r.studentId === student.id);
+          return !rsvp || (rsvp.status !== 'CONFIRMED' && rsvp.status !== 'DECLINED');
+      });
+
+      if (targetStudents.length === 0) {
+          return alert("Todos os alunos convocados já responderam.");
+      }
+
+      const ignoredCount = allAttendees.length - targetStudents.length;
+      const confirmMsg = ignoredCount > 0 
+          ? `Convocar ${targetStudents.length} atletas via Z-API?\n(${ignoredCount} atletas já responderam e não receberão mensagem novamente)\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`
+          : `Convocar ${targetStudents.length} atletas via Z-API?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`;
+
+      if (confirm(confirmMsg)) {
           setNotifyActivity(currentActivity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
       }
   };
