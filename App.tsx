@@ -164,8 +164,13 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const channel = supabase.channel('app-db-changes').on('postgres_changes', { event: '*', schema: 'public' }, () => fetchData(true)).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let timeout: NodeJS.Timeout;
+    const handleDbChange = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fetchData(true), 1500);
+    };
+    const channel = supabase.channel('app-db-changes').on('postgres_changes', { event: '*', schema: 'public' }, handleDbChange).subscribe();
+    return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
   }, [isAuthenticated, fetchData]);
 
   useEffect(() => { if (isAuthenticated) fetchData(); }, [isAuthenticated, fetchData]);
@@ -338,9 +343,11 @@ const AppContent: React.FC = () => {
   };
   const handleUpdateGroup = async (g: Group) => {
       setGroups(prev => prev.map(group => group.id === g.id ? { ...group, name: g.name } : group));
-      supabase.from('groups').update({ name: g.name }).eq('id', g.id).then(() => fetchData(true));
+      await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
+      await fetchData(true);
   };
   const handleDeleteGroup = async (id: string) => {
+      setGroups(prev => prev.filter(group => group.id !== id));
       await supabase.from('groups').delete().eq('id', id);
       await fetchData(true);
   };
@@ -372,7 +379,8 @@ const AppContent: React.FC = () => {
           promises.push(supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id));
       }
       
-      Promise.all(promises).then(() => fetchData(true)); // Atualiza em background
+      await Promise.all(promises);
+      await fetchData(true); // Atualiza em background
   };
 
   const handleAddUser = async (u: Omit<User, 'id'>) => {
