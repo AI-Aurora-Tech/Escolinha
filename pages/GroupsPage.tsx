@@ -217,9 +217,18 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
       const isSelected = selectedStudentIds.has(s.id);
       if (memberFilter === 'MEMBERS' && !isSelected) return false;
       if (memberFilter === 'NON_MEMBERS' && isSelected) return false;
+      
       const age = calculateAge(s.birthDate).toString();
+      const currentYear = new Date().getFullYear();
+      const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+      const categoryStr1 = `sub-${currentYear - birthYear}`;
+      const categoryStr2 = `sub ${currentYear - birthYear}`;
+      
       const searchLower = searchTerm.toLowerCase();
-      return s.name.toLowerCase().includes(searchLower) || age === searchLower;
+      return s.name.toLowerCase().includes(searchLower) || 
+             age === searchLower || 
+             categoryStr1.includes(searchLower) || 
+             categoryStr2.includes(searchLower);
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -339,7 +348,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                             <input 
                                 type="text" 
-                                placeholder="Buscar atleta..." 
+                                placeholder="Buscar atleta ou categoria (ex: sub-11)..." 
                                 className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm shadow-sm"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -407,7 +416,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                                                         )}
                                                     </div>
                                                     <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
-                                                        <span>{age} anos</span>
+                                                        <span>{age} anos (Sub-{new Date().getFullYear() - (student.birthDate ? parseInt(student.birthDate.split('-')[0]) : new Date().getFullYear())})</span>
                                                         {groupNames.length > 0 && (
                                                             <span className="truncate max-w-[150px] text-gray-400">
                                                                 • {groupNames.map((g, idx) => (
