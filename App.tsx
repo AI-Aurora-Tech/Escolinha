@@ -500,33 +500,6 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      if (newActivityData && a.type === 'GAME' && a.fee && a.fee > 0) {
-        let participantIds: string[] = [];
-        if (a.groupId) {
-            participantIds = students
-                .filter(s => s.active && (s.groupIds || []).includes(a.groupId!))
-                .map(s => s.id);
-        } else if (a.participants && a.participants.length > 0) {
-            participantIds = a.participants;
-        }
-
-        const transactionPayloads = participantIds.map(studentId => ({
-            description: `Taxa Jogo: ${a.title}`,
-            category: 'Taxa de Atividade',
-            amount: a.fee,
-            type: TransactionType.INCOME,
-            date: a.date,
-            status: PaymentStatus.PENDING,
-            student_id: studentId,
-            external_reference: `game_fee_${newActivityData.id}_${studentId}`,
-            recurrence: 'NONE',
-        }));
-        
-        if (transactionPayloads.length > 0) {
-            await supabase.from('transactions').insert(transactionPayloads);
-        }
-      }
-
       // await fetchData(true);
   };
 
@@ -565,15 +538,18 @@ const AppContent: React.FC = () => {
               const extRef = `game_fee_${a.id}_${studentId}`;
               const existingTx = existingTxs.find(t => t.externalReference === extRef);
               const isPresent = (a.attendance || []).includes(studentId);
+              const hasConfirmedRsvp = a.rsvps?.some(r => r.studentId === studentId && r.status === 'CONFIRMED');
 
               if (!existingTx) {
-                  transactionsToInsert.push({
-                      description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
-                      amount: a.fee, type: TransactionType.INCOME, date: a.date,
-                      status: isPresent ? PaymentStatus.PENDING : PaymentStatus.CANCELLED, 
-                      student_id: studentId,
-                      external_reference: extRef, recurrence: 'NONE',
-                  });
+                  if (isPresent || hasConfirmedRsvp) {
+                      transactionsToInsert.push({
+                          description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
+                          amount: a.fee, type: TransactionType.INCOME, date: a.date,
+                          status: PaymentStatus.PENDING, 
+                          student_id: studentId,
+                          external_reference: extRef, recurrence: 'NONE',
+                      });
+                  }
               } else {
                   const updates: any = {};
                   let needsUpdate = false;
@@ -644,9 +620,9 @@ const AppContent: React.FC = () => {
         const extRef = `game_fee_${activityId}_${studentId}`;
         const linkedTx = transactions.find(t => t.externalReference === extRef);
 
-        if (linkedTx) {
-            const isGameFinished = typeof activity.homeScore === 'number' && typeof activity.awayScore === 'number';
+        const isGameFinished = typeof activity.homeScore === 'number' && typeof activity.awayScore === 'number';
 
+        if (linkedTx) {
             // Se estava presente e agora estamos marcando FALTA
             if (isPresent && linkedTx.status === PaymentStatus.PENDING && isGameFinished) {
                 setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.CANCELLED } : tx));
@@ -657,6 +633,22 @@ const AppContent: React.FC = () => {
                 setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.PENDING } : tx));
                 await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).eq('id', linkedTx.id);
             }
+        } else if (!isPresent) {
+            // Se estava ausente (não tinha transação) e agora estamos marcando PRESENÇA, cria a transação
+            const txPayload = {
+                description: `Taxa Jogo: ${activity.title}`,
+                category: 'Taxa de Atividade',
+                amount: activity.fee,
+                type: TransactionType.INCOME,
+                date: activity.date,
+                status: PaymentStatus.PENDING,
+                student_id: studentId,
+                payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                external_reference: extRef,
+                recurrence: 'NONE'
+            };
+            setTransactions(prev => [...prev, { ...txPayload, id: 'temp-' + Date.now() } as any]);
+            await supabase.from('transactions').insert([txPayload]);
         }
     }
 

@@ -102,7 +102,7 @@ export const RSVPPage: React.FC = () => {
               setGeneratingPix(true);
               try {
                   // Use deterministic reference to prevent duplicates
-                  const externalRef = `GAME-${activityId}-${studentId}`;
+                  const externalRef = `game_fee_${activityId}_${studentId}`;
                   console.log("External Reference:", externalRef);
                   
                   // Check if transaction already exists (ignoring cancelled ones)
@@ -178,6 +178,13 @@ export const RSVPPage: React.FC = () => {
           }
       } else {
           msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
+          
+          // Delete pending transaction if user declines
+          const externalRef = `game_fee_${activityId}_${studentId}`;
+          await supabase.from('transactions')
+              .delete()
+              .eq('external_reference', externalRef)
+              .eq('status', PaymentStatus.PENDING);
       }
       
       // Fire and forget to not block UI
