@@ -388,6 +388,9 @@ const AppContent: React.FC = () => {
       if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
       if (t.recurrence !== undefined) payload.recurrence = t.recurrence;
 
+      // Optimistic update
+      setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
+
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
         if (t.status === PaymentStatus.PAID) {
@@ -400,7 +403,11 @@ const AppContent: React.FC = () => {
                 sendZApiMessage(student.guardian.phone, msg);
             }
         }
-        await fetchData(true);
+        // Background fetch will happen via realtime subscription, no need to await it here
+        fetchData(true);
+      } else {
+        // Revert on error
+        fetchData(true);
       }
   };
 
@@ -627,6 +634,9 @@ const AppContent: React.FC = () => {
       ? activity.attendance.filter(id => id !== studentId) 
       : [...activity.attendance, studentId];
     
+    // Optimistic update for activities
+    setActivities(prev => prev.map(a => a.id === activityId ? { ...a, attendance: nextAttendance } : a));
+
     await supabase.from('activities').update({ attendance: nextAttendance }).eq('id', activityId);
 
     // Regra: Se for um JOGO com taxa, sincronizar o status da transação com a presença
@@ -639,16 +649,18 @@ const AppContent: React.FC = () => {
 
             // Se estava presente e agora estamos marcando FALTA
             if (isPresent && linkedTx.status === PaymentStatus.PENDING && isGameFinished) {
+                setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.CANCELLED } : tx));
                 await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).eq('id', linkedTx.id);
             } 
             // Se estava ausente e agora estamos marcando PRESENÇA
             else if (!isPresent && linkedTx.status === PaymentStatus.CANCELLED) {
+                setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.PENDING } : tx));
                 await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).eq('id', linkedTx.id);
             }
         }
     }
 
-    // await fetchData(true);
+    // Background fetch will happen via realtime subscription
   };
 
   const handleUpdateFeePayment = async (activityId: string, studentId: string) => {
@@ -665,9 +677,14 @@ const AppContent: React.FC = () => {
         ? [...feePayments, studentId]
         : feePayments.filter(id => id !== studentId);
 
+    // Optimistic update for activities
+    setActivities(prev => prev.map(a => a.id === activityId ? { ...a, feePayments: nextFeePayments } : a));
+
     const { error: actError } = await supabase.from('activities').update({ fee_payments: nextFeePayments }).eq('id', activityId);
     if (actError) {
         console.error("Error updating activity fee payments:", actError);
+        // Revert on error
+        fetchData(true);
         return;
     }
 
@@ -675,6 +692,8 @@ const AppContent: React.FC = () => {
 
     if (becomingPaid) {
         if (existingTx) {
+            // Optimistic update for transactions
+            setTransactions(prev => prev.map(tx => tx.id === existingTx.id ? { ...tx, status: PaymentStatus.PAID, paymentDate: new Date().toISOString().split('T')[0], paymentMethod: PaymentMethod.CASH } : tx));
             await supabase.from('transactions').update({
                 status: PaymentStatus.PAID,
                 payment_date: new Date().toISOString().split('T')[0],
@@ -694,6 +713,8 @@ const AppContent: React.FC = () => {
                 payment_method: PaymentMethod.CASH,
                 external_reference: extRef
             };
+            // Optimistic update for transactions (we don't have the ID yet, so we just append a temporary one)
+            setTransactions(prev => [...prev, { ...txPayload, id: 'temp-' + Date.now() } as any]);
             await supabase.from('transactions').insert([txPayload]);
         }
 
@@ -703,6 +724,8 @@ const AppContent: React.FC = () => {
         }
     } else {
         if (existingTx) {
+            // Optimistic update for transactions
+            setTransactions(prev => prev.map(tx => tx.id === existingTx.id ? { ...tx, status: PaymentStatus.PENDING, paymentDate: undefined } : tx));
             await supabase.from('transactions').update({
                 status: PaymentStatus.PENDING,
                 payment_date: null
@@ -710,7 +733,7 @@ const AppContent: React.FC = () => {
         }
     }
 
-    // await fetchData(true);
+    // Background fetch will happen via realtime subscription
   };
 
   const handleAddOccurrence = async (studentId: string, description: string, date: string) => {
