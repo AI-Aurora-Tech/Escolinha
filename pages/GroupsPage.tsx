@@ -11,7 +11,7 @@ interface GroupsPageProps {
   students: Student[];
   transactions: Transaction[];
   onAddGroup: (group: Group) => Promise<string | null>;
-  onUpdateGroup: (group: Group) => void;
+  onUpdateGroup: (group: Group) => Promise<void>;
   onDeleteGroup: (id: string) => void;
   onBatchAssignStudents: (studentIds: string[], groupId: string) => void;
 }
@@ -93,7 +93,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     let targetGroupId = editingId;
     
     if (editingId) {
-        onUpdateGroup({ ...form, id: editingId });
+        await onUpdateGroup({ ...form, id: editingId });
     } else {
         const newId = await onAddGroup({ ...form, id: '' });
         targetGroupId = newId;

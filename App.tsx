@@ -330,12 +330,15 @@ const AppContent: React.FC = () => {
 
   const handleAddGroup = async (g: Group) => {
       const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select();
-      await fetchData(true);
+      if (data && data[0]) {
+          setGroups(prev => [...prev, { id: data[0].id, name: data[0].name }]);
+      }
+      fetchData(true);
       return data?.[0]?.id || null;
   };
   const handleUpdateGroup = async (g: Group) => {
-      await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
-      await fetchData(true);
+      setGroups(prev => prev.map(group => group.id === g.id ? { ...group, name: g.name } : group));
+      supabase.from('groups').update({ name: g.name }).eq('id', g.id).then(() => fetchData(true));
   };
   const handleDeleteGroup = async (id: string) => {
       await supabase.from('groups').delete().eq('id', id);
@@ -343,18 +346,33 @@ const AppContent: React.FC = () => {
   };
 
   const handleBatchAssignStudents = async (studentIds: string[], groupId: string) => {
+      setStudents(prev => prev.map(s => {
+          if (studentIds.includes(s.id)) {
+              if (!(s.groupIds || []).includes(groupId)) {
+                  return { ...s, groupIds: [...(s.groupIds || []), groupId] };
+              }
+          } else if ((s.groupIds || []).includes(groupId)) {
+              return { ...s, groupIds: (s.groupIds || []).filter(id => id !== groupId) };
+          }
+          return s;
+      }));
+
+      const promises = [];
       for (const sId of studentIds) {
           const student = students.find(s => s.id === sId);
           if (!student) continue;
-          const nextGroups = (student.groupIds || []).includes(groupId) ? student.groupIds : [...(student.groupIds || []), groupId];
-          await supabase.from('students').update({ group_ids: nextGroups }).eq('id', sId);
+          if (!(student.groupIds || []).includes(groupId)) {
+              const nextGroups = [...(student.groupIds || []), groupId];
+              promises.push(supabase.from('students').update({ group_ids: nextGroups }).eq('id', sId));
+          }
       }
       const others = students.filter(s => !studentIds.includes(s.id) && (s.groupIds || []).includes(groupId));
       for (const s of others) {
           const nextGroups = (s.groupIds || []).filter(id => id !== groupId);
-          await supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id);
+          promises.push(supabase.from('students').update({ group_ids: nextGroups }).eq('id', s.id));
       }
-      await fetchData(true);
+      
+      Promise.all(promises).then(() => fetchData(true)); // Atualiza em background
   };
 
   const handleAddUser = async (u: Omit<User, 'id'>) => {
