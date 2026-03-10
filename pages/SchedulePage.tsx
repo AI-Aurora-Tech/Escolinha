@@ -610,11 +610,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
                   if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
                   if (notifyActivity.fee && notifyActivity.fee > 0) {
-                      msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n\n*Pagamento da Taxa:* \n🔑 Chave PIX (Celular): *11987019721*\n👤 Nome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n`;
-                      try {
-                          const pref = await createMPPreference({ title: `Taxa Jogo: ${notifyActivity.title}`, price: notifyActivity.fee, externalReference: extRef, payer: { name: student.guardian.name, email: student.guardian.email || 'financeiro@martinica.com', phone: student.guardian.phone, identification: { type: 'CPF', number: (student.guardian.cpf || '').replace(/\D/g, '') } } });
-                          if (pref) msg += `\n💳 Ou pague com Cartão:\n${pref.init_point}\n`;
-                      } catch (e) { console.error("Erro MP", e); }
+                      msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
                   }
               }
               if (notifyActivity.location) msg += `📍 Local: ${notifyActivity.location}\n`;
