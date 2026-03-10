@@ -606,7 +606,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Selecionar Grupo</label>
                                     <select required className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold" value={targetGroupId} onChange={e => setTargetGroupId(e.target.value)}>
                                         <option value="">Escolha o grupo...</option>
-                                        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                        {[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                                     </select>
                                 </div>
                             )}

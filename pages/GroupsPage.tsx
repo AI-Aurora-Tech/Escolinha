@@ -247,7 +247,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {groups.map(group => {
+        {[...groups].sort((a, b) => a.name.localeCompare(b.name)).map(group => {
             const studentCount = students.filter(s => s.groupIds && s.groupIds.includes(group.id)).length;
             const isSelected = selectedGroupIds.has(group.id);
 
