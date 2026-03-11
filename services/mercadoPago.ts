@@ -87,12 +87,22 @@ const sanitizePayer = (payerData: CreatePreferenceData['payer']) => {
 
 // Helper para garantir URL pública para o Webhook (substitui ais-dev por ais-pre)
 const getWebhookUrl = () => {
+    // Agora o webhook aponta diretamente para a Edge Function do Supabase
+    // @ts-ignore
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (supabaseUrl) {
+        // Remove o https:// e pega só o domínio para montar a URL da function
+        const projectRef = supabaseUrl.split('.')[0].replace('https://', '');
+        const webhookUrl = `https://${projectRef}.supabase.co/functions/v1/mp-webhook`;
+        console.log("Webhook URL gerada (Edge Function):", webhookUrl);
+        return webhookUrl;
+    }
+    
+    // Fallback caso não tenha a variável de ambiente (não deve acontecer)
     let url = window.location.origin;
-    // Se estiver no ambiente de dev (autenticado), muda para o de preview (público)
     if (url.includes('ais-dev-')) {
         url = url.replace('ais-dev-', 'ais-pre-');
     }
-    console.log("Webhook URL gerada:", `${url}/api/webhook/mercadopago`);
     return `${url}/api/webhook/mercadopago`;
 };
 
