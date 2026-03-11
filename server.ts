@@ -181,6 +181,11 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+  } else {
+    app.use(express.static('dist'));
+    app.get('*', (req, res) => {
+      res.sendFile('dist/index.html', { root: '.' });
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
