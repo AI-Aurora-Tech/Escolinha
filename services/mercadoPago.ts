@@ -92,8 +92,8 @@ const getWebhookUrl = () => {
     if (url.includes('ais-dev-')) {
         url = url.replace('ais-dev-', 'ais-pre-');
     }
-    console.log("Webhook URL gerada:", `${url}/api/mp-webhook`);
-    return `${url}/api/mp-webhook`;
+    console.log("Webhook URL gerada:", `${url}/api/webhook/mercadopago`);
+    return `${url}/api/webhook/mercadopago`;
 };
 
 export const createMPPreference = async (data: CreatePreferenceData): Promise<{ init_point: string, id: string } | null> => {

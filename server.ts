@@ -31,7 +31,7 @@ async function startServer() {
   });
 
   // --- WEBHOOK MERCADO PAGO ---
-  app.all('/api/mp-webhook', async (req, res) => {
+  app.all('/api/webhook/mercadopago', async (req, res) => {
     console.log(`[MP Webhook] Chamada recebida: ${req.method}`);
     
     if (req.method === 'GET') {
