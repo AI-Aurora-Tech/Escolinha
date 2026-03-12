@@ -7,6 +7,9 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+// Define o fuso horário global para o Node.js
+process.env.TZ = 'America/Sao_Paulo';
+
 // Store logs in memory
 let serverLogs: string[] = [];
 const originalLog = console.log;
@@ -64,7 +67,7 @@ async function startServer() {
                 if (paymentData.status === 'approved' && paymentData.external_reference) {
                     const { data: updated } = await supabase
                         .from('transactions')
-                        .update({ status: PaymentStatus.PAID, payment_date: new Date().toISOString().split('T')[0] })
+                        .update({ status: PaymentStatus.PAID, payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) })
                         .eq('external_reference', paymentData.external_reference)
                         .select();
                     
@@ -148,7 +151,7 @@ async function startServer() {
             // Atualiza no banco
             const { data: updated, error: updateError } = await supabase
                 .from('transactions')
-                .update({ status: PaymentStatus.PAID, payment_date: new Date().toISOString().split('T')[0] })
+                .update({ status: PaymentStatus.PAID, payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) })
                 .eq('external_reference', ref)
                 .select();
 

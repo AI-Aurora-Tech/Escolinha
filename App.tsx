@@ -711,10 +711,10 @@ const AppContent: React.FC = () => {
     if (becomingPaid) {
         if (existingTx) {
             // Optimistic update for transactions
-            setTransactions(prev => prev.map(tx => tx.id === existingTx.id ? { ...tx, status: PaymentStatus.PAID, paymentDate: new Date().toISOString().split('T')[0], paymentMethod: PaymentMethod.CASH } : tx));
+            setTransactions(prev => prev.map(tx => tx.id === existingTx.id ? { ...tx, status: PaymentStatus.PAID, paymentDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), paymentMethod: PaymentMethod.CASH } : tx));
             await supabase.from('transactions').update({
                 status: PaymentStatus.PAID,
-                payment_date: new Date().toISOString().split('T')[0],
+                payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                 payment_method: PaymentMethod.CASH
             }).eq('id', existingTx.id);
         } else {
@@ -725,7 +725,7 @@ const AppContent: React.FC = () => {
                 amount: Number(activity.fee) || 0,
                 type: TransactionType.INCOME,
                 date: activity.date,
-                payment_date: new Date().toISOString().split('T')[0],
+                payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                 status: PaymentStatus.PAID,
                 student_id: studentId,
                 payment_method: PaymentMethod.CASH,

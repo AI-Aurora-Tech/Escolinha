@@ -130,7 +130,7 @@ export const RSVPPage: React.FC = () => {
                               category: 'Taxa de Atividade',
                               amount: activity.fee,
                               type: TransactionType.INCOME,
-                              date: new Date().toISOString().split('T')[0],
+                              date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                               status: PaymentStatus.PENDING,
                               student_id: studentId,
                               payment_method: PaymentMethod.PIX_MERCADO_PAGO,

@@ -26,7 +26,7 @@ interface SchedulePageProps {
 }
 
 export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser, onRefresh }) => {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
@@ -47,7 +47,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -84,8 +84,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   // --- REPORT STATE ---
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [reportEndDate, setReportEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+  const [reportStartDate, setReportStartDate] = useState((() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })());
+  const [reportEndDate, setReportEndDate] = useState((() => { const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })());
   const [reportSelectedGameId, setReportSelectedGameId] = useState<string>('ALL');
 
   // --- NOTIFICATION STATE ---
@@ -100,7 +100,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
-      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toISOString().split('T')[0], startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
+      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
   });
 
   const selectedActivity = selectedActivityId ? visibleActivities.find(a => a.id === selectedActivityId) || null : null;
@@ -114,7 +114,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   };
 
   const handleNavigateDate = (days: number) => { const current = new Date(selectedDate + 'T00:00:00'); current.setDate(current.getDate() + days); setSelectedDate(current.toISOString().split('T')[0]); setSelectedActivityId(null); };
-  const handleGoToday = () => { setSelectedDate(new Date().toISOString().split('T')[0]); setSelectedActivityId(null); };
+  const handleGoToday = () => { setSelectedDate(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })); setSelectedActivityId(null); };
 
   const toggleStudentSelection = (id: string) => {
       const next = new Set(selectedStudentIds); if (next.has(id)) next.delete(id); else next.add(id); setSelectedStudentIds(next);
@@ -377,7 +377,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }
     });
 
-    doc.save(`Relatorio_Frequencia_Taxas_Jogos_${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(`Relatorio_Frequencia_Taxas_Jogos_${new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}.pdf`);
   };
 
   const formatFriendlyDate = (dateString: string) => {

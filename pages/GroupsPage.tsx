@@ -25,7 +25,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
   
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
 
   const getStudentOverdueCount = (studentId: string) => {
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr).length;
@@ -169,7 +169,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     
     const fileName = idsToExport.length === 1 
       ? `Grupo_${groups.find(g => g.id === idsToExport[0])?.name.replace(/\s+/g, '_')}.xlsx`
-      : `Exportacao_Grupos_Martinica_${new Date().toISOString().split('T')[0]}.xlsx`;
+      : `Exportacao_Grupos_Martinica_${new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}.xlsx`;
 
     XLSX.writeFile(wb, fileName);
   };

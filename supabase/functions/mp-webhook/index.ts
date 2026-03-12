@@ -49,7 +49,7 @@ serve(async (req) => {
         .from("transactions")
         .update({ 
           status: "PAID", 
-          payment_date: new Date().toISOString().split("T")[0] 
+          payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) 
         })
         .eq("external_reference", paymentData.external_reference)
         .select();

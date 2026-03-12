@@ -34,11 +34,11 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [txToPay, setTxToPay] = useState<Transaction | null>(null);
-  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+  const [payDate, setPayDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   const [payMethod, setPayMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
 
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState((() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })());
+  const [endDate, setEndDate] = useState((() => { const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })());
 
   // Batch / Destination States
   const [destType, setDestType] = useState<'GENERAL' | 'STUDENT' | 'GROUP'>('GENERAL');
@@ -49,10 +49,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const EXPENSE_CATEGORIES = ['Aluguel Campo', 'Salário Professor', 'Energia/Água', 'Material Esportivo', 'Marketing', 'Manutenção', 'Outros'];
 
   const [newTx, setNewTx] = useState<Partial<Transaction> & { recurrenceMonths?: number }>({
-    description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12
+    description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
   // Load Settings on Mount
   useEffect(() => {
@@ -200,7 +200,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         setDestType('GENERAL');
         setTargetStudentId('');
         setTargetGroupId('');
-        setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 });
+        setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 });
     } else {
         alert("Preencha a descrição e o valor do lançamento.");
     }
@@ -225,7 +225,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const handleOpenPayModal = (tx: Transaction) => {
       setTxToPay(tx); 
-      setPayDate(new Date().toISOString().split('T')[0]); 
+      setPayDate(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })); 
       setPayMethod(tx.paymentMethod || PaymentMethod.CASH);
       setPayModalOpen(true);
   };
@@ -405,7 +405,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div className="flex gap-2 w-full sm:w-auto">
                         <button onClick={handleExportExcel} className="p-2 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-100 transition-colors" title="Exportar Excel"><FileSpreadsheet className="w-5 h-5" /></button>
                         <button onClick={handleExportPDF} className="p-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors" title="Gerar Relatório PDF"><FileText className="w-5 h-5" /></button>
-                        <button onClick={() => { setEditingTxId(null); setDestType('GENERAL'); setTargetStudentId(''); setTargetGroupId(''); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toISOString().split('T')[0], status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
+                        <button onClick={() => { setEditingTxId(null); setDestType('GENERAL'); setTargetStudentId(''); setTargetGroupId(''); setNewTx({ description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12 }); setIsModalOpen(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm transition-colors text-sm font-medium whitespace-nowrap"><Plus className="w-4 h-4" /> Novo Lançamento</button>
                     </div>
                 </div>
             </div>
