@@ -47,6 +47,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [studentSearch, setStudentSearch] = useState('');
   const [hasFee, setHasFee] = useState(false);
 
+  // Helper para verificar se a taxa foi paga com base nas transações reais
+  const isActivityFeePaid = (activityId: string, studentId: string) => {
+    const extRef = `game_fee_${activityId}_${studentId}`;
+    const tx = transactions.find(t => t.externalReference === extRef);
+    return tx?.status === PaymentStatus.PAID;
+  };
+
   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
@@ -200,7 +207,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             const participants = getAttendeesList(activityData);
             const debtors = participants.filter(s => 
                 (activityData.attendance || []).includes(s.id) && 
-                !(activityData.feePayments || []).includes(s.id)
+                !isActivityFeePaid(activityData.id, s.id)
             );
             
             if (debtors.length > 0) {
@@ -305,7 +312,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       const attendees = getAttendeesList(game);
       attendees.forEach(student => {
         const isPresent = game.attendance.includes(student.id);
-        const isPaid = game.feePayments?.includes(student.id);
+        const isPaid = isActivityFeePaid(game.id, student.id);
         const fee = game.fee || 0;
         const groupName = groups.find(g => g.id === game.groupId)?.name || 'Lista Avulsa';
 
@@ -444,7 +451,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         attendees.forEach(student => {
             const isPresent = act.attendance.includes(student.id);
             const goals = act.scorers?.filter(s => s === student.id).length || 0;
-            const feeStatus = act.fee ? (act.feePayments?.includes(student.id) ? 'Pago' : 'Pendente') : '-';
+            const feeStatus = act.fee ? (isActivityFeePaid(act.id, student.id) ? 'Pago' : 'Pendente') : '-';
             
             data.push({
                 "Data": formatDate(act.date),
@@ -743,7 +750,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                         {getAttendeesList(selectedActivity).map(s => {
                             const pres = selectedActivity.attendance.includes(s.id); 
                             const goals = selectedActivity.scorers?.filter(x => x === s.id).length || 0;
-                            const isFeePaid = selectedActivity.feePayments?.includes(s.id);
+                            const isFeePaid = isActivityFeePaid(selectedActivity.id, s.id);
                             
                             // Cálculo de inadimplência crítica (3 ou mais mensalidades)
                             const overdueCount = transactions.filter(t => 
@@ -805,7 +812,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 )}
                             </div>
                         </div>
-                        {selectedActivity.fee && !isGuardian && (<div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase"><span>Arrecadação:</span><span className="text-primary-600">R$ {(selectedActivity.fee * (selectedActivity.feePayments?.length || 0)).toFixed(2)}</span></div>)}
+                        {selectedActivity.fee && !isGuardian && (<div className="text-[10px] text-gray-500 font-bold flex justify-between pt-2 border-t border-gray-200 uppercase"><span>Arrecadação:</span><span className="text-primary-600">R$ {(selectedActivity.fee * (getAttendeesList(selectedActivity).filter(s => isActivityFeePaid(selectedActivity.id, s.id)).length)).toFixed(2)}</span></div>)}
                     </div>
                 </div>
             ) : (

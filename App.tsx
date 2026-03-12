@@ -687,10 +687,14 @@ const AppContent: React.FC = () => {
     if (!activity || !student) return;
 
     const extRef = `game_fee_${activityId}_${studentId}`;
-    const feePayments = activity.feePayments || [];
-    const isCurrentlyPaid = feePayments.includes(studentId);
+    const existingTx = transactions.find(t => t.externalReference === extRef);
+    
+    // Check if paid based on transaction status
+    const isCurrentlyPaid = existingTx?.status === PaymentStatus.PAID;
     const becomingPaid = !isCurrentlyPaid;
 
+    // Keep feePayments array updated just in case, but we rely on transactions
+    const feePayments = activity.feePayments || [];
     const nextFeePayments = becomingPaid
         ? [...feePayments, studentId]
         : feePayments.filter(id => id !== studentId);
@@ -705,8 +709,6 @@ const AppContent: React.FC = () => {
         fetchData(true);
         return;
     }
-
-    const existingTx = transactions.find(t => t.externalReference === extRef);
 
     if (becomingPaid) {
         if (existingTx) {
