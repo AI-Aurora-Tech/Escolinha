@@ -77,7 +77,9 @@ export const TacticalLineup: React.FC<TacticalLineupProps> = ({ activity, studen
   const [showPlayerSelect, setShowPlayerSelect] = useState(false);
   const [jerseyNumber, setJerseyNumber] = useState('');
 
-  const participants = students.filter(s => activity.participants?.includes(s.id));
+  const participants = activity.groupId 
+    ? students.filter(s => s.active && (s.groupIds || []).includes(activity.groupId!))
+    : students.filter(s => activity.participants?.includes(s.id));
   
   const usedStudentIds = new Set([
     ...lineup.starting.map(p => p.studentId).filter(Boolean),
