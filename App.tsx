@@ -144,7 +144,8 @@ const AppContent: React.FC = () => {
                 recurrence: a.recurrence || 'none',
                 attendance: a.attendance || [],
                 feePayments: a.fee_payments || [],
-                lineup: a.lineup,
+                lineup: a.activity_type === 'GAME' ? a.lineup : undefined,
+                evaluations: a.activity_type === 'TRAINING' ? a.lineup : undefined,
                 description: a.description,
                 rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
                     id: r.id,
@@ -510,7 +511,7 @@ const AppContent: React.FC = () => {
           recurrence: a.recurrence || 'none', 
           attendance: a.attendance || [], 
           fee_payments: a.feePayments || [],
-          lineup: a.lineup,
+          lineup: a.type === 'TRAINING' ? a.evaluations : a.lineup,
           description: a.description
       };
       
@@ -538,7 +539,7 @@ const AppContent: React.FC = () => {
           away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), 
           participants: a.participants, date: a.date, start_time: a.startTime, 
           end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, 
-          fee_payments: a.feePayments, lineup: a.lineup, description: a.description
+          fee_payments: a.feePayments, lineup: a.type === 'TRAINING' ? a.evaluations : a.lineup, description: a.description
       };
       await supabase.from('activities').update(payload).eq('id', a.id);
 

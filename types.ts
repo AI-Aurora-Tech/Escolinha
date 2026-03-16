@@ -118,6 +118,16 @@ export interface ActivityRSVP {
   createdAt: string;
 }
 
+export interface PerformanceEvaluation {
+  studentId: string;
+  habilidade: number;
+  tomadaDecisao: number;
+  coordenacaoMovimentacao: number;
+  comportamento: number;
+  disciplina: number;
+  comprometimento: number;
+}
+
 export interface Activity {
   id: string;
   title: string;
@@ -139,7 +149,8 @@ export interface Activity {
   attendance: string[]; 
   feePayments?: string[]; 
   lineup?: Lineup;
-  rsvps?: ActivityRSVP[]; // Novo campo para armazenar confirmações
+  rsvps?: ActivityRSVP[];
+  evaluations?: PerformanceEvaluation[];
 }
 
 export interface Transaction {

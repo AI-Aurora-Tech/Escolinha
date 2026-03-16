@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target, Star } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -41,7 +41,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE' | 'OCCURRENCES'>('DETAILS');
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'FINANCE' | 'ATTENDANCE' | 'OCCURRENCES' | 'PERFORMANCE'>('DETAILS');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Filtros de presença
@@ -1152,7 +1152,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <button onClick={() => handleOpenAttendance(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-purple-50 text-purple-700 p-2 rounded-lg text-xs font-bold border border-purple-100"><CalendarCheck className="w-3.5 h-3.5" /></button>
                           <button onClick={() => handleOpenHistory(student)} className={`flex-shrink-0 flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold border ${overdueCount > 0 ? 'bg-gray-800 text-white' : 'bg-blue-50 text-blue-700 border-blue-100'}`}><History className="w-3.5 h-3.5" /></button>
                           {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-orange-50 text-orange-700 p-2 rounded-lg text-xs font-bold border border-orange-100"><MessageSquareWarning className="w-3.5 h-3.5" /></button>}
-                          <button onClick={() => handleOpenEdit(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200"><Edit className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleOpenEdit(student)} className="flex-shrink-0 flex items-center justify-center gap-2 bg-gray-50 text-gray-700 p-2 rounded-lg text-xs font-bold border border-gray-200">{isGuardian ? <UserIcon className="w-3.5 h-3.5" /> : <Edit className="w-3.5 h-3.5" />}</button>
                       </div>
                   </div>
               );
@@ -1274,7 +1274,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         <button onClick={() => handleOpenAttendance(student)} className="text-purple-600 hover:text-purple-800 transition-colors p-2 bg-purple-50 rounded-lg" title="Frequência"><CalendarCheck className="w-4 h-4" /></button>
                         <button onClick={() => handleOpenHistory(student)} className={`p-2 rounded-lg transition-colors ${overdueCount > 0 ? 'bg-gray-800 text-white shadow-md' : 'bg-blue-50 text-blue-600'}`} title="Financeiro"><History className="w-4 h-4" /></button>
                         {!isGuardian && <button onClick={(e) => handleOpenAddOccurrence(e, student)} className="text-orange-600 hover:text-orange-800 p-2 bg-orange-50 rounded-lg transition-colors" title="Enviar Ocorrência"><MessageSquareWarning className="w-4 h-4" /></button>}
-                        <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg" title="Editar"><Edit className="w-4 h-4" /></button>
+                        <button onClick={() => handleOpenEdit(student)} className="text-primary-600 hover:text-primary-800 p-2 bg-primary-50 rounded-lg" title={isGuardian ? "Ver Ficha" : "Editar"}>{isGuardian ? <UserIcon className="w-4 h-4" /> : <Edit className="w-4 h-4" />}</button>
                       </div>
                     </td>
                   </tr>
@@ -1297,6 +1297,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                           <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
                           <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
                           <button onClick={() => setActiveTab('OCCURRENCES')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'OCCURRENCES' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Ocorrências</button>
+                          <button onClick={() => setActiveTab('PERFORMANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'PERFORMANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Performance</button>
                       </div>
                   )}
               </div>
@@ -1637,7 +1638,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                         </div>
                     </div>
                 </div>
-            ) : (
+            ) : activeTab === 'OCCURRENCES' ? (
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
                     <div className="max-w-4xl mx-auto space-y-6">
                         <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
@@ -1671,6 +1672,55 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     <p>Nenhuma ocorrência registrada para este atleta.</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
+                    <div className="max-w-4xl mx-auto space-y-6">
+                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                            <h4 className="font-bold text-gray-700 mb-6 flex items-center gap-2">
+                                <Star className="w-5 h-5 text-purple-600" /> Avaliações de Treino
+                            </h4>
+                            <div className="space-y-4">
+                                {activities.filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => {
+                                    const evalData = activity.evaluations?.find(e => e.studentId === editingId);
+                                    if (!evalData) return null;
+                                    
+                                    return (
+                                        <div key={activity.id} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+                                                <div className="font-bold text-gray-800">{activity.title}</div>
+                                                <div className="text-xs text-gray-500 font-medium flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(activity.date)}</div>
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                                {[
+                                                    { key: 'habilidade', label: 'Habilidade' },
+                                                    { key: 'tomadaDecisao', label: 'Tomada de Decisão' },
+                                                    { key: 'coordenacaoMovimentacao', label: 'Coordenação' },
+                                                    { key: 'comportamento', label: 'Comportamento' },
+                                                    { key: 'disciplina', label: 'Disciplina' },
+                                                    { key: 'comprometimento', label: 'Comprometimento' }
+                                                ].map(criterion => (
+                                                    <div key={criterion.key} className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm flex flex-col items-center justify-center">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 text-center">{criterion.label}</span>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-lg font-black text-purple-600">{(evalData as any)[criterion.key]}</span>
+                                                            <span className="text-xs text-gray-300">/5</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {activities.filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId)).length === 0 && (
+                                    <div className="p-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                                        <Star className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                                        <p>Nenhuma avaliação de treino registrada.</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
