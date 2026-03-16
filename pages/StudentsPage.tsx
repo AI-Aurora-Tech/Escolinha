@@ -1678,21 +1678,37 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             ) : (
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/30">
                     <div className="max-w-4xl mx-auto space-y-6">
-                        <div className="bg-white p-6 rounded-xl border shadow-sm">
-                            <h4 className="font-bold text-gray-700 mb-6 flex items-center gap-2">
-                                <Star className="w-5 h-5 text-purple-600" /> Avaliações de Treino
-                            </h4>
-                            <div className="space-y-4">
-                                {activities.filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => {
-                                    const evalData = activity.evaluations?.find(e => e.studentId === editingId);
-                                    if (!evalData) return null;
-                                    
-                                    return (
-                                        <div key={activity.id} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
-                                                <div className="font-bold text-gray-800">{activity.title}</div>
-                                                <div className="text-xs text-gray-500 font-medium flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(activity.date)}</div>
-                                            </div>
+                        {(() => {
+                            const currentYear = new Date().getFullYear();
+                            
+                            const allStudentActivities = activities
+                                .filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId))
+                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                            const currentYearEvaluations = allStudentActivities
+                                .filter(a => new Date(a.date).getFullYear() === currentYear)
+                                .map(a => a.evaluations!.find(e => e.studentId === editingId)!);
+                            
+                            const hasCurrentYearEvaluations = currentYearEvaluations.length > 0;
+                            const avgPerformance = hasCurrentYearEvaluations ? {
+                                habilidade: currentYearEvaluations.reduce((acc, e) => acc + (e.habilidade || 0), 0) / currentYearEvaluations.length,
+                                tomadaDecisao: currentYearEvaluations.reduce((acc, e) => acc + (e.tomadaDecisao || 0), 0) / currentYearEvaluations.length,
+                                coordenacaoMovimentacao: currentYearEvaluations.reduce((acc, e) => acc + (e.coordenacaoMovimentacao || 0), 0) / currentYearEvaluations.length,
+                                comportamento: currentYearEvaluations.reduce((acc, e) => acc + (e.comportamento || 0), 0) / currentYearEvaluations.length,
+                                disciplina: currentYearEvaluations.reduce((acc, e) => acc + (e.disciplina || 0), 0) / currentYearEvaluations.length,
+                                comprometimento: currentYearEvaluations.reduce((acc, e) => acc + (e.comprometimento || 0), 0) / currentYearEvaluations.length,
+                            } : null;
+
+                            const lastTwoActivities = allStudentActivities.slice(0, 2);
+                            const hasAnyEvaluations = allStudentActivities.length > 0;
+
+                            return (
+                                <>
+                                    {hasCurrentYearEvaluations && avgPerformance && (
+                                        <div className="bg-gradient-to-br from-purple-600 to-indigo-700 p-6 rounded-xl border shadow-sm text-white">
+                                            <h4 className="font-bold mb-6 flex items-center gap-2">
+                                                <Trophy className="w-5 h-5 text-yellow-400" /> Média Consolidada ({currentYear})
+                                            </h4>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                                                 {[
                                                     { key: 'habilidade', label: 'Habilidade' },
@@ -1702,26 +1718,64 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                                     { key: 'disciplina', label: 'Disciplina' },
                                                     { key: 'comprometimento', label: 'Comprometimento' }
                                                 ].map(criterion => (
-                                                    <div key={criterion.key} className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm flex flex-col items-center justify-center">
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 text-center">{criterion.label}</span>
+                                                    <div key={criterion.key} className="bg-white/10 p-3 rounded-lg border border-white/20 shadow-sm flex flex-col items-center justify-center backdrop-blur-sm">
+                                                        <span className="text-[10px] font-bold text-purple-100 uppercase mb-1 text-center">{criterion.label}</span>
                                                         <div className="flex items-center gap-1">
-                                                            <span className="text-lg font-black text-purple-600">{(evalData as any)[criterion.key]}</span>
-                                                            <span className="text-xs text-gray-300">/5</span>
+                                                            <span className="text-xl font-black text-white">{(avgPerformance as any)[criterion.key].toFixed(1)}</span>
+                                                            <span className="text-xs text-purple-200">/5</span>
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
-                                    );
-                                })}
-                                {activities.filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId)).length === 0 && (
-                                    <div className="p-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-                                        <Star className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                                        <p>Nenhuma avaliação de treino registrada.</p>
+                                    )}
+                                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                        <h4 className="font-bold text-gray-700 mb-6 flex items-center gap-2">
+                                            <Star className="w-5 h-5 text-purple-600" /> Últimas Avaliações
+                                        </h4>
+                                        <div className="space-y-4">
+                                            {lastTwoActivities.map(activity => {
+                                                const evalData = activity.evaluations?.find(e => e.studentId === editingId);
+                                                if (!evalData) return null;
+                                                
+                                                return (
+                                                    <div key={activity.id} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+                                                            <div className="font-bold text-gray-800">{activity.title}</div>
+                                                            <div className="text-xs text-gray-500 font-medium flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(activity.date)}</div>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                                            {[
+                                                                { key: 'habilidade', label: 'Habilidade' },
+                                                                { key: 'tomadaDecisao', label: 'Tomada de Decisão' },
+                                                                { key: 'coordenacaoMovimentacao', label: 'Coordenação' },
+                                                                { key: 'comportamento', label: 'Comportamento' },
+                                                                { key: 'disciplina', label: 'Disciplina' },
+                                                                { key: 'comprometimento', label: 'Comprometimento' }
+                                                            ].map(criterion => (
+                                                                <div key={criterion.key} className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm flex flex-col items-center justify-center">
+                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 text-center">{criterion.label}</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="text-lg font-black text-purple-600">{(evalData as any)[criterion.key]}</span>
+                                                                        <span className="text-xs text-gray-300">/5</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {!hasAnyEvaluations && (
+                                                <div className="p-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                                                    <Star className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                                                    <p>Nenhuma avaliação de treino registrada.</p>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        </div>
+                                </>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
