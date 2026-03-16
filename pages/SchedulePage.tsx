@@ -195,9 +195,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     e.preventDefault();
     if (!editingId) return;
 
+    const attendees = getAttendeesList(newActivity).filter(s => newActivity.attendance?.includes(s.id));
+    const finalEvaluations = attendees.map(student => {
+      const existing = newActivity.evaluations?.find(ev => ev.studentId === student.id);
+      return existing || {
+        studentId: student.id,
+        habilidade: 3,
+        tomadaDecisao: 3,
+        coordenacaoMovimentacao: 3,
+        comportamento: 3,
+        disciplina: 3,
+        comprometimento: 3
+      };
+    });
+
     const activityData = {
       ...newActivity,
-      id: editingId
+      id: editingId,
+      evaluations: finalEvaluations
     };
 
     await onUpdateActivity(activityData as Activity);

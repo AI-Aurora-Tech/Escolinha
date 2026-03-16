@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
 import { DashboardPage } from './pages/DashboardPage';
 import { StudentsPage } from './pages/StudentsPage';
@@ -527,7 +528,32 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // await fetchData(true);
+      if (newActivityData) {
+        setActivities(prev => [...prev, {
+          id: newActivityData.id,
+          title: newActivityData.title,
+          type: newActivityData.activity_type || 'TRAINING',
+          fee: newActivityData.fee || 0,
+          location: newActivityData.location || '',
+          presentationTime: newActivityData.presentation_time,
+          opponent: newActivityData.opponent,
+          homeScore: newActivityData.home_score,
+          awayScore: newActivityData.away_score,
+          scorers: newActivityData.scorers || [],
+          groupId: newActivityData.group_id,
+          participants: newActivityData.participants || [],
+          date: newActivityData.date,
+          startTime: newActivityData.start_time,
+          endTime: newActivityData.end_time,
+          recurrence: newActivityData.recurrence || 'none',
+          attendance: newActivityData.attendance || [],
+          feePayments: newActivityData.fee_payments || [],
+          lineup: newActivityData.activity_type === 'GAME' ? newActivityData.lineup : undefined,
+          evaluations: newActivityData.activity_type === 'TRAINING' ? newActivityData.lineup : undefined,
+          description: newActivityData.description,
+          rsvps: []
+        } as Activity]);
+      }
   };
 
   const handleUpdateActivity = async (a: Activity) => {
@@ -618,14 +644,14 @@ const AppContent: React.FC = () => {
           await supabase.from('transactions').delete().like('external_reference', `game_fee_${a.id}_%`).eq('status', PaymentStatus.PENDING);
       }
 
-      // await fetchData(true);
+      setActivities(prev => prev.map(act => act.id === a.id ? a : act));
   };
 
   const handleDeleteActivity = async (id: string) => {
       // Also delete associated pending fee transactions
       await supabase.from('transactions').delete().like('external_reference', `game_fee_${id}_%`).eq('status', PaymentStatus.PENDING);
       await supabase.from('activities').delete().eq('id', id);
-      // await fetchData(true);
+      setActivities(prev => prev.filter(act => act.id !== id));
   };
 
   const handleUpdateAttendance = async (activityId: string, studentId: string) => {
@@ -819,26 +845,41 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-50 min-h-screen pb-20 md:pb-0">
       {isLoading && <div className="fixed inset-0 z-[100] bg-black/20 flex items-center justify-center"><Loader2 className="animate-spin text-primary-600 w-12 h-12" /></div>}
       <Sidebar currentUser={currentUser!} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
-      <main className="flex-1 md:ml-64 p-4 md:p-8">
-        <header className="mb-8 flex items-center gap-4">
-            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-white border rounded-lg"><Menu /></button>
-            <h1 className="text-2xl font-bold text-gray-900 uppercase">{currentPage}</h1>
+      
+      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-full overflow-x-hidden">
+        <header className="mb-6 md:mb-8 flex items-center justify-between md:justify-start gap-4 bg-white md:bg-transparent p-4 md:p-0 -mx-4 md:mx-0 -mt-4 md:mt-0 shadow-sm md:shadow-none sticky top-0 z-30">
+            <div className="flex items-center gap-3">
+              <img src="/logo.svg" alt="Logo" className="w-8 h-8 md:hidden" />
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 uppercase tracking-tight">{currentPage}</h1>
+            </div>
+            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-gray-50 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"><Menu className="w-5 h-5" /></button>
         </header>
-        <Routes>
-          <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
-          <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
-          <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />} />
-          <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
-          <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />
-          <Route path="/plans" element={<PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />} />
-          <Route path="/users" element={<UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />} />
-          <Route path="/aicoach" element={<AICoachPage income={transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} expense={transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} />} />
-          <Route path="/" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
-        </Routes>
+
+        <div className="max-w-7xl mx-auto">
+          <Routes>
+            <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
+            <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
+            <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />} />
+            <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
+            <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />
+            <Route path="/plans" element={<PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />} />
+            <Route path="/users" element={<UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />} />
+            <Route path="/aicoach" element={<AICoachPage income={transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} expense={transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} />} />
+            <Route path="/" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
+          </Routes>
+        </div>
       </main>
+
+      {/* Bottom Navigation for Mobile */}
+      <BottomNav 
+        currentUser={currentUser!} 
+        currentPage={currentPage} 
+        onNavigate={handleNavigate} 
+        onOpenMenu={() => setIsMobileMenuOpen(true)} 
+      />
     </div>
   );
 }

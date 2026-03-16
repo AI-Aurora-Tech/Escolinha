@@ -1288,31 +1288,31 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col animate-in zoom-in duration-200">
-             <div className="p-4 md:p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
-              <div>
+             <div className="p-4 md:p-6 border-b flex flex-col gap-4 bg-gray-50 rounded-t-2xl">
+              <div className="flex justify-between items-center w-full">
                   <h3 className="text-lg md:text-xl font-bold">{isGuardian ? 'Ficha do Atleta' : (editingId ? 'Editar Aluno' : 'Novo Aluno')}</h3>
-                  {editingId && (
-                      <div className="flex gap-4 mt-4 overflow-x-auto pb-1">
-                          <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>
-                          <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
-                          <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
-                          <button onClick={() => setActiveTab('OCCURRENCES')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'OCCURRENCES' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Ocorrências</button>
-                          <button onClick={() => setActiveTab('PERFORMANCE')} className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'PERFORMANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Performance</button>
-                      </div>
-                  )}
+                  <div className="flex items-center gap-3">
+                      {editingId && !isGuardian && (
+                          <button 
+                              onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 border border-orange-200 rounded-lg text-xs font-bold text-orange-700 hover:bg-orange-200 transition-colors shadow-sm"
+                          >
+                              <MessageSquareWarning className="w-4 h-4" />
+                              <span className="hidden sm:inline">Nova Ocorrência</span>
+                          </button>
+                      )}
+                      <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
+                  </div>
               </div>
-              <div className="flex items-center gap-3">
-                  {editingId && !isGuardian && (
-                      <button 
-                          onClick={(e) => handleOpenAddOccurrence(e, students.find(s => s.id === editingId)!)}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 border border-orange-200 rounded-lg text-xs font-bold text-orange-700 hover:bg-orange-200 transition-colors shadow-sm"
-                      >
-                          <MessageSquareWarning className="w-4 h-4" />
-                          <span className="hidden sm:inline">Nova Ocorrência</span>
-                      </button>
-                  )}
-                  <button onClick={() => { setIsModalOpen(false); stopCamera(); }} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
+              {editingId && (
+                  <div className="flex justify-between md:justify-start md:gap-6 overflow-x-auto pb-1 w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                      <button onClick={() => setActiveTab('DETAILS')} className={`pb-2 text-[11px] sm:text-sm font-bold md:font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'DETAILS' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Dados</button>
+                      <button onClick={() => setActiveTab('FINANCE')} className={`pb-2 text-[11px] sm:text-sm font-bold md:font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'FINANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Financeiro</button>
+                      <button onClick={() => setActiveTab('ATTENDANCE')} className={`pb-2 text-[11px] sm:text-sm font-bold md:font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ATTENDANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Frequência</button>
+                      <button onClick={() => setActiveTab('OCCURRENCES')} className={`pb-2 text-[11px] sm:text-sm font-bold md:font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'OCCURRENCES' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Ocorrências</button>
+                      <button onClick={() => setActiveTab('PERFORMANCE')} className={`pb-2 text-[11px] sm:text-sm font-bold md:font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'PERFORMANCE' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Performance</button>
+                  </div>
+              )}
             </div>
             
             {activeTab === 'DETAILS' ? (
