@@ -4,10 +4,6 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  define: {
-    // Polyfill process.env safely for libraries that expect it
-    'process.env': {},
-  },
   server: {
     proxy: {
       '/api/mp': {

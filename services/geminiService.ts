@@ -6,8 +6,8 @@ import { GoogleGenAI } from "@google/genai";
 
 export const generateTrainingDrill = async (ageGroup: string, focusSkill: string, duration: string): Promise<string> => {
   try {
-    // Guideline: Initialize inside the function safely using process.env.API_KEY.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Guideline: Initialize inside the function safely using process.env.GEMINI_API_KEY.
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     // Guideline: Use gemini-3-flash-preview for basic text tasks.
     const model = 'gemini-3-flash-preview';
@@ -43,7 +43,7 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
 
 export const analyzeRetention = async (inactiveStudentsData: string): Promise<string> => {
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
         const model = 'gemini-3.1-pro-preview';
         const prompt = `
@@ -75,10 +75,10 @@ export const analyzeRetention = async (inactiveStudentsData: string): Promise<st
 
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-        // Fix: Use gemini-3-pro-preview for complex reasoning and math tasks like financial analysis.
-        const model = 'gemini-3-pro-preview';
+        // Fix: Use gemini-3.1-pro-preview for complex reasoning and math tasks like financial analysis.
+        const model = 'gemini-3.1-pro-preview';
         const prompt = `
           Analise a saúde financeira da escolinha de futebol "Garotos do Martinica".
           Dados do mês atual:
