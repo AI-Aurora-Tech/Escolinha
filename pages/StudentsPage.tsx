@@ -64,7 +64,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   const [isLoadingCep, setIsLoadingCep] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const photoUploadRef = useRef<HTMLInputElement>(null);
 
   const [showChargeModal, setShowChargeModal] = useState(false);
@@ -467,28 +466,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           styles: { fontSize: 7, cellPadding: 2 }
       });
       doc.save("Relatorio_Completo_Alunos_Martinica.pdf");
-  };
-
-  const handleDownloadTemplate = () => {
-      const templateData = [{
-          nome: "João Exemplo Silva",
-          nascimento: "2012-05-20",
-          rg: "00000000",
-          cpf: "00000000000",
-          telefone_aluno: "11987019721",
-          atestado_vencimento: "2024-12-31",
-          responsavel_nome: "Maria Responsavel",
-          responsavel_cpf: "00000000000",
-          responsavel_telefone: "11977776666",
-          responsavel_email: "maria@email.com",
-          cep: "00000-000",
-          rua: "Rua Exemplo",
-          bairro: "Bairro Exemplo"
-      }];
-      const ws = XLSX.utils.json_to_sheet(templateData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Template_Importacao");
-      XLSX.writeFile(wb, "Modelo_Importacao_Alunos.xlsx");
   };
 
   const sendDocReminder = async (student: Student) => {
@@ -1008,9 +985,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileWarning className="w-4 h-4" />}
                     <span>Cobrar Docs</span>
                 </button>
-                <input type="file" ref={fileInputRef} className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} className="justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-xs sm:text-sm"><Upload className="w-4 h-4" /><span>Importar</span></button>
-                <button onClick={handleDownloadTemplate} className="justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-xs sm:text-sm"><FileSpreadsheet className="w-4 h-4" /><span>Modelo</span></button>
                 <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
                 <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
                 {currentUser?.role === UserRole.ADMIN && (
