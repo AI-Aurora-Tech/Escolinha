@@ -41,6 +41,38 @@ export const generateTrainingDrill = async (ageGroup: string, focusSkill: string
   }
 };
 
+export const analyzeRetention = async (inactiveStudentsData: string): Promise<string> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+        const model = 'gemini-3.1-pro-preview';
+        const prompt = `
+          Você é um especialista em retenção de alunos e gestão esportiva.
+          Abaixo está uma lista de alunos inativos da escolinha de futebol "Garotos do Martinica" e os motivos relatados para a inativação.
+          
+          Dados dos alunos inativos:
+          ${inactiveStudentsData}
+          
+          Por favor, faça uma análise semanal desses motivos e forneça:
+          1. Um resumo dos principais motivos de saída.
+          2. Alternativas e estratégias práticas para reverter esses alunos (trazê-los de volta).
+          3. Sugestões de melhorias para a escolinha evitar futuras evasões.
+          
+          Responda em formato Markdown, de forma clara, profissional e encorajadora.
+        `;
+    
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+        });
+    
+        return response.text || "Análise indisponível.";
+      } catch (error) {
+        console.error("Erro ao chamar Gemini:", error);
+        return "Erro ao processar análise de retenção.";
+      }
+}
+
 export const analyzeFinancials = async (income: number, expense: number, latePayments: number): Promise<string> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });

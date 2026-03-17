@@ -7,6 +7,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { createPixPayment, createMPPreference } from '../services/mercadoPago';
 import { sendZApiMessage } from '../services/zapiService';
+import { analyzeRetention } from '../services/geminiService';
+import ReactMarkdown from 'react-markdown';
 
 interface StudentsPageProps {
   students: Student[];
@@ -74,6 +76,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const [showInactiveReasonModal, setShowInactiveReasonModal] = useState(false);
   const [inactiveReasonText, setInactiveReasonText] = useState('');
+
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -743,6 +749,29 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setIsModalOpen(false); setCapturedImage(null); setEditingId(null); setStudentForm(initialFormState); setSelectedFinanceIds(new Set());
   };
 
+  const handleAIAnalysis = async () => {
+      const inactiveStudents = students.filter(s => !s.active && s.inactiveReason);
+      if (inactiveStudents.length === 0) {
+          alert("Não há alunos inativos com motivos relatados para análise.");
+          return;
+      }
+
+      setIsAnalyzing(true);
+      setShowAIModal(true);
+      setAiAnalysisResult('');
+
+      const dataString = inactiveStudents.map(s => `- Aluno: ${s.name} | Idade: ${calculateAge(s.birthDate)} | Motivo: ${s.inactiveReason}`).join('\n');
+      
+      try {
+          const result = await analyzeRetention(dataString);
+          setAiAnalysisResult(result);
+      } catch (e) {
+          setAiAnalysisResult("Ocorreu um erro ao gerar a análise.");
+      } finally {
+          setIsAnalyzing(false);
+      }
+  };
+
   const handleSaveManualCharge = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCharge.description && manualCharge.amount > 0 && editingId) {
@@ -984,6 +1013,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button onClick={handleDownloadTemplate} className="justify-center flex items-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm text-xs sm:text-sm"><FileSpreadsheet className="w-4 h-4" /><span>Modelo</span></button>
                 <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
                 <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
+                {currentUser?.role === UserRole.ADMIN && (
+                    <button onClick={handleAIAnalysis} disabled={isAnalyzing} className="justify-center flex items-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
+                        {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
+                        <span>Análise IA</span>
+                    </button>
+                )}
                 <button onClick={handleOpenNew} className="col-span-2 justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-xs sm:text-sm"><Plus className="w-4 h-4" /><span>Novo Aluno</span></button>
             </div>
         )}
@@ -1969,6 +2004,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                       setShowInactiveReasonModal(false);
                   }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-all uppercase tracking-tight">Confirmar</button>
                 </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ANÁLISE IA */}
+      {showAIModal && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 rounded-t-2xl">
+                <h3 className="text-lg font-black text-indigo-900 uppercase tracking-tighter flex items-center gap-2">
+                    <Star className="text-indigo-600 w-5 h-5" /> Análise de Retenção (IA)
+                </h3>
+                <button onClick={() => setShowAIModal(false)} className="text-indigo-400 hover:text-indigo-600 transition-colors">✕</button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+                {isAnalyzing ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-indigo-600">
+                        <Loader2 className="w-12 h-12 animate-spin mb-4" />
+                        <p className="font-medium">A Inteligência Artificial está analisando os motivos de inativação...</p>
+                        <p className="text-sm text-indigo-400 mt-2">Isso pode levar alguns segundos.</p>
+                    </div>
+                ) : (
+                    <div className="prose prose-indigo max-w-none prose-sm sm:prose-base">
+                        <ReactMarkdown>{aiAnalysisResult}</ReactMarkdown>
+                    </div>
+                )}
+            </div>
+            <div className="p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end">
+                <button onClick={() => setShowAIModal(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors uppercase tracking-tight text-sm">
+                    Fechar Análise
+                </button>
             </div>
           </div>
         </div>
