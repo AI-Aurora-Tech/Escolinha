@@ -86,6 +86,7 @@ export interface Student {
   groupIds: string[]; 
   positions: string[];
   active: boolean;
+  inactiveReason?: string;
   documents: StudentDocuments;
   createdAt?: string;
 }

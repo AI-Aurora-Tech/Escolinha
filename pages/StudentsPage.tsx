@@ -72,6 +72,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
   const [newOccurrence, setNewOccurrence] = useState({ description: '', date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), studentId: '' });
 
+  const [showInactiveReasonModal, setShowInactiveReasonModal] = useState(false);
+  const [inactiveReasonText, setInactiveReasonText] = useState('');
+
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   const positionsList = ['Goleiro', 'Lateral Direito', 'Zagueiro', 'Lateral Esquerdo', 'Volante', 'Meia', 'Atacante'];
@@ -527,7 +530,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const initialFormState: any = {
-    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, positions: [],
+    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, inactiveReason: '', positions: [],
     address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
     guardian: { name: '', phone: '', email: '', cpf: '' },
     documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
@@ -1355,7 +1358,55 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
                             <div className="space-y-3 pt-4">
                                 <h4 className="text-sm font-bold border-b pb-2 flex items-center gap-2"><Lock className="w-4 h-4" /> Acesso e Plano</h4>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Status do Aluno</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" value={studentForm.active ? 'true' : 'false'} onChange={e => setStudentForm({...studentForm, active: e.target.value === 'true'})} disabled={isGuardian}><option value="true">Ativo</option><option value="false">Inativo / Trancado</option></select></div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Status do Aluno</label>
+                                    <select 
+                                        className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" 
+                                        value={studentForm.active ? 'true' : 'false'} 
+                                        onChange={e => {
+                                            const isActive = e.target.value === 'true';
+                                            if (!isActive && studentForm.active) {
+                                                setShowInactiveReasonModal(true);
+                                                setInactiveReasonText(studentForm.inactiveReason || '');
+                                                setStudentForm({...studentForm, active: isActive});
+                                            } else if (isActive && !studentForm.active) {
+                                                setStudentForm({...studentForm, active: isActive, inactiveReason: ''});
+                                            } else {
+                                                setStudentForm({...studentForm, active: isActive});
+                                            }
+                                        }} 
+                                        disabled={isGuardian}
+                                    >
+                                        <option value="true">Ativo</option>
+                                        <option value="false">Inativo / Trancado</option>
+                                    </select>
+                                </div>
+                                {!studentForm.active && (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Motivo da Inativação</label>
+                                        <div className="flex gap-2">
+                                            <textarea 
+                                                className="w-full border rounded-lg p-2.5 bg-gray-50 text-sm text-gray-700 resize-none h-20" 
+                                                value={studentForm.inactiveReason || ''} 
+                                                readOnly
+                                                placeholder="Nenhum motivo informado."
+                                            />
+                                            {!isGuardian && (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => {
+                                                        setInactiveReasonText(studentForm.inactiveReason || '');
+                                                        setShowInactiveReasonModal(true);
+                                                    }}
+                                                    className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 self-start"
+                                                    title="Editar Motivo"
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Plano de Mensalidade</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})} disabled={isGuardian}><option value="">Selecione um plano...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price.toFixed(2)}</option>)}</select></div>
                                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={(studentForm.groupIds || []).includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm">{g.name}</span></label>))}</div></div>
                             </div>
@@ -1875,6 +1926,50 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     <button type="submit" className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-black hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">SALVAR E ENVIAR</button>
                 </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL MOTIVO INATIVAÇÃO */}
+      {showInactiveReasonModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in slide-in-from-bottom-4 duration-200">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter flex items-center gap-2">
+                    <Ban className="text-red-600 w-5 h-5" /> Motivo da Inativação
+                </h3>
+                <button onClick={() => {
+                    if (!studentForm.inactiveReason && inactiveReasonText.trim() === '') {
+                        setStudentForm({...studentForm, active: true});
+                    }
+                    setShowInactiveReasonModal(false);
+                }} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
+            </div>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Relate o motivo</label>
+                    <textarea 
+                        required 
+                        rows={4} 
+                        className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-red-500 outline-none text-sm" 
+                        placeholder="Ex: Mudança de cidade, insatisfação, problemas financeiros..."
+                        value={inactiveReasonText} 
+                        onChange={e => setInactiveReasonText(e.target.value)} 
+                    />
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Esta informação será guardada para futuras melhorias.</p>
+                <div className="pt-4 flex gap-3">
+                  <button type="button" onClick={() => {
+                      if (!studentForm.inactiveReason && inactiveReasonText.trim() === '') {
+                          setStudentForm({...studentForm, active: true});
+                      }
+                      setShowInactiveReasonModal(false);
+                  }} className="flex-1 py-3 text-gray-600 font-bold bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors uppercase tracking-tight">Cancelar</button>
+                  <button type="button" onClick={() => {
+                      setStudentForm({...studentForm, inactiveReason: inactiveReasonText});
+                      setShowInactiveReasonModal(false);
+                  }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-all uppercase tracking-tight">Confirmar</button>
+                </div>
+            </div>
           </div>
         </div>
       )}

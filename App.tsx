@@ -95,7 +95,7 @@ const AppContent: React.FC = () => {
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
                  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 positions: s.positions || [], active: s.active, documents: s.documents || {}
+                 positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason, documents: s.documents || {}
              } as Student)));
         }
 
@@ -287,6 +287,7 @@ const AppContent: React.FC = () => {
           group_ids: studentData.groupIds || [],
           positions: studentData.positions || [],
           active: studentData.active ?? true,
+          inactive_reason: studentData.inactiveReason || null,
           documents: studentData.documents || {}
         };
         const { error } = await supabase.from('students').insert([payload]);
@@ -313,6 +314,7 @@ const AppContent: React.FC = () => {
           group_ids: student.groupIds || [],
           positions: student.positions || [],
           active: student.active,
+          inactive_reason: student.inactiveReason || null,
           documents: student.documents
         };
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
