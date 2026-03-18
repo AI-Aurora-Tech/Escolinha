@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { createPixPayment, createMPPreference } from '../services/mercadoPago';
-import { sendZApiMessage } from '../services/zapiService';
+import { sendZApiMessage, sendZApiPoll } from '../services/zapiService';
 import { analyzeRetention } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 
@@ -772,11 +772,39 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); if(isGuardian) return; 
     const studentData = { ...studentForm, photoUrl: capturedImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentForm.name)}&background=random&color=fff&size=200` };
-    if (editingId) onUpdateStudent({ ...studentData, id: editingId } as Student);
-    else onAddStudent(studentData);
+    if (editingId) {
+      onUpdateStudent({ ...studentData, id: editingId } as Student);
+    } else {
+      onAddStudent(studentData);
+      
+      // Send Welcome Message via WhatsApp (Z-API)
+      if (studentData.guardian?.phone) {
+        const phone = studentData.guardian.phone.replace(/\D/g, '');
+        if (phone) {
+          const message = `Olá, ${studentData.guardian.name || 'Responsável'}! ⚽\n\nSeja muito bem-vindo(a) à família *Escolinha de Futebol Garotos do Martinica*! Estamos muito felizes em ter o(a) ${studentData.name} com a gente. 🎉\n\nPara facilitar o acompanhamento do desenvolvimento, pagamentos e agenda de treinos, disponibilizamos o nosso *Portal do Aluno*.\n\n📱 *Acesse o Portal do Aluno aqui:*\nhttps://escolinha.martinicaoficial.com.br\n\n🎥 *Veja como utilizar o portal neste vídeo rápido:*\nhttps://youtu.be/xT-F6DrgkSI\n\nSe tiver qualquer dúvida, estamos à disposição no nosso WhatsApp oficial:\n📞 *(11) 98701-9721*\n\nUm grande abraço,\nEquipe Garotos do Martinica 🏆`;
+          
+          sendZApiMessage(phone, message).then(sent => {
+            if (!sent) {
+              console.error("Falha ao enviar mensagem de boas-vindas via Z-API.");
+            } else {
+              // Send poll after welcome message
+              const pollQuestion = "O objetivo do seu filho na escolinha é:";
+              const pollOptions = [
+                "Diversão",
+                "Atividade Física",
+                "Ser Jogador de Futebol"
+              ];
+              sendZApiPoll(phone, pollQuestion, pollOptions, 1).then(pollSent => {
+                if (!pollSent) console.error("Falha ao enviar enquete via Z-API.");
+              });
+            }
+          });
+        }
+      }
+    }
     setIsModalOpen(false); setCapturedImage(null); setEditingId(null); setStudentForm(initialFormState); setSelectedFinanceIds(new Set());
   };
 
