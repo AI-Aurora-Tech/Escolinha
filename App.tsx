@@ -146,7 +146,7 @@ const AppContent: React.FC = () => {
                 attendance: a.attendance || [],
                 feePayments: a.fee_payments || [],
                 lineup: a.activity_type === 'GAME' ? a.lineup : undefined,
-                evaluations: a.activity_type === 'TRAINING' ? a.lineup : undefined,
+                evaluations: (a.activity_type === 'TRAINING' || a.activity_type === 'MONTHLY_EVALUATION') ? a.lineup : undefined,
                 description: a.description,
                 rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
                     id: r.id,
@@ -514,7 +514,7 @@ const AppContent: React.FC = () => {
           recurrence: a.recurrence || 'none', 
           attendance: a.attendance || [], 
           fee_payments: a.feePayments || [],
-          lineup: a.type === 'TRAINING' ? a.evaluations : a.lineup,
+          lineup: (a.type === 'TRAINING' || a.type === 'MONTHLY_EVALUATION') ? a.evaluations : a.lineup,
           description: a.description
       };
       
@@ -551,7 +551,7 @@ const AppContent: React.FC = () => {
           attendance: newActivityData.attendance || [],
           feePayments: newActivityData.fee_payments || [],
           lineup: newActivityData.activity_type === 'GAME' ? newActivityData.lineup : undefined,
-          evaluations: newActivityData.activity_type === 'TRAINING' ? newActivityData.lineup : undefined,
+          evaluations: (newActivityData.activity_type === 'TRAINING' || newActivityData.activity_type === 'MONTHLY_EVALUATION') ? newActivityData.lineup : undefined,
           description: newActivityData.description,
           rsvps: []
         } as Activity]);
@@ -567,7 +567,7 @@ const AppContent: React.FC = () => {
           away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), 
           participants: a.participants, date: a.date, start_time: a.startTime, 
           end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, 
-          fee_payments: a.feePayments, lineup: a.type === 'TRAINING' ? a.evaluations : a.lineup, description: a.description
+          fee_payments: a.feePayments, lineup: (a.type === 'TRAINING' || a.type === 'MONTHLY_EVALUATION') ? a.evaluations : a.lineup, description: a.description
       };
       await supabase.from('activities').update(payload).eq('id', a.id);
 
@@ -863,7 +863,7 @@ const AppContent: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <Routes>
             <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
-            <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
+            <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
             <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />} />
             <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
             <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />

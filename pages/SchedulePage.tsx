@@ -30,7 +30,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
-  const [showEvaluateModal, setShowEvaluateModal] = useState(false);
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -60,19 +59,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
   const visibleActivities = useMemo(() => {
+    const filteredByType = activities.filter(a => a.type !== 'MONTHLY_EVALUATION');
     if (isGuardian && currentUser?.cpf) {
         const cleanCpf = currentUser.cpf.replace(/\D/g, '');
         const myStudents = students.filter(s => s.guardian.cpf?.replace(/\D/g, '') === cleanCpf);
         const myStudentIds = myStudents.map(s => s.id);
         const myGroupIds = myStudents.flatMap(s => s.groupIds || []);
 
-        return activities.filter(a => {
+        return filteredByType.filter(a => {
             if (a.groupId && myGroupIds.includes(a.groupId)) return true;
             if (a.participants && a.participants.some(pId => myStudentIds.includes(pId))) return true;
             return false;
         });
     }
-    return activities;
+    return filteredByType;
   }, [activities, currentUser, students, isGuardian]);
 
   // --- AUTO FOCUS ON NEXT ACTIVITY FOR GUARDIANS ---
@@ -156,16 +156,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     setShowFinishModal(true);
   };
 
-  const handleOpenEvaluateTraining = (e: React.MouseEvent, activity: Activity) => {
-    e.stopPropagation();
-    setEditingId(activity.id);
-    setNewActivity({ 
-      ...activity, 
-      evaluations: activity.evaluations || [] 
-    });
-    setShowEvaluateModal(true);
-  };
-
   const handleDelete = (id: string) => { if (confirm('Excluir atividade?')) { onDeleteActivity?.(id); if (selectedActivityId === id) setSelectedActivityId(null); } };
 
   const updateScorer = (index: number, studentId: string) => {
@@ -189,34 +179,6 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           else onAddActivity(activityData as Omit<Activity, 'id'>);
           setShowAddModal(false);
       } else alert("Dados incompletos.");
-  };
-
-  const handleEvaluateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingId) return;
-
-    const attendees = getAttendeesList(newActivity).filter(s => newActivity.attendance?.includes(s.id));
-    const finalEvaluations = attendees.map(student => {
-      const existing = newActivity.evaluations?.find(ev => ev.studentId === student.id);
-      return existing || {
-        studentId: student.id,
-        habilidade: 3,
-        tomadaDecisao: 3,
-        coordenacaoMovimentacao: 3,
-        comportamento: 3,
-        disciplina: 3,
-        comprometimento: 3
-      };
-    });
-
-    const activityData = {
-      ...newActivity,
-      id: editingId,
-      evaluations: finalEvaluations
-    };
-
-    await onUpdateActivity(activityData as Activity);
-    setShowEvaluateModal(false);
   };
 
   const handleFinishMatchSubmit = async (e: React.FormEvent) => {
@@ -767,11 +729,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         <Flag className="w-4 h-4" />
                                       </button>
                                     )}
-                                    {a.type === 'TRAINING' && (
-                                      <button onClick={(e) => handleOpenEvaluateTraining(e, a)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Avaliar Treino">
-                                        <Star className="w-4 h-4" />
-                                      </button>
-                                    )}
+
                                     <button onClick={(e) => handleOpenNotify(e, a)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Convocar via WhatsApp">
                                         <Megaphone className="w-4 h-4" />
                                     </button>
@@ -933,95 +891,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         </div>
       )}
 
-      {/* MODAL AVALIAR TREINO */}
-      {showEvaluateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-             <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-6 animate-in zoom-in duration-200 max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Star className="text-purple-600" /> Avaliar Treino</h3><button onClick={() => setShowEvaluateModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button></div>
-                <form onSubmit={handleEvaluateSubmit} className="space-y-6 flex-1 overflow-y-auto pr-2">
-                    <div className="space-y-4">
-                      {getAttendeesList(newActivity).filter(s => newActivity.attendance?.includes(s.id)).map(student => {
-                        const evalData = newActivity.evaluations?.find(e => e.studentId === student.id) || {
-                          studentId: student.id,
-                          habilidade: 3,
-                          tomadaDecisao: 3,
-                          coordenacaoMovimentacao: 3,
-                          comportamento: 3,
-                          disciplina: 3,
-                          comprometimento: 3
-                        };
 
-                        const updateEval = (field: string, value: number) => {
-                          const evals = [...(newActivity.evaluations || [])];
-                          const idx = evals.findIndex(e => e.studentId === student.id);
-                          if (idx >= 0) {
-                            evals[idx] = { ...evals[idx], [field]: value };
-                          } else {
-                            evals.push({ ...evalData, [field]: value });
-                          }
-                          setNewActivity({ ...newActivity, evaluations: evals });
-                        };
-
-                        return (
-                          <div key={student.id} className="p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-50">
-                              <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-black text-lg">
-                                {student.name.charAt(0)}
-                              </div>
-                              <h4 className="font-bold text-gray-800 text-lg">{student.name}</h4>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                              {[
-                                { key: 'habilidade', label: 'Habilidade' },
-                                { key: 'tomadaDecisao', label: 'Tomada de Decisão' },
-                                { key: 'coordenacaoMovimentacao', label: 'Coordenação e Movimentação' },
-                                { key: 'comportamento', label: 'Comportamento' },
-                                { key: 'disciplina', label: 'Disciplina' },
-                                { key: 'comprometimento', label: 'Comprometimento' }
-                              ].map(criterion => (
-                                <div key={criterion.key} className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">{criterion.label}</label>
-                                  <div className="flex items-center gap-1">
-                                    {[1, 2, 3, 4, 5].map(v => {
-                                      const isSelected = (evalData as any)[criterion.key] >= v;
-                                      return (
-                                        <button
-                                          key={v}
-                                          type="button"
-                                          onClick={() => updateEval(criterion.key, v)}
-                                          className={`p-1.5 rounded-lg transition-all transform hover:scale-110 ${
-                                            isSelected
-                                              ? 'text-yellow-400 bg-yellow-50'
-                                              : 'text-gray-300 hover:text-yellow-200 hover:bg-yellow-50/50'
-                                          }`}
-                                        >
-                                          <Star className={`w-5 h-5 ${isSelected ? 'fill-current' : ''}`} />
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {getAttendeesList(newActivity).filter(s => newActivity.attendance?.includes(s.id)).length === 0 && (
-                        <div className="text-center text-gray-500 py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                          <Star className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p className="font-medium">Nenhum aluno marcou presença neste treino.</p>
-                          <p className="text-sm mt-1">Marque a presença dos alunos primeiro para poder avaliá-los.</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-3 pt-4 border-t mt-auto">
-                      <button type="submit" className="w-full py-4 bg-purple-600 text-white rounded-xl font-black shadow-lg shadow-purple-200 hover:bg-purple-700 transition-all uppercase tracking-tighter">SALVAR AVALIAÇÕES</button>
-                      <button type="button" onClick={() => setShowEvaluateModal(false)} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Voltar</button>
-                    </div>
-                </form>
-             </div>
-        </div>
-      )}
 
       {showAddModal && !isGuardian && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

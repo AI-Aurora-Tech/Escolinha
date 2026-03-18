@@ -23,12 +23,14 @@ interface StudentsPageProps {
   onUpdateTransaction: (t: Partial<Transaction>) => void;
   onAddTransaction: (t: Omit<Transaction, 'id'>) => void;
   onAddOccurrence: (studentId: string, description: string, date: string) => Promise<boolean>;
+  onAddActivity: (a: Omit<Activity, 'id'>) => Promise<void>;
+  onUpdateActivity: (a: Activity) => Promise<void>;
   onGenerateTuitions: (studentId?: string) => Promise<void>;
   initialFilter?: string;
   currentUser?: User | null;
 }
 
-export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, occurrences, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onAddOccurrence, onGenerateTuitions, initialFilter, currentUser }) => {
+export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, plans, transactions, activities, occurrences, onAddStudent, onBatchAddStudents, onUpdateStudent, onUpdateTransaction, onAddTransaction, onAddOccurrence, onAddActivity, onUpdateActivity, onGenerateTuitions, initialFilter, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -51,6 +53,8 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [attendanceYear, setAttendanceYear] = useState<number>(new Date().getFullYear());
   
   const [showPixModal, setShowPixModal] = useState(false);
+  const [showEvaluateModal, setShowEvaluateModal] = useState(false);
+  const [evalData, setEvalData] = useState<any>(null);
   const [pixLoading, setPixLoading] = useState(false);
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string; id: number } | null>(null);
   const [pixTxIds, setPixTxIds] = useState<string[]>([]);
@@ -698,6 +702,56 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const handleOpenHistory = (student: Student) => { handleOpenEdit(student); setActiveTab('FINANCE'); };
   const handleOpenAttendance = (student: Student) => { handleOpenEdit(student); setActiveTab('ATTENDANCE'); };
   const handleOpenOccurrences = (student: Student) => { handleOpenEdit(student); setActiveTab('OCCURRENCES'); };
+
+  const handleOpenEvaluateModal = (e: React.MouseEvent, studentId: string) => {
+    e.stopPropagation();
+    setEvalData({
+      studentId,
+      habilidade: 3,
+      tomadaDecisao: 3,
+      coordenacaoMovimentacao: 3,
+      comportamento: 3,
+      disciplina: 3,
+      comprometimento: 3
+    });
+    setShowEvaluateModal(true);
+  };
+
+  const handleEvaluateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!evalData || !evalData.studentId) return;
+
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    const title = `Avaliação Mensal - ${currentMonth.toString().padStart(2, '0')}/${currentYear}`;
+    
+    // Find if there's already a monthly evaluation activity for this month
+    const existingActivity = activities.find(a => a.type === 'MONTHLY_EVALUATION' && a.title === title);
+
+    if (existingActivity) {
+      const evals = [...(existingActivity.evaluations || [])];
+      const idx = evals.findIndex(ev => ev.studentId === evalData.studentId);
+      if (idx >= 0) {
+        evals[idx] = evalData;
+      } else {
+        evals.push(evalData);
+      }
+      await onUpdateActivity({ ...existingActivity, evaluations: evals });
+    } else {
+      await onAddActivity({
+        title,
+        type: 'MONTHLY_EVALUATION',
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
+        startTime: '00:00',
+        endTime: '23:59',
+        attendance: [],
+        evaluations: [evalData]
+      });
+    }
+
+    setShowEvaluateModal(false);
+    setEvalData(null);
+  };
 
   const handleOpenAddOccurrence = (e: React.MouseEvent, student: Student) => {
     e.stopPropagation();
@@ -1742,7 +1796,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                             const currentYear = new Date().getFullYear();
                             
                             const allStudentActivities = activities
-                                .filter(a => a.type === 'TRAINING' && a.evaluations?.some(e => e.studentId === editingId))
+                                .filter(a => a.type === 'MONTHLY_EVALUATION' && a.evaluations?.some(e => e.studentId === editingId))
                                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                             const currentYearEvaluations = allStudentActivities
@@ -1790,9 +1844,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         </div>
                                     )}
                                     <div className="bg-white p-6 rounded-xl border shadow-sm">
-                                        <h4 className="font-bold text-gray-700 mb-6 flex items-center gap-2">
-                                            <Star className="w-5 h-5 text-purple-600" /> Últimas Avaliações
-                                        </h4>
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h4 className="font-bold text-gray-700 flex items-center gap-2">
+                                                <Star className="w-5 h-5 text-purple-600" /> Últimas Avaliações
+                                            </h4>
+                                            {!isGuardian && (
+                                                <button 
+                                                    onClick={(e) => handleOpenEvaluateModal(e, editingId!)}
+                                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition-colors flex items-center gap-2"
+                                                >
+                                                    <Star className="w-4 h-4" /> Nova Avaliação
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="space-y-4">
                                             {lastTwoActivities.map(activity => {
                                                 const evalData = activity.evaluations?.find(e => e.studentId === editingId);
@@ -1828,7 +1892,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             {!hasAnyEvaluations && (
                                                 <div className="p-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                                                     <Star className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                                                    <p>Nenhuma avaliação de treino registrada.</p>
+                                                    <p>Nenhuma avaliação mensal registrada.</p>
                                                 </div>
                                             )}
                                         </div>
@@ -1979,6 +2043,59 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                   }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-all uppercase tracking-tight">Confirmar</button>
                 </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AVALIAÇÃO MENSAL */}
+      {showEvaluateModal && evalData && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in slide-in-from-bottom-4 duration-200">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-purple-900 uppercase tracking-tighter flex items-center gap-2">
+                    <Star className="text-purple-600 w-5 h-5" /> Nova Avaliação Mensal
+                </h3>
+                <button onClick={() => setShowEvaluateModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
+            </div>
+            <form onSubmit={handleEvaluateSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    {[
+                        { key: 'habilidade', label: 'Habilidade' },
+                        { key: 'tomadaDecisao', label: 'Tomada de Decisão' },
+                        { key: 'coordenacaoMovimentacao', label: 'Coordenação' },
+                        { key: 'comportamento', label: 'Comportamento' },
+                        { key: 'disciplina', label: 'Disciplina' },
+                        { key: 'comprometimento', label: 'Comprometimento' }
+                    ].map(criterion => (
+                        <div key={criterion.key} className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">{criterion.label}</label>
+                            <div className="flex items-center gap-1">
+                                {[1, 2, 3, 4, 5].map(v => {
+                                    const isSelected = evalData[criterion.key] >= v;
+                                    return (
+                                        <button
+                                            key={v}
+                                            type="button"
+                                            onClick={() => setEvalData({ ...evalData, [criterion.key]: v })}
+                                            className={`p-1.5 rounded-lg transition-all transform hover:scale-110 ${
+                                                isSelected
+                                                    ? 'text-yellow-400 bg-yellow-50'
+                                                    : 'text-gray-300 hover:text-yellow-200 hover:bg-yellow-50/50'
+                                            }`}
+                                        >
+                                            <Star className={`w-4 h-4 ${isSelected ? 'fill-current' : ''}`} />
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="pt-4 flex gap-3">
+                    <button type="button" onClick={() => setShowEvaluateModal(false)} className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
+                    <button type="submit" className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-black hover:bg-purple-700 transition-all shadow-lg shadow-purple-100">SALVAR AVALIAÇÃO</button>
+                </div>
+            </form>
           </div>
         </div>
       )}

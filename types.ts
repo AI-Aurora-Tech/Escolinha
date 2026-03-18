@@ -71,6 +71,18 @@ export interface StudentDocuments {
   school: boolean | DocumentItem;
 }
 
+export interface MonthlyEvaluation {
+  id: string;
+  month: string; // "YYYY-MM"
+  habilidade: number;
+  tomadaDecisao: number;
+  coordenacaoMovimentacao: number;
+  comportamento: number;
+  disciplina: number;
+  comprometimento: number;
+  observacoes?: string;
+}
+
 export interface Student {
   id: string;
   name: string;
@@ -89,6 +101,7 @@ export interface Student {
   inactiveReason?: string;
   documents: StudentDocuments;
   createdAt?: string;
+  evaluations?: MonthlyEvaluation[];
 }
 
 export interface LineupPosition {
@@ -132,7 +145,7 @@ export interface PerformanceEvaluation {
 export interface Activity {
   id: string;
   title: string;
-  type: 'TRAINING' | 'GAME'; 
+  type: 'TRAINING' | 'GAME' | 'MONTHLY_EVALUATION'; 
   fee?: number; 
   location?: string; 
   presentationTime?: string; 
