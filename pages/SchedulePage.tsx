@@ -317,7 +317,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         const isPresent = game.attendance.includes(student.id);
         const isPaid = isActivityFeePaid(game.id, student.id);
         const fee = game.fee || 0;
-        const groupName = groups.find(g => g.id === game.groupId)?.name || 'Lista Avulsa';
+        const g = groups.find(g => g.id === game.groupId);
+        const groupName = g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : 'Lista Avulsa';
 
         if (isPresent) totalPresent++; else totalAbsent++;
         if (fee > 0) {
@@ -494,10 +495,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     const activeStudents = students.filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name));
 
     activeStudents.forEach(student => {
-        // Encontra o grupo do aluno (assumindo que o primeiro ID de grupo é o principal, ou "Sem Grupo")
-        const groupName = student.groupIds && student.groupIds.length > 0 
-            ? groups.find(g => g.id === student.groupIds[0])?.name || 'Grupo Removido'
-            : 'Sem Grupo';
+        const g = student.groupIds && student.groupIds.length > 0 ? groups.find(g => g.id === student.groupIds[0]) : null;
+        const groupName = g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : 'Sem Grupo';
         
         const category = calculateCategory(student.birthDate);
 
@@ -708,7 +707,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                 <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
                                     {viewMode === 'UPCOMING' && <span className="flex items-center gap-1 font-medium text-primary-600"><CalendarIcon className="w-4 h-4" />{formatDate(a.date)}</span>}
                                     <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{a.startTime}</span>
-                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs"><Users className="w-3 h-3" />{g?.name || 'Individual'}</span>
+                                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${g ? (g.type === 'GAME' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700') : 'bg-gray-100 text-gray-600'}`}>
+                                        <Users className="w-3 h-3" />
+                                        {g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : 'Individual'}
+                                    </span>
                                     {!isGuardian && (
                                         <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
                                             <CheckCircle className="w-3 h-3" /> Frequência: {presenceCount}/{attendeesCount}
@@ -919,7 +921,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Observação</label><textarea className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow resize-none h-24" placeholder="Informações adicionais sobre a atividade..." value={newActivity.description || ''} onChange={e => setNewActivity({...newActivity, description: e.target.value})} /></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Público Alvo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={targetType} onChange={e => setTargetType(e.target.value as any)}><option value="GROUP">Grupo Específico</option><option value="INDIVIDUAL">Lista Manual</option></select></div>
-                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>) : (
+                      {targetType === 'GROUP' ? (<div><label className="block text-sm font-bold text-gray-700 mb-1">Grupo</label><select className="w-full border border-gray-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer" value={newActivity.groupId} onChange={e => setNewActivity({...newActivity, groupId: e.target.value})}><option value="">Escolha um grupo...</option>{[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => <option key={g.id} value={g.id}>{g.name} ({g.type === 'GAME' ? 'Jogo' : 'Treino'})</option>)}</select></div>) : (
                         <div>
                           <label className="block text-sm font-bold text-gray-700 mb-1 flex justify-between items-center">
                             <span>Alunos ({selectedStudentIds.size})</span>

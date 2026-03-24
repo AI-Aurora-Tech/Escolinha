@@ -39,6 +39,7 @@ export interface Plan {
 export interface Group {
   id: string;
   name: string;
+  type?: 'TRAINING' | 'GAME';
 }
 
 export interface Guardian {

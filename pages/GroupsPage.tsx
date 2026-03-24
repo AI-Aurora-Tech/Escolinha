@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Group, Student, Transaction, TransactionType, PaymentStatus } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -32,7 +32,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   };
 
   const initialFormState = {
-    name: ''
+    name: '',
+    type: 'TRAINING' as 'TRAINING' | 'GAME'
   };
 
   const [form, setForm] = useState(initialFormState);
@@ -75,7 +76,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const handleOpenEdit = (group: Group) => {
     setEditingId(group.id);
     setForm({
-        name: group.name
+        name: group.name,
+        type: group.type || 'TRAINING'
     });
     
     const currentStudents = students
@@ -140,6 +142,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
       if (groupStudents.length === 0) {
         exportData.push({
           'Grupo': group.name,
+          'Tipo do Grupo': group.type === 'GAME' ? 'Jogo' : 'Treino',
           'Atleta': 'Nenhum atleta vinculado',
           'Idade': '-',
           'Categoria': '-',
@@ -153,6 +156,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
           const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
           exportData.push({
             'Grupo': group.name,
+            'Tipo do Grupo': group.type === 'GAME' ? 'Jogo' : 'Treino',
             'Atleta': s.name,
             'Idade': calculateAge(s.birthDate),
             'Categoria': `Sub-${currentYear - birthYear}`,
@@ -277,8 +281,12 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                           >
                             {isSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
                           </button>
-                          <div className={`p-3 rounded-lg ${isSelected ? 'bg-primary-100' : 'bg-primary-50'}`}>
-                              <Shield className={`w-6 h-6 ${isSelected ? 'text-primary-700' : 'text-primary-600'}`} />
+                          <div className={`p-3 rounded-lg ${isSelected ? 'bg-primary-100' : (group.type === 'GAME' ? 'bg-green-50' : 'bg-blue-50')}`}>
+                              {group.type === 'GAME' ? (
+                                  <Trophy className={`w-6 h-6 ${isSelected ? 'text-primary-700' : 'text-green-600'}`} />
+                              ) : (
+                                  <Target className={`w-6 h-6 ${isSelected ? 'text-primary-700' : 'text-blue-600'}`} />
+                              )}
                           </div>
                         </div>
                         <div className="flex gap-1">
@@ -305,6 +313,11 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                         </div>
                     </div>
                     <h3 className="text-lg font-bold text-gray-900 mb-1">{group.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${group.type === 'GAME' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {group.type === 'GAME' ? 'Grupo de Jogo' : 'Grupo de Treino'}
+                        </span>
+                    </div>
                     
                     <div className="flex items-center gap-3 pt-4 border-t border-gray-50 mt-4">
                         <div className="flex items-center gap-1 text-sm text-gray-500 font-medium">
@@ -340,6 +353,25 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                             <input required type="text" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" 
                                 placeholder="Ex: Sub-11 A"
                                 value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-gray-600 mb-1 uppercase tracking-tight text-[10px]">Tipo do Grupo</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setForm({ ...form, type: 'TRAINING' })}
+                                    className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-sm font-medium transition-colors ${form.type === 'TRAINING' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                    <Target className="w-4 h-4" /> Treino
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setForm({ ...form, type: 'GAME' })}
+                                    className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-sm font-medium transition-colors ${form.type === 'GAME' ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                    <Trophy className="w-4 h-4" /> Jogo
+                                </button>
+                            </div>
                         </div>
                     </div>
 

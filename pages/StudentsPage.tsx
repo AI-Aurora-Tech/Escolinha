@@ -421,7 +421,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               'Cidade': s.address.city || '',
               'Estado': s.address.state || '',
               'Plano': plans.find(p => p.id === s.planId)?.name || 'N/A',
-              'Grupos': (s.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', '),
+              'Grupos': (s.groupIds || []).map(gid => {
+                  const g = groups.find(g => g.id === gid);
+                  return g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : null;
+              }).filter(Boolean).join(', '),
               'Status': s.active ? 'Ativo' : 'Inativo',
               'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
               'Doc: RG': checkDoc(s.documents.rg),
@@ -1171,7 +1174,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
               const overdueCount = getStudentOverdueCount(student.id);
               const currentYear = new Date().getFullYear(); 
               const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
-              const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+              const groupBadges = (student.groupIds || []).map(gid => {
+                  const g = groups.find(g => g.id === gid);
+                  return g ? { name: g.name, type: g.type } : null;
+              }).filter(Boolean);
               
               // Definir cores conforme o número de mensalidades atrasadas
               const overdueBorderClass = overdueCount >= 3 
@@ -1217,9 +1223,13 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                               <Target className="w-3.5 h-3.5 text-gray-400" />
                               <span className="text-gray-500 truncate">{(student.positions || []).join(', ') || 'N/A'}</span>
                           </div>
-                          <div className="flex items-center gap-2 text-[11px]">
+                          <div className="flex items-center gap-2 text-[11px] flex-wrap">
                               <Layers className="w-3.5 h-3.5 text-gray-400" />
-                              <span className="text-gray-500 truncate">{groupNames}</span>
+                              {groupBadges.length > 0 ? groupBadges.map((g: any, i: number) => (
+                                  <span key={i} className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${g.type === 'GAME' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                      {g.name}
+                                  </span>
+                              )) : <span className="text-gray-500">Sem Grupo</span>}
                           </div>
                       </div>
 
@@ -1273,7 +1283,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredStudents.map((student) => {
-                const groupNames = (student.groupIds || []).map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ') || 'Sem Grupo';
+                const groupBadges = (student.groupIds || []).map(gid => {
+                    const g = groups.find(g => g.id === gid);
+                    return g ? { name: g.name, type: g.type } : null;
+                }).filter(Boolean);
                 const overdueCount = getStudentOverdueCount(student.id);
                 const currentYear = new Date().getFullYear(); const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
                 
@@ -1329,7 +1342,15 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                     </td>
                     <td className="px-6 py-4"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-bold border">Sub-{currentYear - birthYear}</span></td>
                     <td className="px-6 py-4"><span className="text-sm text-gray-600">{(student.positions || []).slice(0, 2).join(', ') || '-'}</span></td>
-                    <td className="px-6 py-4 text-sm text-gray-600 truncate max-w-[200px]" title={groupNames}>{groupNames}</td>
+                    <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {groupBadges.length > 0 ? groupBadges.map((g: any, i: number) => (
+                                <span key={i} className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${g.type === 'GAME' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {g.name}
+                                </span>
+                            )) : <span className="text-sm text-gray-500">Sem Grupo</span>}
+                        </div>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-gray-900">{student.guardian.name}</span>
@@ -1499,7 +1520,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                     </div>
                                 )}
                                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Plano de Mensalidade</label><select className="w-full border rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none" required value={studentForm.planId} onChange={e => setStudentForm({...studentForm, planId: e.target.value})} disabled={isGuardian}><option value="">Selecione um plano...</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} - R$ {p.price.toFixed(2)}</option>)}</select></div>
-                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={(studentForm.groupIds || []).includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm">{g.name}</span></label>))}</div></div>
+                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Grupos / Categorias</label><div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-white">{[...groups].sort((a,b) => a.name.localeCompare(b.name)).map(g => (<label key={g.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={(studentForm.groupIds || []).includes(g.id)} onChange={() => toggleGroupSelection(g.id)} className="rounded text-primary-600" disabled={isGuardian} /><span className="text-sm flex items-center gap-2">{g.name} <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${g.type === 'GAME' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{g.type === 'GAME' ? 'Jogo' : 'Treino'}</span></span></label>))}</div></div>
                             </div>
                         </div>
 

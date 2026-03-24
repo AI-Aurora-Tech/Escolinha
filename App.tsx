@@ -338,16 +338,16 @@ const AppContent: React.FC = () => {
   };
 
   const handleAddGroup = async (g: Group) => {
-      const { data, error } = await supabase.from('groups').insert([{ name: g.name }]).select();
+      const { data, error } = await supabase.from('groups').insert([{ name: g.name, type: g.type || 'TRAINING' }]).select();
       if (data && data[0]) {
-          setGroups(prev => [...prev, { id: data[0].id, name: data[0].name }]);
+          setGroups(prev => [...prev, { id: data[0].id, name: data[0].name, type: data[0].type }]);
       }
       fetchData(true);
       return data?.[0]?.id || null;
   };
   const handleUpdateGroup = async (g: Group) => {
-      setGroups(prev => prev.map(group => group.id === g.id ? { ...group, name: g.name } : group));
-      await supabase.from('groups').update({ name: g.name }).eq('id', g.id);
+      setGroups(prev => prev.map(group => group.id === g.id ? { ...group, name: g.name, type: g.type } : group));
+      await supabase.from('groups').update({ name: g.name, type: g.type || 'TRAINING' }).eq('id', g.id);
       await fetchData(true);
   };
   const handleDeleteGroup = async (id: string) => {
