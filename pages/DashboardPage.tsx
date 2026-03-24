@@ -115,7 +115,9 @@ export const DashboardPage: React.FC<DashboardProps> = ({ students, transactions
     doc.setFontSize(10);
     doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
 
-    const tableData = birthdayStudents.map(s => {
+    const sortedStudents = [...birthdayStudents].sort((a, b) => a.name.localeCompare(b.name));
+
+    const tableData = sortedStudents.map(s => {
         const parts = s.birthDate.split('-');
         const day = parts[2];
         const month = parts[1];

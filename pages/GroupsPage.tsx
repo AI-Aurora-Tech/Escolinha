@@ -133,7 +133,9 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
       const group = groups.find(g => g.id === gid);
       if (!group) return;
 
-      const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
+      const groupStudents = students
+        .filter(s => s.groupIds && s.groupIds.includes(group.id))
+        .sort((a, b) => a.name.localeCompare(b.name));
       
       if (groupStudents.length === 0) {
         exportData.push({
@@ -175,7 +177,9 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   };
 
   const handleExportGroupPDF = (group: Group) => {
-    const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(group.id));
+    const groupStudents = students
+      .filter(s => s.groupIds && s.groupIds.includes(group.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     if (groupStudents.length === 0) {
         alert('Este grupo não possui alunos para exportar.');
