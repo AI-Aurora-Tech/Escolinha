@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS public.activity_rsvps (
     activity_id uuid REFERENCES public.activities(id) ON DELETE CASCADE,
     student_id uuid REFERENCES public.students(id) ON DELETE CASCADE,
     status text NOT NULL CHECK (status IN ('CONFIRMED', 'DECLINED')),
+    transport_option text CHECK (transport_option IN ('DIRECT', 'TRANSPORT')),
     created_at timestamptz DEFAULT now(),
     UNIQUE(activity_id, student_id)
 );

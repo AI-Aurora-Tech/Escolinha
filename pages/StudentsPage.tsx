@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target, Star } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target, Star, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -9,6 +9,8 @@ import { createPixPayment, createMPPreference } from '../services/mercadoPago';
 import { sendZApiMessage, sendZApiPoll } from '../services/zapiService';
 import { analyzeRetention } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
+import { AIFilterDialog } from '../components/AIFilterDialog';
+import { Type } from '@google/genai';
 
 interface StudentsPageProps {
   students: Student[];
@@ -42,6 +44,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [isAIFilterOpen, setIsAIFilterOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1086,9 +1089,19 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
       {!isGuardian && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-3 relative">
+                <div className="lg:col-span-2 relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input type="text" placeholder="Buscar atleta ou responsável..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+                <div className="lg:col-span-1">
+                    <button 
+                        onClick={() => setIsAIFilterOpen(true)}
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-600 to-primary-800 text-white px-3 py-2 rounded-lg hover:from-primary-700 hover:to-primary-900 transition-all shadow-sm text-sm font-bold"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        <span className="hidden lg:inline xl:hidden">IA</span>
+                        <span className="inline lg:hidden xl:inline">Filtro IA</span>
+                    </button>
                 </div>
                 <div className="lg:col-span-1 relative">
                     <input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} onChange={(e) => setAgeFilter(e.target.value)} />
@@ -2180,6 +2193,38 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
           </div>
         </div>
       )}
+
+      <AIFilterDialog
+        isOpen={isAIFilterOpen}
+        onClose={() => setIsAIFilterOpen(false)}
+        contextData={JSON.stringify({
+            groups: groups.map(g => ({ id: g.id, name: g.name, type: g.type })),
+            plans: plans.map(p => ({ id: p.id, name: p.name })),
+            positions: positionsList
+        }, null, 2)}
+        schemaProperties={{
+            searchTerm: { type: Type.STRING, description: "Nome do atleta ou responsável. Use '' se não especificado." },
+            ageFilter: { type: Type.STRING, description: "Idade exata (ex: '11', '15'). Use '' para todos." },
+            statusFilter: { type: Type.STRING, enum: ["ALL", "ACTIVE", "INACTIVE"], description: "Status de matrícula" },
+            medicalFilter: { type: Type.STRING, enum: ["ALL", "PENDING", "OK"], description: "Status do atestado médico" },
+            financeFilter: { type: Type.STRING, enum: ["ALL", "OVERDUE", "OK"], description: "Status financeiro (inadimplentes = OVERDUE)" },
+            docsFilter: { type: Type.STRING, enum: ["ALL", "PENDING", "OK"], description: "Status de documentos" },
+            planFilter: { type: Type.STRING, description: "ID do plano de mensalidade, ou 'ALL'" },
+            positionFilter: { type: Type.STRING, description: "Posição em campo (ex: 'Goleiro', 'Atacante'), ou 'ALL'" },
+            selectedCategories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de IDs de grupos/categorias. Vazio para todos." }
+        }}
+        onApplyFilters={(filters: any) => {
+            if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
+            if (filters.ageFilter !== undefined) setAgeFilter(filters.ageFilter);
+            if (filters.statusFilter !== undefined) setStatusFilter(filters.statusFilter);
+            if (filters.medicalFilter !== undefined) setMedicalFilter(filters.medicalFilter);
+            if (filters.financeFilter !== undefined) setFinanceFilter(filters.financeFilter);
+            if (filters.docsFilter !== undefined) setDocsFilter(filters.docsFilter);
+            if (filters.planFilter !== undefined) setPlanFilter(filters.planFilter);
+            if (filters.positionFilter !== undefined) setPositionFilter(filters.positionFilter);
+            if (filters.selectedCategories !== undefined) setSelectedCategories(filters.selectedCategories);
+        }}
+      />
     </div>
   );
 };

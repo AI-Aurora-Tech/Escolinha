@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student, Group } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet, User as UserIcon, ShieldCheck } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet, User as UserIcon, ShieldCheck, Sparkles } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabaseClient';
+import { AIFilterDialog } from '../components/AIFilterDialog';
+import { Type } from '@google/genai';
 
 interface FinancePageProps {
   students: Student[];
@@ -31,6 +33,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | PaymentStatus | 'PENDING_ONLY' | 'LATE_ONLY'>('ALL');
   const [studentSearchFilter, setStudentSearchFilter] = useState('');
+  const [isAIFilterOpen, setIsAIFilterOpen] = useState(false);
 
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [txToPay, setTxToPay] = useState<Transaction | null>(null);
@@ -410,12 +413,21 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 border-t pt-4">
+                <div className="lg:col-span-6 relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input type="text" placeholder="Busque qualquer item (nome, descrição, categoria, valor)..." className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={studentSearchFilter} onChange={(e) => setStudentSearchFilter(e.target.value)} />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="lg:col-span-2">
+                    <button 
+                        onClick={() => setIsAIFilterOpen(true)}
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-600 to-primary-800 text-white px-3 py-2 rounded-lg hover:from-primary-700 hover:to-primary-900 transition-all shadow-sm text-sm font-bold"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Filtro IA</span>
+                    </button>
+                </div>
+                <div className="lg:col-span-4 flex items-center gap-2">
                     <Filter className="text-gray-400 w-4 h-4" />
                     <select className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
                         <option value="ALL">Todos os Status</option>
@@ -671,6 +683,29 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
             </div>
         </div>
       )}
+
+      <AIFilterDialog
+        isOpen={isAIFilterOpen}
+        onClose={() => setIsAIFilterOpen(false)}
+        contextData={JSON.stringify({
+            groups: groups.map(g => ({ id: g.id, name: g.name, type: g.type })),
+            students: students.map(s => ({ id: s.id, name: s.name }))
+        }, null, 2)}
+        schemaProperties={{
+            studentSearchFilter: { type: Type.STRING, description: "Termo de busca (nome do aluno, descrição, categoria ou valor). Use '' se não especificado." },
+            filter: { type: Type.STRING, enum: ["ALL", "INCOME", "EXPENSE"], description: "Tipo de transação (Receita/Despesa)" },
+            statusFilter: { type: Type.STRING, enum: ["ALL", "PAID", "PENDING", "CANCELLED", "PENDING_ONLY", "LATE_ONLY"], description: "Status do pagamento" },
+            startDate: { type: Type.STRING, description: "Data inicial no formato YYYY-MM-DD. Deixe vazio se não especificado." },
+            endDate: { type: Type.STRING, description: "Data final no formato YYYY-MM-DD. Deixe vazio se não especificado." }
+        }}
+        onApplyFilters={(filters: any) => {
+            if (filters.studentSearchFilter !== undefined) setStudentSearchFilter(filters.studentSearchFilter);
+            if (filters.filter !== undefined) setFilter(filters.filter);
+            if (filters.statusFilter !== undefined) setStatusFilter(filters.statusFilter);
+            if (filters.startDate) setStartDate(filters.startDate);
+            if (filters.endDate) setEndDate(filters.endDate);
+        }}
+      />
     </div>
   );
 };

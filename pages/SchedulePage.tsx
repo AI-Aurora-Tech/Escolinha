@@ -109,7 +109,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
-      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
+      title: '', type: 'TRAINING', fee: 0, location: '', date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', presentationLocation: '', directToGameTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: []
   });
 
   const selectedActivity = selectedActivityId ? visibleActivities.find(a => a.id === selectedActivityId) || null : null;
@@ -132,7 +132,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const handleOpenAdd = () => {
       setEditingId(null);
-      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: [] });
+      setNewActivity({ title: '', type: 'TRAINING', fee: 0, location: '', date: selectedDate, startTime: '14:00', endTime: '15:30', groupId: '', participants: [], recurrence: 'none', attendance: [], feePayments: [], presentationTime: '', presentationLocation: '', directToGameTime: '', opponent: '', homeScore: undefined, awayScore: undefined, scorers: [] });
       setTargetType('GROUP'); setSelectedStudentIds(new Set()); setStudentSearch(''); setHasFee(false); setShowAddModal(true);
   }
 
@@ -617,7 +617,10 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               if (notifyActivity.type === 'GAME') msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; else msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
               if (notifyActivity.type === 'GAME') {
                   if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
-                  if (notifyActivity.presentationTime) msg += `🕒 Chegar às: ${notifyActivity.presentationTime}\n`;
+                  if (notifyActivity.presentationLocation) msg += `📍 Local de Apresentação: ${notifyActivity.presentationLocation}\n`;
+                  if (notifyActivity.presentationTime) msg += `🕒 Horário de Apresentação: ${notifyActivity.presentationTime}\n`;
+                  if (notifyActivity.directToGameTime) msg += `🕒 Se for direto para o jogo chegar às: ${notifyActivity.directToGameTime}\n`;
+                  if (notifyActivity.askTransport) msg += `🚌 Enquete de Transporte: Responda no link se vai direto ou com o clube!\n`;
                   if (notifyActivity.fee && notifyActivity.fee > 0) {
                       msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
                   }
@@ -822,6 +825,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     <>
                                         <span className="flex items-center gap-1 text-blue-600" title="Confirmaram presença via WhatsApp"><CheckSquare className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'CONFIRMED').length || 0)} Confirmados</span>
                                         <span className="flex items-center gap-1 text-orange-600" title="Recusaram via WhatsApp"><XCircle className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.status === 'DECLINED').length || 0)} Recusados</span>
+                                        {selectedActivity.askTransport && (
+                                            <>
+                                                <span className="flex items-center gap-1 text-purple-600" title="Vão direto para o jogo"><CheckSquare className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.transportOption === 'DIRECT').length || 0)} Direto</span>
+                                                <span className="flex items-center gap-1 text-teal-600" title="Vão com o transporte do clube"><CheckSquare className="w-3.5 h-3.5" /> {(selectedActivity.rsvps?.filter(r => r.transportOption === 'TRANSPORT').length || 0)} Transporte</span>
+                                            </>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -909,7 +918,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                  <div className="text-2xl font-light text-gray-300">X</div>
                                  <div className="flex-1 text-center"><label className="block text-[10px] font-black text-gray-400 mb-1">VISITANTE</label><input type="number" min="0" className="w-16 mx-auto border rounded-lg p-2 text-center text-2xl font-black" value={newActivity.awayScore ?? ''} onChange={e => setNewActivity({...newActivity, awayScore: e.target.value === '' ? undefined : parseInt(e.target.value)})} /></div>
                              </div>
-                             <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
+                             <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Local de Apresentação</label><input type="text" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" placeholder="Ex: Sede do Clube..." value={newActivity.presentationLocation || ''} onChange={e => setNewActivity({...newActivity, presentationLocation: e.target.value})} /></div>
+                             <div className="grid grid-cols-2 gap-4">
+                                 <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1">Horário de Apresentação</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.presentationTime || ''} onChange={e => setNewActivity({...newActivity, presentationTime: e.target.value})} /></div>
+                                 {newActivity.askTransport && (
+                                     <div><label className="block text-[10px] font-black text-yellow-800 uppercase mb-1" title="Se for direto para o jogo chegar às">Se for direto para o jogo chegar às</label><input type="time" className="w-full border border-yellow-200 rounded-lg p-2 bg-white outline-none focus:ring-2 focus:ring-yellow-500" value={newActivity.directToGameTime || ''} onChange={e => setNewActivity({...newActivity, directToGameTime: e.target.value})} /></div>
+                                 )}
+                             </div>
+                             <div className="flex items-center mt-3">
+                                 <input type="checkbox" id="askTransport" className="mr-2 w-4 h-4 text-yellow-600 focus:ring-yellow-500 rounded cursor-pointer" checked={newActivity.askTransport || false} onChange={e => {
+                                     const isChecked = e.target.checked;
+                                     setNewActivity({
+                                         ...newActivity, 
+                                         askTransport: isChecked,
+                                         directToGameTime: isChecked ? newActivity.directToGameTime : undefined
+                                     });
+                                 }} />
+                                 <label htmlFor="askTransport" className="text-[10px] font-black text-yellow-800 uppercase cursor-pointer">Ativar enquete de transporte (Direto ou Transporte do Clube)</label>
+                             </div>
                         </div>)}
                     <div className="grid grid-cols-2 gap-4">
                       <div><label className="block text-sm font-bold text-gray-700 mb-1">Data</label><input className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500" type="date" required value={newActivity.date} onChange={e => setNewActivity({...newActivity, date: e.target.value})} /></div>

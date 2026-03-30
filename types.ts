@@ -130,6 +130,7 @@ export interface ActivityRSVP {
   activityId: string;
   studentId: string;
   status: 'CONFIRMED' | 'DECLINED';
+  transportOption?: 'DIRECT' | 'TRANSPORT';
   createdAt: string;
 }
 
@@ -149,7 +150,10 @@ export interface Activity {
   type: 'TRAINING' | 'GAME' | 'MONTHLY_EVALUATION'; 
   fee?: number; 
   location?: string; 
+  presentationLocation?: string;
   presentationTime?: string; 
+  directToGameTime?: string;
+  askTransport?: boolean;
   opponent?: string; 
   homeScore?: number; 
   awayScore?: number; 

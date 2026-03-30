@@ -41,6 +41,8 @@ export const RSVPPage: React.FC = () => {
   const [generatingPix, setGeneratingPix] = useState(false);
   const [externalRef, setExternalRef] = useState<string | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [showTransportModal, setShowTransportModal] = useState(false);
+  const [selectedTransport, setSelectedTransport] = useState<'DIRECT' | 'TRANSPORT' | null>(null);
 
   useEffect(() => {
     if (!externalRef || paymentConfirmed) return;
@@ -85,7 +87,9 @@ export const RSVPPage: React.FC = () => {
             ...actRes.data,
             startTime: actRes.data.start_time,
             endTime: actRes.data.end_time,
+            presentationLocation: actRes.data.presentation_location,
             presentationTime: actRes.data.presentation_time,
+            directToGameTime: actRes.data.direct_to_game_time,
             type: actRes.data.activity_type,
             fee: Number(actRes.data.fee), // Ensure fee is a number
           } as any);
@@ -101,7 +105,7 @@ export const RSVPPage: React.FC = () => {
     loadData();
   }, [activityId, studentId]);
 
-  const handleResponse = async (newStatus: "CONFIRMED" | "DECLINED") => {
+  const handleResponse = async (newStatus: "CONFIRMED" | "DECLINED", transportOption?: 'DIRECT' | 'TRANSPORT') => {
     if (!activityId || !studentId || !student || !activity) return;
     setProcessing(true);
     setPixData(null); // Reset PIX data on new response
@@ -111,7 +115,7 @@ export const RSVPPage: React.FC = () => {
       const { error } = await supabase
         .from("activity_rsvps")
         .upsert(
-          { activity_id: activityId, student_id: studentId, status: newStatus },
+          { activity_id: activityId, student_id: studentId, status: newStatus, transport_option: transportOption },
           { onConflict: "activity_id,student_id" },
         );
 
@@ -308,15 +312,26 @@ export const RSVPPage: React.FC = () => {
                   Início:{" "}
                   <span className="font-bold">{activity.startTime}</span>
                   {activity.presentationTime &&
-                    ` • Chegar às: ${activity.presentationTime}`}
+                    ` • Apresentação: ${activity.presentationTime}`}
+                  {activity.directToGameTime &&
+                    ` • Direto pro jogo: ${activity.directToGameTime}`}
                 </p>
               </div>
             </div>
 
+            {activity.presentationLocation && (
+              <div className="flex items-start gap-3">
+                <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                <p className="text-sm text-gray-600">
+                  Local de Apresentação: <span className="font-bold">{activity.presentationLocation}</span>
+                </p>
+              </div>
+            )}
+
             {activity.location && (
               <div className="flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                <p className="text-sm text-gray-600">{activity.location}</p>
+                <p className="text-sm text-gray-600">Local do Jogo: <span className="font-bold">{activity.location}</span></p>
               </div>
             )}
 
@@ -448,7 +463,13 @@ export const RSVPPage: React.FC = () => {
               </button>
 
               <button
-                onClick={() => handleResponse("CONFIRMED")}
+                onClick={() => {
+                  if (activity?.askTransport) {
+                    setShowTransportModal(true);
+                  } else {
+                    handleResponse("CONFIRMED");
+                  }
+                }}
                 disabled={processing}
                 className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-green-600 text-white shadow-lg shadow-green-200 hover:bg-green-700 hover:scale-[1.02] transition-all disabled:opacity-50"
               >
@@ -464,6 +485,62 @@ export const RSVPPage: React.FC = () => {
           Garotos do Martinica • Gestão Esportiva
         </div>
       </div>
+
+      {showTransportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-2">Transporte</h3>
+              <p className="text-sm text-gray-500 mb-6">Como o atleta irá para o jogo?</p>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => setSelectedTransport('DIRECT')}
+                  className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3 ${selectedTransport === 'DIRECT' ? 'border-primary-500 bg-primary-50 text-primary-900' : 'border-gray-200 hover:border-primary-200'}`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedTransport === 'DIRECT' ? 'border-primary-500' : 'border-gray-300'}`}>
+                    {selectedTransport === 'DIRECT' && <div className="w-2.5 h-2.5 bg-primary-500 rounded-full" />}
+                  </div>
+                  <span className="font-bold">Vou direto para o jogo</span>
+                </button>
+                
+                <button
+                  onClick={() => setSelectedTransport('TRANSPORT')}
+                  className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3 ${selectedTransport === 'TRANSPORT' ? 'border-primary-500 bg-primary-50 text-primary-900' : 'border-gray-200 hover:border-primary-200'}`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedTransport === 'TRANSPORT' ? 'border-primary-500' : 'border-gray-300'}`}>
+                    {selectedTransport === 'TRANSPORT' && <div className="w-2.5 h-2.5 bg-primary-500 rounded-full" />}
+                  </div>
+                  <span className="font-bold">Vou com o transporte do clube</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 border-t flex gap-3">
+              <button
+                onClick={() => setShowTransportModal(false)}
+                className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={processing}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedTransport) {
+                    setShowTransportModal(false);
+                    handleResponse("CONFIRMED", selectedTransport);
+                  } else {
+                    alert("Por favor, selecione uma opção de transporte.");
+                  }
+                }}
+                disabled={!selectedTransport || processing}
+                className="flex-1 py-3 bg-primary-600 text-white font-black rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -132,7 +132,10 @@ const AppContent: React.FC = () => {
                 type: a.activity_type || 'TRAINING',
                 fee: a.fee || 0,
                 location: a.location || '',
+                presentationLocation: a.presentation_location,
                 presentationTime: a.presentation_time,
+                directToGameTime: a.direct_to_game_time,
+                askTransport: a.ask_transport,
                 opponent: a.opponent,
                 homeScore: a.home_score,
                 awayScore: a.away_score,
@@ -153,6 +156,7 @@ const AppContent: React.FC = () => {
                     activityId: r.activity_id,
                     studentId: r.student_id,
                     status: r.status,
+                    transportOption: r.transport_option,
                     createdAt: r.created_at
                 }))
             } as Activity)));
@@ -501,7 +505,10 @@ const AppContent: React.FC = () => {
           activity_type: a.type, 
           fee: a.fee || 0, 
           location: a.location || '', 
+          presentation_location: a.presentationLocation,
           presentation_time: a.presentationTime, 
+          direct_to_game_time: a.directToGameTime,
+          ask_transport: a.askTransport,
           opponent: a.opponent, 
           home_score: a.homeScore, 
           away_score: a.awayScore, 
@@ -537,7 +544,10 @@ const AppContent: React.FC = () => {
           type: newActivityData.activity_type || 'TRAINING',
           fee: newActivityData.fee || 0,
           location: newActivityData.location || '',
+          presentationLocation: newActivityData.presentation_location,
           presentationTime: newActivityData.presentation_time,
+          directToGameTime: newActivityData.direct_to_game_time,
+          askTransport: newActivityData.ask_transport,
           opponent: newActivityData.opponent,
           homeScore: newActivityData.home_score,
           awayScore: newActivityData.away_score,
@@ -563,7 +573,8 @@ const AppContent: React.FC = () => {
 
       const payload = { 
           title: a.title, activity_type: a.type, fee: a.fee, location: a.location, 
-          presentation_time: a.presentationTime, opponent: a.opponent, home_score: a.homeScore, 
+          presentation_location: a.presentationLocation, presentation_time: a.presentationTime, 
+          direct_to_game_time: a.directToGameTime, ask_transport: a.askTransport, opponent: a.opponent, home_score: a.homeScore, 
           away_score: a.awayScore, scorers: a.scorers, group_id: safeId(a.groupId), 
           participants: a.participants, date: a.date, start_time: a.startTime, 
           end_time: a.endTime, recurrence: a.recurrence, attendance: a.attendance, 

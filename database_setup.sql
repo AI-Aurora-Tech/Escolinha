@@ -6,7 +6,10 @@ CREATE TABLE IF NOT EXISTS public.activities (
     activity_type text NOT NULL DEFAULT 'TRAINING',
     fee numeric DEFAULT 0,
     location text,
+    presentation_location text,
     presentation_time text,
+    direct_to_game_time text,
+    ask_transport boolean DEFAULT false,
     opponent text,
     home_score integer,
     away_score integer,
@@ -35,6 +38,15 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='lineup') THEN
         ALTER TABLE public.activities ADD COLUMN lineup jsonb;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='presentation_location') THEN
+        ALTER TABLE public.activities ADD COLUMN presentation_location text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='direct_to_game_time') THEN
+        ALTER TABLE public.activities ADD COLUMN direct_to_game_time text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='activities' AND column_name='ask_transport') THEN
+        ALTER TABLE public.activities ADD COLUMN ask_transport boolean DEFAULT false;
     END IF;
 END $$;
 
