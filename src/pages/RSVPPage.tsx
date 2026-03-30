@@ -90,6 +90,7 @@ export const RSVPPage: React.FC = () => {
             presentationLocation: actRes.data.presentation_location,
             presentationTime: actRes.data.presentation_time,
             directToGameTime: actRes.data.direct_to_game_time,
+            askTransport: actRes.data.ask_transport,
             type: actRes.data.activity_type,
             fee: Number(actRes.data.fee), // Ensure fee is a number
           } as any);
