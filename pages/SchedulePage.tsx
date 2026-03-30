@@ -620,7 +620,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                   if (notifyActivity.presentationLocation) msg += `📍 Local de Apresentação: ${notifyActivity.presentationLocation}\n`;
                   if (notifyActivity.presentationTime) msg += `🕒 Horário de Apresentação: ${notifyActivity.presentationTime}\n`;
                   if (notifyActivity.directToGameTime) msg += `🕒 Se for direto para o jogo chegar às: ${notifyActivity.directToGameTime}\n`;
-                  if (notifyActivity.askTransport) msg += `🚌 Enquete de Transporte: Responda no link se vai direto ou com o clube!\n`;
+                  if (notifyActivity.askTransport) msg += `🚌 Enquete de Transporte: Responda no link se vai direto ou com a Van do Martinica!\n`;
                   if (notifyActivity.fee && notifyActivity.fee > 0) {
                       msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
                   }
