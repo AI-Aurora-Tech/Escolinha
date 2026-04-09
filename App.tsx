@@ -355,11 +355,20 @@ const AppContent: React.FC = () => {
       await fetchData(true);
   };
   const handleDeleteGroup = async (id: string) => {
+      // 1. Remove group from all students
+      const studentsInGroup = students.filter(s => (s.groupIds || []).includes(id));
+      const updatePromises = studentsInGroup.map(s => 
+          supabase.from('students').update({ group_ids: (s.groupIds || []).filter(gid => gid !== id) }).eq('id', s.id)
+      );
+      await Promise.all(updatePromises);
+
+      // 2. Delete the group
       setGroups(prev => prev.filter(group => group.id !== id));
       const { error } = await supabase.from('groups').delete().eq('id', id);
+      
       if (error) {
           console.error("Error deleting group:", error);
-          alert("Erro ao excluir grupo. Verifique se há alunos ou atividades vinculados.");
+          alert("Erro ao excluir grupo. Verifique se há atividades vinculadas.");
       }
       await fetchData(true);
   };
