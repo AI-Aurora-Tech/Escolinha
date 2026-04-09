@@ -362,13 +362,21 @@ const AppContent: React.FC = () => {
       );
       await Promise.all(updatePromises);
 
-      // 2. Delete the group
+      // 2. Disassociate activities from the group
+      const { error: activityError } = await supabase.from('activities').update({ group_id: null }).eq('group_id', id);
+      if (activityError) {
+          console.error("Error disassociating activities:", activityError);
+          alert("Erro ao desassociar atividades do grupo.");
+          return;
+      }
+
+      // 3. Delete the group
       setGroups(prev => prev.filter(group => group.id !== id));
       const { error } = await supabase.from('groups').delete().eq('id', id);
       
       if (error) {
           console.error("Error deleting group:", error);
-          alert("Erro ao excluir grupo. Verifique se há atividades vinculadas.");
+          alert("Erro ao excluir grupo.");
       }
       await fetchData(true);
   };
