@@ -356,7 +356,11 @@ const AppContent: React.FC = () => {
   };
   const handleDeleteGroup = async (id: string) => {
       setGroups(prev => prev.filter(group => group.id !== id));
-      await supabase.from('groups').delete().eq('id', id);
+      const { error } = await supabase.from('groups').delete().eq('id', id);
+      if (error) {
+          console.error("Error deleting group:", error);
+          alert("Erro ao excluir grupo. Verifique se há alunos ou atividades vinculados.");
+      }
       await fetchData(true);
   };
 
