@@ -31,7 +31,7 @@ export const RSVPPage: React.FC = () => {
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<
-    "PENDING" | "CONFIRMED" | "DECLINED" | null
+    "PENDING" | "CONFIRMED" | "DECLINED" | "EXPIRED" | null
   >(null);
   const [processing, setProcessing] = useState(false);
   const [pixData, setPixData] = useState<{
@@ -101,7 +101,7 @@ export const RSVPPage: React.FC = () => {
           if (sentTime) {
             const isExpired = (new Date().getTime() - new Date(sentTime).getTime()) > (24 * 60 * 60 * 1000);
             if (isExpired) {
-                setStatus('EXPIRED' as any); // Need to update status type
+                setStatus('EXPIRED');
             }
           }
         }
