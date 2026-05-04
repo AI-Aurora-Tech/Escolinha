@@ -170,6 +170,7 @@ export interface Activity {
   lineup?: Lineup;
   rsvps?: ActivityRSVP[];
   evaluations?: PerformanceEvaluation[];
+  sentAt?: string;
 }
 
 export interface Transaction {

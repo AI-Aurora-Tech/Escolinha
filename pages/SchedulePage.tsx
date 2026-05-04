@@ -691,6 +691,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                     const g = groups.find(x => x.id === a.groupId); 
                     const attendeesCount = getAttendeesList(a).length;
                     const presenceCount = a.attendance.length;
+                    const confirmedCount = (a.rsvps || []).filter(r => r.status === 'CONFIRMED').length;
+                    const declinedCount = (a.rsvps || []).filter(r => r.status === 'DECLINED').length;
+                    const noResponseCount = attendeesCount - confirmedCount - declinedCount;
                     const isFinished = a.type === 'GAME' && typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
 
                     return (
@@ -715,8 +718,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         {g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : 'Individual'}
                                     </span>
                                     {!isGuardian && (
-                                        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
-                                            <CheckCircle className="w-3 h-3" /> Frequência: {presenceCount}/{attendeesCount}
+                                        <span className={`flex flex-wrap items-center gap-2 px-2 py-1 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                            <CheckCircle className="w-3 h-3" /> Conf: {confirmedCount} / Rec: {declinedCount} / Sem Resp: {noResponseCount}
                                         </span>
                                     )}
                                     {a.location && <span className="flex items-center gap-1 truncate max-w-[150px]"><MapPin className="w-3 h-3" />{a.location}</span>}
