@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { sendZApiMessage } from '../services/zapiService';
 import { createMPPreference } from '../services/mercadoPago';
 import { TacticalLineup } from '../components/TacticalLineup';
+import { supabase } from '../lib/supabaseClient';
 
 interface SchedulePageProps {
   activities: Activity[];
@@ -635,8 +636,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               msg += `\n\nContamos com a presença!`;
           }
           
-          const sent = await sendZApiMessage(phone, msg);
-          setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
+      const sent = await sendZApiMessage(phone, msg);
+      if (sent) {
+          // Update sent_at in database
+          await supabase.from('activities').update({ sent_at: new Date().toISOString() }).eq('id', notifyActivity.id);
+      }
+      setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
       } else {
           setNotifyLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
       }
