@@ -31,7 +31,7 @@ export const RSVPPage: React.FC = () => {
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<
-    "PENDING" | "CONFIRMED" | "DECLINED" | "EXPIRED" | null
+    "PENDING" | "CONFIRMED" | "DECLINED" | null
   >(null);
   const [processing, setProcessing] = useState(false);
   const [pixData, setPixData] = useState<{
@@ -96,14 +96,6 @@ export const RSVPPage: React.FC = () => {
           } as any;
           setActivity(activityData);
 
-          // Check expiration
-          const sentTime = activityData.sent_at || activityData.created_at;
-          if (sentTime) {
-            const isExpired = (new Date().getTime() - new Date(sentTime).getTime()) > (24 * 60 * 60 * 1000);
-            if (isExpired) {
-                setStatus('EXPIRED');
-            }
-          }
         }
         if (stuRes.data) setStudent(stuRes.data as any);
         if (rsvpRes.data) setStatus(rsvpRes.data.status);
@@ -369,7 +361,7 @@ export const RSVPPage: React.FC = () => {
 
           {status ? (
             <div
-              className={`p-6 rounded-xl text-center animate-in zoom-in duration-300 ${status === "CONFIRMED" ? "bg-green-50 border border-green-100" : status === "EXPIRED" ? "bg-yellow-50 border border-yellow-100" : "bg-red-50 border border-red-100"}`}
+              className={`p-6 rounded-xl text-center animate-in zoom-in duration-300 ${status === "CONFIRMED" ? "bg-green-50 border border-green-100" : "bg-red-50 border border-red-100"}`}
             >
               {status === "CONFIRMED" ? (
                 <div className="flex flex-col items-center">
@@ -431,16 +423,6 @@ export const RSVPPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ) : status === "EXPIRED" ? (
-                <div className="flex flex-col items-center">
-                  <Clock className="w-12 h-12 text-yellow-500 mb-2" />
-                  <h3 className="text-lg font-black text-yellow-700 uppercase">
-                    Convite Expirado
-                  </h3>
-                  <p className="text-sm text-yellow-600 mt-1">
-                    Este link expirou após 24 horas. Entre em contato com o clube.
-                  </p>
-                </div>
               ) : (
                 <div className="flex flex-col items-center">
                   <XCircle className="w-12 h-12 text-red-500 mb-2" />
@@ -453,24 +435,22 @@ export const RSVPPage: React.FC = () => {
                 </div>
               )}
 
-              {status !== "EXPIRED" && (
-                <div className="mt-6 flex flex-col gap-3">
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={() => window.close()}
+                  className={`w-full py-3 rounded-xl font-black uppercase text-sm shadow-sm transition-all ${status === "CONFIRMED" ? "bg-green-600 text-white hover:bg-green-700 shadow-green-200" : "bg-red-600 text-white hover:bg-red-700 shadow-red-200"}`}
+                >
+                  Fechar Janela
+                </button>
+                {!pixData && (
                   <button
-                    onClick={() => window.close()}
-                    className={`w-full py-3 rounded-xl font-black uppercase text-sm shadow-sm transition-all ${status === "CONFIRMED" ? "bg-green-600 text-white hover:bg-green-700 shadow-green-200" : "bg-red-600 text-white hover:bg-red-700 shadow-red-200"}`}
+                    onClick={() => setStatus(null)}
+                    className="text-xs font-bold text-gray-400 underline hover:text-gray-600"
                   >
-                    Fechar Janela
+                    Alterar resposta
                   </button>
-                  {!pixData && (
-                    <button
-                      onClick={() => setStatus(null)}
-                      className="text-xs font-bold text-gray-400 underline hover:text-gray-600"
-                    >
-                      Alterar resposta
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">

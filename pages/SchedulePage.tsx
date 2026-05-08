@@ -263,6 +263,50 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       return list.sort((a, b) => a.name.localeCompare(b.name));
   };
 
+  const handleIndividualNotify = async (activity: Activity, student: Student) => {
+    if (!confirm(`Enviar convite para ${student.name}?`)) return;
+
+    const phone = student.guardian.phone.replace(/\D/g, '');
+    if (!phone) {
+        alert("Sem telefone para este aluno.");
+        return;
+    }
+
+    const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
+    const emoji = activity.type === 'GAME' ? '🏆' : '⚽';
+    const rsvpLink = `${window.location.origin}/rsvp/${activity.id}/${student.id}`;
+    
+    let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${activity.title}*\n📅 Data: ${formatDate(activity.date)}\n`;
+    if (activity.type === 'GAME') msg += `⏰ Horário do Jogo: ${activity.startTime}\n`; else msg += `⏰ Horário: ${activity.startTime} às ${activity.endTime}\n`;
+    if (activity.type === 'GAME') {
+        if (activity.opponent) msg += `⚔️ Adversário: ${activity.opponent}\n`;
+        if (activity.presentationLocation) msg += `📍 Local de Apresentação: ${activity.presentationLocation}\n`;
+        if (activity.presentationTime) msg += `🕒 Horário de Apresentação: ${activity.presentationTime}\n`;
+        if (activity.directToGameTime) msg += `🕒 Se for direto para o jogo chegar às: ${activity.directToGameTime}\n`;
+        if (activity.askTransport) msg += `🚌 Enquete de Transporte: Responda no link se vai direto ou com a Van do Martinica!\n`;
+        if (activity.fee && activity.fee > 0) {
+            msg += `💰 Taxa: R$ ${activity.fee.toFixed(2)}\n`;
+        }
+    }
+    if (activity.location) msg += `📍 ${activity.type === 'GAME' ? 'Local do Jogo' : 'Local'}: ${activity.location}\n`;
+    if (activity.description) msg += `\n📝 *Observação:* ${activity.description}\n`;
+    if (activity.type === 'GAME') {
+        msg += `\n✅ *CONFIRMAÇÃO DE PRESENÇA OBRIGATÓRIA*\nClique no link abaixo para confirmar ou justificar ausência:\n${rsvpLink}`;
+    } else {
+        msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
+    }
+    msg += `\n\nContamos com a presença!`;
+
+    const sent = await sendZApiMessage(phone, msg);
+    
+    if (sent) {
+        await supabase.from('activities').update({ sent_at: new Date().toISOString() }).eq('id', activity.id);
+        alert(`Convite enviado para ${student.name}!`);
+    } else {
+        alert(`Erro ao enviar convite para ${student.name}.`);
+    }
+  };
+
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
 
   // --- LOGICA DE RELATORIOS ---
@@ -815,7 +859,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {!isGuardian ? (
-                                            <><button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</button>{selectedActivity.fee && selectedActivity.fee > 0 && (<button onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${isFeePaid ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'}`} title={isFeePaid ? "Cancelar Pagamento da Taxa" : "Dar Baixa na Taxa"}><DollarSign className="w-5 h-5" /></button>)}</>
+                                            <>
+                                                <button onClick={() => handleIndividualNotify(selectedActivity, s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Enviar convite individualmente">
+                                                    <Megaphone className="w-5 h-5" />
+                                                </button>
+                                                <button onClick={() => onUpdateAttendance(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${pres ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`} title={pres ? "Marcar Falta" : "Marcar Presença"}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</button>
+                                                {selectedActivity.fee && selectedActivity.fee > 0 && (<button onClick={() => onUpdateFeePayment?.(selectedActivity.id, s.id)} className={`p-1.5 rounded-full transition-colors ${isFeePaid ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'}`} title={isFeePaid ? "Cancelar Pagamento da Taxa" : "Dar Baixa na Taxa"}><DollarSign className="w-5 h-5" /></button>)}
+                                            </>
                                         ) : (
                                             <div className="flex items-center gap-2"><div className={pres ? 'text-green-600' : 'text-gray-300'}>{pres ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}</div>{selectedActivity.fee && selectedActivity.fee > 0 && (<div className={isFeePaid ? 'text-indigo-600' : 'text-gray-300'} title={isFeePaid ? "Taxa Paga" : "Taxa Pendente"}><DollarSign className="w-5 h-5" /></div>)}</div>
                                         )}
