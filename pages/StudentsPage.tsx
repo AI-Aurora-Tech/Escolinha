@@ -523,7 +523,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   };
 
   const initialFormState: any = {
-    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, inactiveReason: '', positions: [],
+    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, inactiveReason: '', enrollmentDate: '', inactivationDate: '', positions: [],
     address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
     guardian: { name: '', phone: '', email: '', cpf: '' },
     documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
@@ -686,7 +686,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     }
   };
 
-  const handleOpenNew = () => { setEditingId(null); setStudentForm({ ...initialFormState, groupIds: [], positions: [] }); setCapturedImage(null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true); };
+  const handleOpenNew = () => { setEditingId(null); setStudentForm({ ...initialFormState, groupIds: [], positions: [], enrollmentDate: todayStr }); setCapturedImage(null); setActiveTab('DETAILS'); setSelectedFinanceIds(new Set()); setIsModalOpen(true); };
 
   const handleOpenEdit = (student: Student) => {
       setEditingId(student.id);
@@ -1506,6 +1506,16 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                         <option value="false">Inativo / Trancado</option>
                                     </select>
                                 </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Data da Matrícula</label>
+                                    <input type="date" className="w-full border rounded-lg p-2.5 bg-gray-100 text-gray-500 cursor-not-allowed outline-none" value={studentForm.enrollmentDate || ''} readOnly />
+                                </div>
+                                {!studentForm.active && (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Data da Inativação</label>
+                                        <input type="date" className="w-full border rounded-lg p-2.5 bg-gray-100 text-gray-500 cursor-not-allowed outline-none" value={studentForm.inactivationDate || ''} readOnly />
+                                    </div>
+                                )}
                                 {!studentForm.active && (
                                     <div>
                                         <label className="block text-xs font-medium text-gray-500 mb-1">Motivo da Inativação</label>

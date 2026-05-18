@@ -100,6 +100,8 @@ export interface Student {
   positions: string[];
   active: boolean;
   inactiveReason?: string;
+  enrollmentDate?: string;
+  inactivationDate?: string;
   documents: StudentDocuments;
   createdAt?: string;
   evaluations?: MonthlyEvaluation[];

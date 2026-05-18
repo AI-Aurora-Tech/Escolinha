@@ -95,7 +95,8 @@ const AppContent: React.FC = () => {
                  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
                  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
                  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason, documents: s.documents || {}
+                 positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason, 
+                 enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
              } as Student)));
         }
 
@@ -292,6 +293,8 @@ const AppContent: React.FC = () => {
           positions: studentData.positions || [],
           active: studentData.active ?? true,
           inactive_reason: studentData.inactiveReason || null,
+          enrollment_date: safeDate(studentData.enrollmentDate),
+          inactivation_date: safeDate(studentData.inactivationDate),
           documents: studentData.documents || {}
         };
         const { error } = await supabase.from('students').insert([payload]);
@@ -319,6 +322,8 @@ const AppContent: React.FC = () => {
           positions: student.positions || [],
           active: student.active,
           inactive_reason: student.inactiveReason || null,
+          enrollment_date: safeDate(student.enrollmentDate),
+          inactivation_date: safeDate(student.inactivationDate),
           documents: student.documents
         };
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
