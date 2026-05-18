@@ -1493,9 +1493,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                                             if (!isActive && studentForm.active) {
                                                 setShowInactiveReasonModal(true);
                                                 setInactiveReasonText(studentForm.inactiveReason || '');
-                                                setStudentForm({...studentForm, active: isActive});
+                                                setStudentForm({...studentForm, active: isActive, inactivationDate: todayStr});
                                             } else if (isActive && !studentForm.active) {
-                                                setStudentForm({...studentForm, active: isActive, inactiveReason: ''});
+                                                setStudentForm({...studentForm, active: isActive, inactiveReason: '', inactivationDate: ''});
                                             } else {
                                                 setStudentForm({...studentForm, active: isActive});
                                             }
