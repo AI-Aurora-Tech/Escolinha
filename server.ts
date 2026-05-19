@@ -177,90 +177,32 @@ async function startServer() {
     }
   });
 
-  // Store job statuses in memory
-  const messageJobs: Record<string, { status: string, total: number, current: number, name: string, error?: string }> = {};
+  // Endpoint para enviar mensagem para um grupo
+  app.post('/api/send-group-message', async (req, res) => {
+    const { groupId, message } = req.body;
+    if (!groupId || !message) return res.status(400).json({ error: 'Missing groupId or message' });
 
-  // Endpoint para iniciar o envio de mensagem para um grupo
-  app.post('/api/start-group-message', async (req, res) => {
-    let body = req.body;
-    if (typeof body === 'string') {
-        try {
-            body = JSON.parse(body);
-        } catch (e) {
-            console.error('[API StartGroupMessage] Error parsing body string:', e);
+    try {
+        // Fetch students in the group
+        const { data: students, error } = await supabase
+            .from('students')
+            .select('guardian')
+            .contains('group_ids', [groupId]);
+
+        if (error) throw error;
+        
+        let count = 0;
+        for (const student of students || []) {
+            if (student.guardian?.phone) {
+                await sendZApiMessage(student.guardian.phone, message);
+                count++;
+            }
         }
+        res.json({ success: true, count });
+    } catch (error) {
+        console.error('[API SendGroupMessage] Erro:', error);
+        res.status(500).json({ error: 'Erro ao enviar mensagens' });
     }
-    console.log('[API StartGroupMessage] Rota chamada, body:', body);
-    const { groupId, message } = body;
-    if (!groupId || !message) {
-        console.error('[API StartGroupMessage] Missing params - groupId:', groupId, ', message:', message);
-        return res.status(400).json({ error: 'Missing groupId or message' });
-    }
-
-    const jobId = Math.random().toString(36).substring(7);
-    messageJobs[jobId] = { status: 'starting', total: 0, current: 0, name: '' };
-    console.log(`[API StartGroupMessage] Job criado: ${jobId}`);
-
-    // Executa em segundo plano
-    (async () => {
-        try {
-            console.log(`[API StartGroupMessage] Iniciando background job: ${jobId}`);
-            console.log(`[API StartGroupMessage] Buscando alunos do grupo: ${groupId}`);
-            const { data: students, error } = await supabase
-                .from('students')
-                .select('*');
-
-            if (error) {
-                console.error('[API StartGroupMessage] Supabase error:', error);
-                throw error;
-            }
-            
-            console.log(`[API StartGroupMessage] Total de alunos:`, students?.length);
-            // Log a sample student to see the structure
-            if (students && students.length > 0) {
-                console.log(`[API StartGroupMessage] Amostra de aluno keys:`, Object.keys(students[0]));
-            }
-            const stringGroupId = String(groupId);
-            const groupStudents = students?.filter(s => {
-                const groups = Array.isArray(s.group_ids) ? s.group_ids : (Array.isArray(s.groupIds) ? s.groupIds : []);
-                return groups.map(String).includes(stringGroupId);
-            });
-            console.log(`[API StartGroupMessage] Alunos filtrados manualmente:`, groupStudents?.length);
-            
-            const total = groupStudents?.length || 0;
-            console.log(`[API StartGroupMessage] ${total} alunos encontrados para o grupo ${groupId}`);
-            messageJobs[jobId].total = total;
-            
-            for (const student of groupStudents || []) {
-                if (student.guardian?.phone) {
-                    console.log(`[API StartGroupMessage] Enviando para: ${student.name}`);
-                    await sendZApiMessage(student.guardian.phone, message);
-                    messageJobs[jobId].current++;
-                    messageJobs[jobId].name = student.name;
-                    messageJobs[jobId].status = 'progress';
-                    
-                    // Wait 10 seconds between messages
-                    await new Promise(resolve => setTimeout(resolve, 10000));
-                }
-            }
-            messageJobs[jobId].status = 'completed';
-            console.log(`[API StartGroupMessage] Job concluído: ${jobId}`);
-        } catch (error) {
-            console.error('[API StartGroupMessage] Erro no job:', error);
-            messageJobs[jobId].status = 'error';
-            messageJobs[jobId].error = 'Erro ao enviar mensagens';
-        }
-    })();
-
-    res.json({ jobId });
-  });
-
-  // Endpoint para consultar o status do envio
-  app.get('/api/group-message-status/:jobId', (req, res) => {
-      const { jobId } = req.params;
-      const job = messageJobs[jobId];
-      if (!job) return res.status(404).json({ error: 'Job not found' });
-      res.json(job);
   });
 
   // --- VITE MIDDLEWARE (SPA FALLBACK) ---

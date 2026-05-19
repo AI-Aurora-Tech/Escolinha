@@ -24,13 +24,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
-  const [sendingStatus, setSendingStatus] = useState<{
-      active: boolean,
-      total: number,
-      current: number,
-      name: string,
-      status: 'starting' | 'progress' | 'completed' | 'error' | null,
-  }>({ active: false, total: 0, current: 0, name: '', status: null });
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -252,53 +245,20 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const handleSendMessage = async () => {
     if (!selectedGroupId || !message) return;
     
-    setSendingStatus({ active: true, total: 0, current: 0, name: '', status: 'starting' });
-    
-    // Iniciar envio
-    const res = await fetch('/api/start-group-message', {
+    // Call the API
+    const res = await fetch('/api/send-group-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ groupId: selectedGroupId, message })
     });
     
-    if (!res.ok) {
-        let errorMsg = "Erro desconhecido";
-        try {
-            const data = await res.json();
-            errorMsg = data.error || errorMsg;
-        } catch (e) {
-            errorMsg = await res.text() || errorMsg;
-        }
-        alert(`Erro ao iniciar envio: ${errorMsg}`);
-        setSendingStatus({ active: false, total: 0, current: 0, name: '', status: 'error' });
-        return;
+    if (res.ok) {
+        alert("Mensagem enviada com sucesso!");
+        setIsMessageModalOpen(false);
+        setMessage('');
+    } else {
+        alert("Erro ao enviar mensagem.");
     }
-
-    const { jobId } = await res.json();
-    
-    // Polling
-    const poll = async () => {
-        const statusRes = await fetch(`/api/group-message-status/${jobId}`);
-        if (!statusRes.ok) {
-            setSendingStatus(prev => ({ ...prev, active: false, status: 'error' }));
-            return;
-        }
-        
-        const data = await statusRes.json();
-        setSendingStatus({ 
-            active: data.status !== 'completed' && data.status !== 'error', 
-            total: data.total, 
-            current: data.current, 
-            name: data.name, 
-            status: data.status as any
-        });
-        
-        if (data.status === 'progress' || data.status === 'starting') {
-            setTimeout(poll, 2000); // Poll every 2 seconds
-        }
-    };
-    
-    poll();
   };
 
   return (
@@ -309,39 +269,21 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-bold">Enviar Mensagem</h3>
-                    {!sendingStatus.active && <button onClick={() => { setIsMessageModalOpen(false); setSendingStatus({ active: false, total: 0, current: 0, name: '', status: null }); }} className="text-gray-400"><X className="w-5 h-5" /></button>}
+                    <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-400"><X className="w-5 h-5" /></button>
                 </div>
-                
-                {sendingStatus.active ? (
-                    <div className="text-center py-8">
-                        <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full mx-auto mb-4" />
-                        <p className="font-bold">Enviando: {sendingStatus.current} / {sendingStatus.total}</p>
-                        <p className="text-sm text-gray-500">Último: {sendingStatus.name}</p>
-                        <p className="text-xs text-gray-400 mt-2">Aguarde 10 segundos entre envios...</p>
-                    </div>
-                ) : sendingStatus.status === 'completed' ? (
-                    <div className="text-center py-8">
-                        <div className="text-green-500 text-5xl mb-4">✓</div>
-                        <p className="font-bold">Concluído!</p>
-                        <button onClick={() => { setIsMessageModalOpen(false); setSendingStatus({ active: false, total: 0, current: 0, name: '', status: null }); setMessage(''); }} className="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Fechar</button>
-                    </div>
-                ) : (
-                    <>
-                        <textarea 
-                            className="w-full border rounded-lg p-2.5 mb-4"
-                            rows={4}
-                            placeholder="Digite sua mensagem..."
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                        />
-                        <button 
-                          onClick={handleSendMessage}
-                          className="w-full bg-primary-600 text-white font-bold py-2.5 rounded-lg hover:bg-primary-700"
-                        >
-                            Enviar
-                        </button>
-                    </>
-                )}
+                <textarea 
+                    className="w-full border rounded-lg p-2.5 mb-4"
+                    rows={4}
+                    placeholder="Digite sua mensagem..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                />
+                <button 
+                  onClick={handleSendMessage}
+                  className="w-full bg-primary-600 text-white font-bold py-2.5 rounded-lg hover:bg-primary-700"
+                >
+                    Enviar
+                </button>
             </div>
         </div>
       )}
