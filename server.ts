@@ -179,28 +179,40 @@ async function startServer() {
 
   // Endpoint para enviar mensagem para um grupo
   app.post('/api/send-group-message', async (req, res) => {
+    console.log('[API SendGroupMessage] Iniciando...', req.body);
     const { groupId, message } = req.body;
-    if (!groupId || !message) return res.status(400).json({ error: 'Missing groupId or message' });
+    if (!groupId || !message) {
+        console.log('[API SendGroupMessage] Missing params');
+        return res.status(400).json({ error: 'Missing groupId or message' });
+    }
 
     try {
+        console.log('[API SendGroupMessage] Buscando alunos...');
         // Fetch students in the group
         const { data: students, error } = await supabase
             .from('students')
             .select('guardian')
             .contains('group_ids', [groupId]);
 
-        if (error) throw error;
+        if (error) {
+            console.error('[API SendGroupMessage] Supabase error:', error);
+            throw error;
+        }
+        
+        console.log(`[API SendGroupMessage] Alunos encontrados: ${students?.length || 0}`);
         
         let count = 0;
         for (const student of students || []) {
             if (student.guardian?.phone) {
-                await sendZApiMessage(student.guardian.phone, message);
-                count++;
+                console.log(`[API SendGroupMessage] Enviando para: ${student.guardian.phone}`);
+                const success = await sendZApiMessage(student.guardian.phone, message);
+                if (success) count++;
             }
         }
+        console.log(`[API SendGroupMessage] Finalizado. Total enviado: ${count}`);
         res.json({ success: true, count });
     } catch (error) {
-        console.error('[API SendGroupMessage] Erro:', error);
+        console.error('[API SendGroupMessage] Erro catch:', error);
         res.status(500).json({ error: 'Erro ao enviar mensagens' });
     }
   });
