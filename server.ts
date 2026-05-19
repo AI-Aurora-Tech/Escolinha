@@ -208,7 +208,7 @@ async function startServer() {
             console.log(`[API StartGroupMessage] Buscando alunos do grupo: ${groupId}`);
             const { data: students, error } = await supabase
                 .from('students')
-                .select('name, guardian, group_ids');
+                .select('*');
 
             if (error) {
                 console.error('[API StartGroupMessage] Supabase error:', error);
@@ -216,8 +216,16 @@ async function startServer() {
             }
             
             console.log(`[API StartGroupMessage] Total de alunos:`, students?.length);
-            const groupStudents = students?.filter(s => s.group_ids?.includes(groupId));
-            console.log(`[API StartGroupMessage] Alunos filtrados manualmente:`, groupStudents);
+            // Log a sample student to see the structure
+            if (students && students.length > 0) {
+                console.log(`[API StartGroupMessage] Amostra de aluno keys:`, Object.keys(students[0]));
+            }
+            const stringGroupId = String(groupId);
+            const groupStudents = students?.filter(s => {
+                const groups = Array.isArray(s.group_ids) ? s.group_ids : (Array.isArray(s.groupIds) ? s.groupIds : []);
+                return groups.map(String).includes(stringGroupId);
+            });
+            console.log(`[API StartGroupMessage] Alunos filtrados manualmente:`, groupStudents?.length);
             
             const total = groupStudents?.length || 0;
             console.log(`[API StartGroupMessage] ${total} alunos encontrados para o grupo ${groupId}`);
