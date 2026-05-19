@@ -205,21 +205,25 @@ async function startServer() {
     (async () => {
         try {
             console.log(`[API StartGroupMessage] Iniciando background job: ${jobId}`);
+            console.log(`[API StartGroupMessage] Buscando alunos do grupo: ${groupId}`);
             const { data: students, error } = await supabase
                 .from('students')
-                .select('name, guardian')
-                .contains('group_ids', [groupId]);
+                .select('name, guardian, group_ids');
 
             if (error) {
                 console.error('[API StartGroupMessage] Supabase error:', error);
                 throw error;
             }
             
-            const total = students?.length || 0;
+            console.log(`[API StartGroupMessage] Total de alunos:`, students?.length);
+            const groupStudents = students?.filter(s => s.group_ids?.includes(groupId));
+            console.log(`[API StartGroupMessage] Alunos filtrados manualmente:`, groupStudents);
+            
+            const total = groupStudents?.length || 0;
             console.log(`[API StartGroupMessage] ${total} alunos encontrados para o grupo ${groupId}`);
             messageJobs[jobId].total = total;
             
-            for (const student of students || []) {
+            for (const student of groupStudents || []) {
                 if (student.guardian?.phone) {
                     console.log(`[API StartGroupMessage] Enviando para: ${student.name}`);
                     await sendZApiMessage(student.guardian.phone, message);
