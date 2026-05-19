@@ -243,22 +243,33 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   const handleSendMessage = async () => {
-    if (!selectedGroupId || !message) return;
+    console.log("HandleSendMessage called with:", { selectedGroupId, message });
+    if (!selectedGroupId || !message) {
+        alert("Selecione um grupo e digite uma mensagem.");
+        return;
+    }
     
     // Call the API
-    const res = await fetch('/api/send-group-message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: selectedGroupId, message })
-    });
-    
-    if (res.ok) {
-        alert("Mensagem enviada com sucesso!");
-        setIsMessageModalOpen(false);
-        setMessage('');
-    } else {
-        const data = await res.json();
-        alert(`Erro ao enviar mensagem: ${data.error || 'Erro desconhecido'}`);
+    try {
+        const res = await fetch('/api/send-group-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId: selectedGroupId, message })
+        });
+        
+        console.log("API response status:", res.status);
+        
+        if (res.ok) {
+            alert("Mensagem enviada com sucesso!");
+            setIsMessageModalOpen(false);
+            setMessage('');
+        } else {
+            const data = await res.json();
+            alert(`Erro ao enviar mensagem: ${data.error || 'Erro desconhecido'}`);
+        }
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert(`Erro de rede ao enviar mensagem: ${err}`);
     }
   };
 
