@@ -257,7 +257,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
         setIsMessageModalOpen(false);
         setMessage('');
     } else {
-        alert("Erro ao enviar mensagem.");
+        const data = await res.json();
+        alert(`Erro ao enviar mensagem: ${data.error || 'Erro desconhecido'}`);
     }
   };
 
