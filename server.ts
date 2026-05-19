@@ -178,8 +178,14 @@ async function startServer() {
   });
 
   // Endpoint para enviar mensagem para um grupo
-  app.post('/api/send-group-message', async (req, res) => {
-    console.log('[API SendGroupMessage] Iniciando...', req.body);
+  app.all('/api/send-group-message', async (req, res) => {
+    console.log(`[API SendGroupMessage] Chamada recebida. Método: ${req.method}. Body:`, req.body);
+    
+    if (req.method !== 'POST') {
+        console.log(`[API SendGroupMessage] Método não permitido: ${req.method}`);
+        return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+    
     const { groupId, message } = req.body;
     if (!groupId || !message) {
         console.log('[API SendGroupMessage] Missing params');
@@ -187,6 +193,7 @@ async function startServer() {
     }
 
     try {
+
         console.log('[API SendGroupMessage] Buscando alunos...');
         // Fetch students in the group
         const { data: students, error } = await supabase
