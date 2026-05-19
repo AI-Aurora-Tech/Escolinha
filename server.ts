@@ -182,27 +182,38 @@ async function startServer() {
 
   // Endpoint para iniciar o envio de mensagem para um grupo
   app.post('/api/start-group-message', async (req, res) => {
+    console.log('[API StartGroupMessage] Rota chamada');
     const { groupId, message } = req.body;
-    if (!groupId || !message) return res.status(400).json({ error: 'Missing groupId or message' });
+    if (!groupId || !message) {
+        console.error('[API StartGroupMessage] Missing params');
+        return res.status(400).json({ error: 'Missing groupId or message' });
+    }
 
     const jobId = Math.random().toString(36).substring(7);
     messageJobs[jobId] = { status: 'starting', total: 0, current: 0, name: '' };
+    console.log(`[API StartGroupMessage] Job criado: ${jobId}`);
 
     // Executa em segundo plano
     (async () => {
         try {
+            console.log(`[API StartGroupMessage] Iniciando background job: ${jobId}`);
             const { data: students, error } = await supabase
                 .from('students')
                 .select('name, guardian')
                 .contains('group_ids', [groupId]);
 
-            if (error) throw error;
+            if (error) {
+                console.error('[API StartGroupMessage] Supabase error:', error);
+                throw error;
+            }
             
             const total = students?.length || 0;
+            console.log(`[API StartGroupMessage] ${total} alunos encontrados para o grupo ${groupId}`);
             messageJobs[jobId].total = total;
             
             for (const student of students || []) {
                 if (student.guardian?.phone) {
+                    console.log(`[API StartGroupMessage] Enviando para: ${student.name}`);
                     await sendZApiMessage(student.guardian.phone, message);
                     messageJobs[jobId].current++;
                     messageJobs[jobId].name = student.name;
@@ -213,8 +224,9 @@ async function startServer() {
                 }
             }
             messageJobs[jobId].status = 'completed';
+            console.log(`[API StartGroupMessage] Job concluído: ${jobId}`);
         } catch (error) {
-            console.error('[API StartGroupMessage] Erro:', error);
+            console.error('[API StartGroupMessage] Erro no job:', error);
             messageJobs[jobId].status = 'error';
             messageJobs[jobId].error = 'Erro ao enviar mensagens';
         }
