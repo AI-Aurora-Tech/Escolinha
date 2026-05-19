@@ -26,11 +26,6 @@ async function startServer() {
 
   // 1. MIDDLEWARES BÁSICOS
   app.use(express.json());
-  
-  app.use((req, res, next) => {
-    console.log(`[GLOBAL LOG] ${req.method} ${req.url}`);
-    next();
-  });
 
   // --- ROTA DE TESTE ABSOLUTA (PARA TESTAR O 302) ---
   app.get('/ping', (req, res) => {
@@ -179,53 +174,6 @@ async function startServer() {
     } catch (error) {
         console.error('[Status Check] Erro:', error);
         res.status(500).json({ error: 'Erro interno' });
-    }
-  });
-
-  // Endpoint para enviar mensagem para um grupo
-  app.all('/api/send-group-message/?', async (req, res) => {
-    console.log(`[API SendGroupMessage] Chamada recebida. Método: ${req.method}. Body:`, req.body);
-    
-    if (req.method !== 'POST') {
-        console.log(`[API SendGroupMessage] Método não permitido: ${req.method}`);
-        return res.status(405).json({ error: 'Method Not Allowed' });
-    }
-    
-    const { groupId, message } = req.body;
-    if (!groupId || !message) {
-        console.log('[API SendGroupMessage] Missing params');
-        return res.status(400).json({ error: 'Missing groupId or message' });
-    }
-
-    try {
-
-        console.log('[API SendGroupMessage] Buscando alunos...');
-        // Fetch students in the group
-        const { data: students, error } = await supabase
-            .from('students')
-            .select('guardian')
-            .contains('group_ids', [groupId]);
-
-        if (error) {
-            console.error('[API SendGroupMessage] Supabase error:', error);
-            throw error;
-        }
-        
-        console.log(`[API SendGroupMessage] Alunos encontrados: ${students?.length || 0}`);
-        
-        let count = 0;
-        for (const student of students || []) {
-            if (student.guardian?.phone) {
-                console.log(`[API SendGroupMessage] Enviando para: ${student.guardian.phone}`);
-                const success = await sendZApiMessage(student.guardian.phone, message);
-                if (success) count++;
-            }
-        }
-        console.log(`[API SendGroupMessage] Finalizado. Total enviado: ${count}`);
-        res.json({ success: true, count });
-    } catch (error) {
-        console.error('[API SendGroupMessage] Erro catch:', error);
-        res.status(500).json({ error: 'Erro ao enviar mensagens' });
     }
   });
 

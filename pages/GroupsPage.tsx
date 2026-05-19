@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Group, Student, Transaction, TransactionType, PaymentStatus } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy, MessageSquare } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -24,9 +24,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
-  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [message, setMessage] = useState('');
   
   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
 
@@ -242,70 +239,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
              categoryStr2.includes(searchLower);
   }).sort((a, b) => a.name.localeCompare(b.name));
 
-  const handleSendMessage = async () => {
-    console.log("HandleSendMessage called with:", { selectedGroupId, message });
-    if (!selectedGroupId || !message) {
-        alert("Selecione um grupo e digite uma mensagem.");
-        return;
-    }
-    
-    // Call the API
-    try {
-        const res = await fetch('/api/send-group-message', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ groupId: selectedGroupId, message })
-        });
-        
-        console.log("API response status:", res.status);
-        
-        if (res.ok) {
-            alert("Mensagem enviada com sucesso!");
-            setIsMessageModalOpen(false);
-            setMessage('');
-        } else {
-            let errorData;
-            try {
-                errorData = await res.json();
-            } catch (e) {
-                console.error("Failed to parse error body:", e);
-                errorData = { error: `Erro no servidor (status ${res.status})` };
-            }
-            alert(`Erro ao enviar mensagem: ${errorData.error || 'Erro desconhecido'}`);
-        }
-    } catch (err) {
-        console.error("Fetch error:", err);
-        alert(`Erro de rede ao enviar mensagem: ${err}`);
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* ... Message Modal ... */}
-      {isMessageModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold">Enviar Mensagem</h3>
-                    <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-400"><X className="w-5 h-5" /></button>
-                </div>
-                <textarea 
-                    className="w-full border rounded-lg p-2.5 mb-4"
-                    rows={4}
-                    placeholder="Digite sua mensagem..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                />
-                <button 
-                  onClick={handleSendMessage}
-                  className="w-full bg-primary-600 text-white font-bold py-2.5 rounded-lg hover:bg-primary-700"
-                >
-                    Enviar
-                </button>
-            </div>
-        </div>
-      )}
-      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Grupos e Categorias</h2>
         <div className="flex gap-2 w-full md:w-auto">
@@ -355,13 +290,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                           </div>
                         </div>
                         <div className="flex gap-1">
-                            <button 
-                                onClick={() => { setSelectedGroupId(group.id); setIsMessageModalOpen(true); }} 
-                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                title="Enviar mensagem para o grupo"
-                            >
-                                <MessageSquare className="w-4 h-4" />
-                            </button>
                             <button 
                                 onClick={() => handleExportGroupsExcel([group.id])} 
                                 className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
