@@ -26,6 +26,11 @@ async function startServer() {
 
   // 1. MIDDLEWARES BÁSICOS
   app.use(express.json());
+  
+  app.use((req, res, next) => {
+    console.log(`[GLOBAL LOG] ${req.method} ${req.url}`);
+    next();
+  });
 
   // --- ROTA DE TESTE ABSOLUTA (PARA TESTAR O 302) ---
   app.get('/ping', (req, res) => {
@@ -178,7 +183,7 @@ async function startServer() {
   });
 
   // Endpoint para enviar mensagem para um grupo
-  app.all('/api/send-group-message', async (req, res) => {
+  app.all('/api/send-group-message/?', async (req, res) => {
     console.log(`[API SendGroupMessage] Chamada recebida. Método: ${req.method}. Body:`, req.body);
     
     if (req.method !== 'POST') {
