@@ -262,7 +262,8 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     });
     
     if (!res.ok) {
-        alert("Erro ao iniciar envio.");
+        const errorText = await res.text();
+        alert(`Erro ao iniciar envio: ${errorText}`);
         setSendingStatus({ active: false, total: 0, current: 0, name: '', status: 'error' });
         return;
     }
