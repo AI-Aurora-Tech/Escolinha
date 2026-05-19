@@ -262,8 +262,14 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     });
     
     if (!res.ok) {
-        const errorText = await res.text();
-        alert(`Erro ao iniciar envio: ${errorText}`);
+        let errorMsg = "Erro desconhecido";
+        try {
+            const data = await res.json();
+            errorMsg = data.error || errorMsg;
+        } catch (e) {
+            errorMsg = await res.text() || errorMsg;
+        }
+        alert(`Erro ao iniciar envio: ${errorMsg}`);
         setSendingStatus({ active: false, total: 0, current: 0, name: '', status: 'error' });
         return;
     }

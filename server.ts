@@ -182,10 +182,18 @@ async function startServer() {
 
   // Endpoint para iniciar o envio de mensagem para um grupo
   app.post('/api/start-group-message', async (req, res) => {
-    console.log('[API StartGroupMessage] Rota chamada');
-    const { groupId, message } = req.body;
+    let body = req.body;
+    if (typeof body === 'string') {
+        try {
+            body = JSON.parse(body);
+        } catch (e) {
+            console.error('[API StartGroupMessage] Error parsing body string:', e);
+        }
+    }
+    console.log('[API StartGroupMessage] Rota chamada, body:', body);
+    const { groupId, message } = body;
     if (!groupId || !message) {
-        console.error('[API StartGroupMessage] Missing params');
+        console.error('[API StartGroupMessage] Missing params - groupId:', groupId, ', message:', message);
         return res.status(400).json({ error: 'Missing groupId or message' });
     }
 
