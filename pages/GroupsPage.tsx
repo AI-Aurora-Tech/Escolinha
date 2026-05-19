@@ -264,8 +264,14 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
             setIsMessageModalOpen(false);
             setMessage('');
         } else {
-            const data = await res.json();
-            alert(`Erro ao enviar mensagem: ${data.error || 'Erro desconhecido'}`);
+            let errorData;
+            try {
+                errorData = await res.json();
+            } catch (e) {
+                console.error("Failed to parse error body:", e);
+                errorData = { error: `Erro no servidor (status ${res.status})` };
+            }
+            alert(`Erro ao enviar mensagem: ${errorData.error || 'Erro desconhecido'}`);
         }
     } catch (err) {
         console.error("Fetch error:", err);
