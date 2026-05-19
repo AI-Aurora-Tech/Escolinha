@@ -177,6 +177,60 @@ async function startServer() {
     }
   });
 
+  // Store job statuses in memory
+  const messageJobs: Record<string, { status: string, total: number, current: number, name: string, error?: string }> = {};
+
+  // Endpoint para iniciar o envio de mensagem para um grupo
+  app.post('/api/start-group-message', async (req, res) => {
+    const { groupId, message } = req.body;
+    if (!groupId || !message) return res.status(400).json({ error: 'Missing groupId or message' });
+
+    const jobId = Math.random().toString(36).substring(7);
+    messageJobs[jobId] = { status: 'starting', total: 0, current: 0, name: '' };
+
+    // Executa em segundo plano
+    (async () => {
+        try {
+            const { data: students, error } = await supabase
+                .from('students')
+                .select('name, guardian')
+                .contains('group_ids', [groupId]);
+
+            if (error) throw error;
+            
+            const total = students?.length || 0;
+            messageJobs[jobId].total = total;
+            
+            for (const student of students || []) {
+                if (student.guardian?.phone) {
+                    await sendZApiMessage(student.guardian.phone, message);
+                    messageJobs[jobId].current++;
+                    messageJobs[jobId].name = student.name;
+                    messageJobs[jobId].status = 'progress';
+                    
+                    // Wait 10 seconds between messages
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+            }
+            messageJobs[jobId].status = 'completed';
+        } catch (error) {
+            console.error('[API StartGroupMessage] Erro:', error);
+            messageJobs[jobId].status = 'error';
+            messageJobs[jobId].error = 'Erro ao enviar mensagens';
+        }
+    })();
+
+    res.json({ jobId });
+  });
+
+  // Endpoint para consultar o status do envio
+  app.get('/api/group-message-status/:jobId', (req, res) => {
+      const { jobId } = req.params;
+      const job = messageJobs[jobId];
+      if (!job) return res.status(404).json({ error: 'Job not found' });
+      res.json(job);
+  });
+
   // --- VITE MIDDLEWARE (SPA FALLBACK) ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
