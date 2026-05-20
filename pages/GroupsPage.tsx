@@ -24,8 +24,52 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
-  
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [messageText, setMessageText] = useState('');
+
   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
+
+  const handleSendMessageToGroups = async () => {
+    if (selectedGroupIds.size === 0) {
+      alert('Selecione pelo menos um grupo.');
+      return;
+    }
+    setIsMessageModalOpen(true);
+  };
+
+  const confirmSendMessage = async () => {
+    if (!messageText.trim()) {
+        alert('Digite uma mensagem.');
+        return;
+    }
+
+    const phones = new Set<string>();
+    selectedGroupIds.forEach(gid => {
+        students
+            .filter(s => s.active && s.groupIds && s.groupIds.includes(gid) && s.guardian?.phone)
+            .forEach(s => phones.add(s.guardian.phone));
+    });
+
+    if (phones.size === 0) {
+        alert('Não foram encontrados números de telefone válidos nos grupos selecionados.');
+        return;
+    }
+
+    if (confirm(`Confirmar envio de mensagem para ${phones.size} responsáveis?`)) {
+        try {
+            await fetch('/api/send-group-member-messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phones: Array.from(phones), message: messageText })
+            });
+            alert('Envio iniciado no servidor!');
+            setIsMessageModalOpen(false);
+            setMessageText('');
+        } catch (err) {
+            alert('Erro ao iniciar envio.');
+        }
+    }
+  };
 
   const getStudentOverdueCount = (studentId: string) => {
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr).length;
@@ -245,13 +289,22 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
         <h2 className="text-2xl font-bold text-gray-800">Grupos e Categorias</h2>
         <div className="flex gap-2 w-full md:w-auto">
           {selectedGroupIds.size > 0 && (
-            <button 
-              onClick={() => handleExportGroupsExcel()}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm font-bold text-sm"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Exportar Selecionados ({selectedGroupIds.size})
-            </button>
+            <>
+              <button 
+                onClick={handleSendMessageToGroups}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors shadow-sm font-bold text-sm"
+              >
+                <Users className="w-4 h-4" />
+                Mensagem ({selectedGroupIds.size})
+              </button>
+              <button 
+                onClick={() => handleExportGroupsExcel()}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm font-bold text-sm"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Exportar ({selectedGroupIds.size})
+              </button>
+            </>
           )}
           <button 
             onClick={handleOpenNew}
@@ -334,6 +387,24 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
           </div>
         )}
       </div>
+
+      {isMessageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Enviar Mensagem</h3>
+                <textarea 
+                    className="w-full border rounded-lg p-3 h-32 focus:ring-2 focus:ring-primary-500 outline-none mb-4"
+                    placeholder="Digite a mensagem..."
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                />
+                <div className="flex gap-3 justify-end">
+                    <button onClick={() => setIsMessageModalOpen(false)} className="px-4 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+                    <button onClick={confirmSendMessage} className="px-6 py-2 bg-yellow-600 text-white font-black rounded-lg hover:bg-yellow-700">Enviar</button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">

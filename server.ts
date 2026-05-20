@@ -95,6 +95,33 @@ async function startServer() {
   // --- API ROUTES ---
   app.get('/api/logs', (req, res) => res.json(serverLogs));
 
+  // --- ROTA DE ENVIO DE MENSAGENS EM MASSA PARA MEMBROS DE GRUPOS ---
+  app.post('/api/send-group-member-messages', async (req, res) => {
+    const { phones, message } = req.body;
+    if (!phones || !Array.isArray(phones) || !message) {
+      return res.status(400).json({ error: 'Faltam dados: phones e message.' });
+    }
+
+    console.log(`[Mass Messaging] Iniciando envio para ${phones.length} membros.`);
+
+    // Envio assíncrono (em background)
+    (async () => {
+        for (const phone of phones) {
+            try {
+              console.log(`[Mass Messaging] Enviando para: ${phone}`);
+              await sendZApiMessage(phone, message);
+              // Wait 10 segundos
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            } catch (err) {
+              console.error(`[Mass Messaging] Falha no envio para ${phone}:`, err);
+            }
+        }
+        console.log('[Mass Messaging] Envio finalizado.');
+    })();
+    
+    res.json({ status: 'queued', count: phones.length });
+  });
+
   // Proxy para Mercado Pago (para funcionar em produção sem Vite)
   app.use('/api/mp', async (req, res) => {
     const targetUrl = `https://api.mercadopago.com${req.url}`;
