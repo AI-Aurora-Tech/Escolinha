@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { supabase } from './lib/supabaseClient';
 import { PaymentStatus } from './types';
@@ -25,6 +26,7 @@ async function startServer() {
   const PORT = 3000;
 
   // 1. MIDDLEWARES BÁSICOS
+  app.use(cors());
   app.use(express.json());
 
   // --- ROTA DE TESTE ABSOLUTA (PARA TESTAR O 302) ---
@@ -96,15 +98,7 @@ async function startServer() {
   app.get('/api/logs', (req, res) => res.json(serverLogs));
 
   // --- ROTA DE ENVIO DE MENSAGENS EM MASSA PARA MEMBROS DE GRUPOS ---
-  app.options('/api/send-group-member-messages-v2', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.status(200).end();
-  });
-
   app.post('/api/send-group-member-messages-v2', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     console.log(`[Mass Messaging] Rota acessada. Método: ${req.method}`);
     
     const { phones, message } = req.body;
