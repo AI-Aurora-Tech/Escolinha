@@ -28,11 +28,6 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
       })
     });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[Z-API] Falha no envio para ${phone}. Status: ${response.status}, Resposta: ${errorText}`);
-    }
-
     return response.ok;
   } catch (err) {
     console.error('Erro de conexão Z-API:', err);

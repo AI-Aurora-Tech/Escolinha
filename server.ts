@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { supabase } from './lib/supabaseClient';
 import { PaymentStatus } from './types';
@@ -11,24 +10,13 @@ dotenv.config();
 // Define o fuso horário global para o Node.js
 process.env.TZ = 'America/Sao_Paulo';
 
-import fs from 'fs';
-import path from 'path';
-
 // Store logs in memory
 let serverLogs: string[] = [];
-const LOG_FILE = path.join(process.cwd(), 'server.log');
-
 const originalLog = console.log;
 console.log = (...args: any[]) => {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-  const logEntry = `[${new Date().toISOString()}] ${message}\n`;
-  serverLogs.push(logEntry.trim());
+  serverLogs.push(`[${new Date().toISOString()}] ${message}`);
   if (serverLogs.length > 200) serverLogs.shift();
-  
-  fs.appendFile(LOG_FILE, logEntry, (err) => {
-    if (err) originalLog('Error writing to log file:', err);
-  });
-  
   originalLog.apply(console, args);
 };
 
@@ -37,11 +25,6 @@ async function startServer() {
   const PORT = 3000;
 
   // 1. MIDDLEWARES BÁSICOS
-  app.use((req, res, next) => {
-    console.log(`[REQUEST LOG] ${req.method} ${req.path}`);
-    next();
-  });
-  app.use(cors());
   app.use(express.json());
 
   // --- ROTA DE TESTE ABSOLUTA (PARA TESTAR O 302) ---
@@ -111,34 +94,6 @@ async function startServer() {
 
   // --- API ROUTES ---
   app.get('/api/logs', (req, res) => res.json(serverLogs));
-
-  // --- ROTA DE ENVIO DE MENSAGENS EM MASSA PARA MEMBROS DE GRUPOS ---
-  app.options('/api/send-messages', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(200).end();
-  });
-
-  app.post('/api/send-message-single', async (req, res) => {
-    const { phone, message } = req.body;
-    if (!phone || !message) {
-        return res.status(400).json({ error: 'Faltam dados: phone e message.' });
-    }
-
-    try {
-        console.log(`[Mass Messaging/Single] Enviando para: ${phone}`);
-        const success = await sendZApiMessage(phone, message);
-        if (success) {
-            res.json({ status: 'success' });
-        } else {
-            res.status(500).json({ error: 'Falha no envio Z-API' });
-        }
-    } catch (err) {
-        console.error(`[Mass Messaging/Single] Erro no envio para ${phone}:`, err);
-        res.status(500).json({ error: 'Erro no envio' });
-    }
-  });
 
   // Proxy para Mercado Pago (para funcionar em produção sem Vite)
   app.use('/api/mp', async (req, res) => {
