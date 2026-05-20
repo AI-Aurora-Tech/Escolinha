@@ -96,7 +96,13 @@ async function startServer() {
   app.get('/api/logs', (req, res) => res.json(serverLogs));
 
   // --- ROTA DE ENVIO DE MENSAGENS EM MASSA PARA MEMBROS DE GRUPOS ---
-  app.post('/api/send-group-member-messages', async (req, res) => {
+  app.all('/api/send-group-member-messages', async (req, res) => {
+    console.log(`[Mass Messaging] Rota acessada. Método: ${req.method}`);
+    
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+    
     const { phones, message } = req.body;
     if (!phones || !Array.isArray(phones) || !message) {
       return res.status(400).json({ error: 'Faltam dados: phones e message.' });
