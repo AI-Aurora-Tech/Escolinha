@@ -96,19 +96,8 @@ async function startServer() {
   app.get('/api/logs', (req, res) => res.json(serverLogs));
 
   // --- ROTA DE ENVIO DE MENSAGENS EM MASSA PARA MEMBROS DE GRUPOS ---
-  app.all('/api/send-group-member-messages', async (req, res) => {
+  app.post('/api/send-group-member-messages-v2', async (req, res) => {
     console.log(`[Mass Messaging] Rota acessada. Método: ${req.method}`);
-    
-    if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        return res.status(200).end();
-    }
-    
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed' });
-    }
     
     const { phones, message } = req.body;
     if (!phones || !Array.isArray(phones) || !message) {

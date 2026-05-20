@@ -57,7 +57,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
 
     if (confirm(`Confirmar envio de mensagem para ${phones.size} responsáveis?`)) {
         try {
-            await fetch('/api/send-group-member-messages', {
+            await fetch('/api/send-group-member-messages-v2', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phones: Array.from(phones), message: messageText })
