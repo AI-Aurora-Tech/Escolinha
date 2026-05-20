@@ -47,7 +47,10 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     selectedGroupIds.forEach(gid => {
         students
             .filter(s => s.active && s.groupIds && s.groupIds.includes(gid) && s.guardian?.phone)
-            .forEach(s => phones.add(s.guardian.phone));
+            .forEach(s => {
+                const phone = s.guardian.phone.replace(/\D/g, '');
+                if (phone) phones.add(phone);
+            });
     });
 
     if (phones.size === 0) {
@@ -56,18 +59,31 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
     }
 
     if (confirm(`Confirmar envio de mensagem para ${phones.size} responsáveis?`)) {
-        try {
-            await fetch('/api/send-messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phones: Array.from(phones), message: messageText })
-            });
-            alert('Envio iniciado no servidor!');
-            setIsMessageModalOpen(false);
-            setMessageText('');
-        } catch (err) {
-            alert('Erro ao iniciar envio.');
+        setIsMessageModalOpen(false);
+        alert('Iniciando envio... por favor, não feche a página.');
+        
+        const phoneArray = Array.from(phones);
+        let successCount = 0;
+
+        for (let i = 0; i < phoneArray.length; i++) {
+            try {
+                const response = await fetch('/api/send-message-single', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: phoneArray[i], message: messageText })
+                });
+                if (response.ok) successCount++;
+            } catch (err) {
+                console.error('Erro ao enviar:', err);
+            }
+
+            if (i < phoneArray.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
         }
+        
+        alert(`Envio finalizado! Sucesso: ${successCount} de ${phoneArray.length}`);
+        setMessageText('');
     }
   };
 

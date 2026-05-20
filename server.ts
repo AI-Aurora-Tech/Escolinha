@@ -120,33 +120,24 @@ async function startServer() {
     res.status(200).end();
   });
 
-  app.post('/api/send-messages', async (req, res) => {
-    console.log('[DEBUG] Rota de envio acessada.');
-    console.log(`[Mass Messaging] Rota acessada. Método: ${req.method}`);
-    
-    const { phones, message } = req.body;
-    if (!phones || !Array.isArray(phones) || !message) {
-      return res.status(400).json({ error: 'Faltam dados: phones e message.' });
+  app.post('/api/send-message-single', async (req, res) => {
+    const { phone, message } = req.body;
+    if (!phone || !message) {
+        return res.status(400).json({ error: 'Faltam dados: phone e message.' });
     }
 
-    console.log(`[Mass Messaging] Iniciando envio para ${phones.length} membros.`);
-
-    // Envio assíncrono (em background)
-    (async () => {
-        for (const phone of phones) {
-            try {
-              console.log(`[Mass Messaging] Enviando para: ${phone}`);
-              await sendZApiMessage(phone, message);
-              // Wait 10 segundos
-              await new Promise(resolve => setTimeout(resolve, 10000));
-            } catch (err) {
-              console.error(`[Mass Messaging] Falha no envio para ${phone}:`, err);
-            }
+    try {
+        console.log(`[Mass Messaging/Single] Enviando para: ${phone}`);
+        const success = await sendZApiMessage(phone, message);
+        if (success) {
+            res.json({ status: 'success' });
+        } else {
+            res.status(500).json({ error: 'Falha no envio Z-API' });
         }
-        console.log('[Mass Messaging] Envio finalizado.');
-    })();
-    
-    res.json({ status: 'queued', count: phones.length });
+    } catch (err) {
+        console.error(`[Mass Messaging/Single] Erro no envio para ${phone}:`, err);
+        res.status(500).json({ error: 'Erro no envio' });
+    }
   });
 
   // Proxy para Mercado Pago (para funcionar em produção sem Vite)
