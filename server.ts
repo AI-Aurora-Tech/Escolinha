@@ -11,13 +11,24 @@ dotenv.config();
 // Define o fuso horário global para o Node.js
 process.env.TZ = 'America/Sao_Paulo';
 
+import fs from 'fs';
+import path from 'path';
+
 // Store logs in memory
 let serverLogs: string[] = [];
+const LOG_FILE = path.join(process.cwd(), 'server.log');
+
 const originalLog = console.log;
 console.log = (...args: any[]) => {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-  serverLogs.push(`[${new Date().toISOString()}] ${message}`);
+  const logEntry = `[${new Date().toISOString()}] ${message}\n`;
+  serverLogs.push(logEntry.trim());
   if (serverLogs.length > 200) serverLogs.shift();
+  
+  fs.appendFile(LOG_FILE, logEntry, (err) => {
+    if (err) originalLog('Error writing to log file:', err);
+  });
+  
   originalLog.apply(console, args);
 };
 
@@ -26,6 +37,10 @@ async function startServer() {
   const PORT = 3000;
 
   // 1. MIDDLEWARES BÁSICOS
+  app.use((req, res, next) => {
+    console.log(`[REQUEST LOG] ${req.method} ${req.path}`);
+    next();
+  });
   app.use(cors());
   app.use(express.json());
 
