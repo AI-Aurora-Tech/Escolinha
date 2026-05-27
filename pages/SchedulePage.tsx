@@ -836,7 +836,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
                             return (
                                 <div key={s.id} className={`flex items-center justify-between p-3 border-b last:border-0 transition-colors rounded-lg ${isCriticalDefaulter ? 'bg-red-50 hover:bg-red-100 border-red-200 shadow-inner' : 'hover:bg-gray-50'}`}>
-                                    <div className="flex items-center gap-2 min-w-0">
+                                    <div className="flex-1 flex items-center gap-2 min-w-0">
                                         <div className="relative">
                                             <div className="flex items-center gap-2">
                                                 {selectedActivity.type === 'GAME' && (
@@ -846,18 +846,18 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                                          <Clock className="w-4 h-4 text-gray-300" />}
                                                     </div>
                                                 )}
-                                                <span className={`text-sm font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`}>{s.name}</span>
+                                                <span className={`${s.name.length > 15 ? 'text-[9px]' : 'text-[10px]'} sm:${s.name.length > 20 ? 'text-xs' : 'text-sm'} font-medium truncate block ${isCriticalDefaulter ? 'text-red-700 font-black uppercase' : ''}`} style={{ maxWidth: '100%' }}>{s.name}</span>
                                             </div>
                                             {isCriticalDefaulter && (
-                                                <div className="flex items-center gap-1 mt-0.5">
+                                                <div className="flex items-center gap-1 mt-0.5 min-w-0">
                                                     <AlertTriangle className="w-3 h-3 text-red-600 animate-pulse" />
-                                                    <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter">{overdueCount} MENSALIDADES EM ATRASO</span>
+                                                    <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter truncate">{overdueCount} MENSALIDADES EM ATRASO</span>
                                                 </div>
                                             )}
                                         </div>
-                                        {goals > 0 && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold shadow-sm">⚽ {goals}</span>}
+                                        {goals > 0 && <span className="flex-shrink-0 text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full font-bold shadow-sm">⚽ {goals}</span>}
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex-shrink-0 flex items-center gap-1 pl-2">
                                         {!isGuardian ? (
                                             <>
                                                 <button onClick={() => handleIndividualNotify(selectedActivity, s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Enviar convite individualmente">
