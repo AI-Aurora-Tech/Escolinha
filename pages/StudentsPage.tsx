@@ -1,15 +1,13 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Student, Group, Plan, Transaction, TransactionType, PaymentStatus, PaymentMethod, Activity, User, UserRole, Occurrence } from '../types';
-import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target, Star, Sparkles } from 'lucide-react';
+import { Search, Plus, Phone, User as UserIcon, Edit, Camera, X, CheckSquare, Square, FileSpreadsheet, FileText, Filter, HeartPulse, ShieldCheck, MessageCircle, MapPin, Loader2, Printer, Wallet, QrCode, CheckCircle, Clock, Link as LinkIcon, History, XCircle, Download, Calculator, AlertTriangle, FileWarning, FolderCheck, Upload, RefreshCw, Copy, Send, Lock, PlusCircle, Calendar, CalendarCheck, Ban, Zap, Play, Pause, Ticket, Trophy, Medal, ChevronDown, Layers, Settings2, Banknote as CashIcon, Share2, MessageSquareWarning, Target, Star } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { createPixPayment, createMPPreference } from '../services/mercadoPago';
 import { sendZApiMessage, sendZApiPoll } from '../services/zapiService';
-import { analyzeRetention } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
-import { AIFilterDialog } from '../components/AIFilterDialog';
 import { Type } from '@google/genai';
 
 interface StudentsPageProps {
@@ -44,7 +42,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const [isAIFilterOpen, setIsAIFilterOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,9 +80,85 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [showInactiveReasonModal, setShowInactiveReasonModal] = useState(false);
   const [inactiveReasonText, setInactiveReasonText] = useState('');
 
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [aiAnalysisResult, setAiAnalysisResult] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportMonth, setReportMonth] = useState(new Date().getMonth());
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
+
+  const calculateStudentStats = (student: Student, month: number, year: number) => {
+      const studentActivities = activities.filter(a => {
+          const d = new Date(a.date);
+          const isParticipant = (a.groupId && (student.groupIds || []).includes(a.groupId)) || 
+                                (a.participants && a.participants.includes(student.id));
+          return isParticipant && d.getMonth() === month && d.getFullYear() === year;
+      });
+
+      const gameActivities = studentActivities.filter(a => a.type === 'GAME');
+      const trainingActivities = studentActivities.filter(a => {
+          const isTraining = a.type === 'TRAINING' || !a.type;
+          return isTraining;
+      });
+
+      const totalGames = gameActivities.length;
+      const attendedGames = gameActivities.filter(a => a.attendance.includes(student.id)).length;
+      const missedGames = totalGames - attendedGames;
+
+      const totalTrainings = trainingActivities.length;
+      const attendedTrainings = trainingActivities.filter(a => a.attendance.includes(student.id)).length;
+      const missedTrainings = totalTrainings - attendedTrainings;
+
+      const goals = gameActivities.reduce((acc, a) => {
+          const goalsScored = (a.scorers || []).filter(sId => sId === student.id).length;
+          return acc + goalsScored;
+      }, 0);
+
+      return {
+          totalTrainings,
+          attendedTrainings,
+          missedTrainings,
+          totalGames,
+          attendedGames,
+          missedGames,
+          goals
+      };
+  };
+
+  const getReportMessage = (student: Student, stats: ReturnType<typeof calculateStudentStats>) => {
+      return `📊 *Relatório de Presença - ${reportMonth + 1}/${reportYear}*
+Atleta: *${student.name}*
+
+*Treinos:*
+• Presença: ${stats.attendedTrainings}
+• Falta: ${stats.missedTrainings}
+
+*Jogos:*
+• Convocações: ${stats.totalGames}
+• Presença: ${stats.attendedGames}
+• Falta: ${stats.missedGames}
+• Gols Marcados: ${stats.goals}
+
+Equipe Garotos do Martinica 🏆`;
+  };
+
+  const sendReport = async (student: Student, stats: ReturnType<typeof calculateStudentStats>) => {
+      const phone = student.guardian.phone.replace(/\D/g, '');
+      if (!phone) return alert(`Responsável pelo atleta ${student.name} sem telefone.`);
+      const msg = getReportMessage(student, stats);
+      await sendZApiMessage(phone, msg);
+  };
+
+  const handleBatchSendReports = async() => {
+      const activeStudents = students.filter(s => s.active);
+      if (!confirm(`Deseja enviar o relatório para ${activeStudents.length} alunos ativos?`)) return;
+
+      setIsGenerating(true);
+      for (const student of activeStudents) {
+          const stats = calculateStudentStats(student, reportMonth, reportYear);
+          await sendReport(student, stats);
+          await new Promise(r => setTimeout(r, 5000)); // Delay for safety
+      }
+      setIsGenerating(false);
+      alert("Relatórios enviados!");
+  };
 
   const isGuardian = currentUser?.role === UserRole.RESPONSAVEL;
 
@@ -814,29 +887,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
     setIsModalOpen(false); setCapturedImage(null); setEditingId(null); setStudentForm(initialFormState); setSelectedFinanceIds(new Set());
   };
 
-  const handleAIAnalysis = async () => {
-      const inactiveStudents = students.filter(s => !s.active && s.inactiveReason);
-      if (inactiveStudents.length === 0) {
-          alert("Não há alunos inativos com motivos relatados para análise.");
-          return;
-      }
-
-      setIsAnalyzing(true);
-      setShowAIModal(true);
-      setAiAnalysisResult('');
-
-      const dataString = inactiveStudents.map(s => `- Aluno: ${s.name} | Idade: ${calculateAge(s.birthDate)} | Motivo: ${s.inactiveReason}`).join('\n');
-      
-      try {
-          const result = await analyzeRetention(dataString);
-          setAiAnalysisResult(result);
-      } catch (e) {
-          setAiAnalysisResult("Ocorreu um erro ao gerar a análise.");
-      } finally {
-          setIsAnalyzing(false);
-      }
-  };
-
   const handleSaveManualCharge = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCharge.description && manualCharge.amount > 0 && editingId) {
@@ -1023,36 +1073,10 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
 
   const handleSendAttendanceReport = async () => {
       const student = students.find(s => s.id === editingId);
-      if (!student || !student.guardian.phone) return alert("Responsável sem telefone cadastrado.");
-
-      const monthName = monthsList.find(m => m.value === attendanceMonth)?.label || "Todos";
-      const presences = filteredStudentActivities.filter(a => (a.attendance || []).includes(editingId!)).length;
-      const absences = filteredStudentActivities.filter(a => !(a.attendance || []).includes(editingId!) && a.date <= todayStr).length;
-      const goals = filteredStudentActivities.reduce((acc, a) => acc + (a.scorers?.filter(s => s === editingId).length || 0), 0);
-
-      let message = `⚽ *Relatório de Presença - Garotos do Martinica*\n\n`;
-      message += `Atleta: *${student.name}*\n`;
-      message += `Período: ${monthName} / ${attendanceYear}\n\n`;
-      message += `✅ Presenças: *${presences}*\n`;
-      message += `❌ Faltas: *${absences}*\n`;
-      message += `🔥 Gols Marcados: *${goals}*\n\n`;
-      message += `*Histórico Recente:*`;
-
-      // Pega as últimas 5 atividades para não estourar limite ou ficar muito longa
-      filteredStudentActivities.slice(0, 8).forEach(act => {
-          const isPresent = (act.attendance || []).includes(editingId!);
-          message += `\n• ${formatDate(act.date)}: ${act.title} (${isPresent ? '✅' : '❌'})`;
-      });
-
-      if (filteredStudentActivities.length > 8) {
-          message += `\n... entre outras.`;
-      }
-
-      message += `\n\nAcompanhe o desempenho completo pelo Portal do Aluno!`;
-
-      const sent = await sendZApiMessage(student.guardian.phone, message);
-      if (sent) alert("Relatório enviado com sucesso via WhatsApp!");
-      else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
+      if (!student) return;
+      const stats = calculateStudentStats(student, attendanceMonth, attendanceYear);
+      await sendReport(student, stats);
+      alert("Relatório individual enviado!");
   };
 
   return (
@@ -1076,9 +1100,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <button onClick={handleExportExcel} className="justify-center flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-sm text-xs sm:text-sm"><Download className="w-4 h-4" /><span>Excel</span></button>
                 <button onClick={handleExportPDF} className="justify-center flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm text-xs sm:text-sm"><FileText className="w-4 h-4" /><span>PDF</span></button>
                 {currentUser?.role === UserRole.ADMIN && (
-                    <button onClick={handleAIAnalysis} disabled={isAnalyzing} className="justify-center flex items-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
-                        {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
-                        <span>Análise IA</span>
+                    <button onClick={handleBatchSendReports} disabled={isGenerating} className="justify-center flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50">
+                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        <span>Relatórios</span>
                     </button>
                 )}
                 <button onClick={handleOpenNew} className="col-span-2 justify-center flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-xs sm:text-sm"><Plus className="w-4 h-4" /><span>Novo Aluno</span></button>
@@ -1092,16 +1116,6 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
                 <div className="lg:col-span-2 relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input type="text" placeholder="Buscar atleta ou responsável..." className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                </div>
-                <div className="lg:col-span-1">
-                    <button 
-                        onClick={() => setIsAIFilterOpen(true)}
-                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-600 to-primary-800 text-white px-3 py-2 rounded-lg hover:from-primary-700 hover:to-primary-900 transition-all shadow-sm text-sm font-bold"
-                    >
-                        <Sparkles className="w-4 h-4" />
-                        <span className="hidden lg:inline xl:hidden">IA</span>
-                        <span className="inline lg:hidden xl:inline">Filtro IA</span>
-                    </button>
                 </div>
                 <div className="lg:col-span-1 relative">
                     <input type="number" placeholder="Idade" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow" value={ageFilter} onChange={(e) => setAgeFilter(e.target.value)} />
@@ -2172,69 +2186,9 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
         </div>
       )}
 
-      {/* MODAL ANÁLISE IA */}
-      {showAIModal && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 rounded-t-2xl">
-                <h3 className="text-lg font-black text-indigo-900 uppercase tracking-tighter flex items-center gap-2">
-                    <Star className="text-indigo-600 w-5 h-5" /> Análise de Retenção (IA)
-                </h3>
-                <button onClick={() => setShowAIModal(false)} className="text-indigo-400 hover:text-indigo-600 transition-colors">✕</button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-                {isAnalyzing ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-indigo-600">
-                        <Loader2 className="w-12 h-12 animate-spin mb-4" />
-                        <p className="font-medium">A Inteligência Artificial está analisando os motivos de inativação...</p>
-                        <p className="text-sm text-indigo-400 mt-2">Isso pode levar alguns segundos.</p>
-                    </div>
-                ) : (
-                    <div className="prose prose-indigo max-w-none prose-sm sm:prose-base">
-                        <ReactMarkdown>{aiAnalysisResult}</ReactMarkdown>
-                    </div>
-                )}
-            </div>
-            <div className="p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end">
-                <button onClick={() => setShowAIModal(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors uppercase tracking-tight text-sm">
-                    Fechar Análise
-                </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      <AIFilterDialog
-        isOpen={isAIFilterOpen}
-        onClose={() => setIsAIFilterOpen(false)}
-        contextData={JSON.stringify({
-            groups: groups.map(g => ({ id: g.id, name: g.name, type: g.type })),
-            plans: plans.map(p => ({ id: p.id, name: p.name })),
-            positions: positionsList
-        }, null, 2)}
-        schemaProperties={{
-            searchTerm: { type: Type.STRING, description: "Nome do atleta ou responsável. Use '' se não especificado." },
-            ageFilter: { type: Type.STRING, description: "Idade exata (ex: '11', '15'). Use '' para todos." },
-            statusFilter: { type: Type.STRING, enum: ["ALL", "ACTIVE", "INACTIVE"], description: "Status de matrícula" },
-            medicalFilter: { type: Type.STRING, enum: ["ALL", "PENDING", "OK"], description: "Status do atestado médico" },
-            financeFilter: { type: Type.STRING, enum: ["ALL", "OVERDUE", "OK"], description: "Status financeiro (inadimplentes = OVERDUE)" },
-            docsFilter: { type: Type.STRING, enum: ["ALL", "PENDING", "OK"], description: "Status de documentos" },
-            planFilter: { type: Type.STRING, description: "ID do plano de mensalidade, ou 'ALL'" },
-            positionFilter: { type: Type.STRING, description: "Posição em campo (ex: 'Goleiro', 'Atacante'), ou 'ALL'" },
-            selectedCategories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de IDs de grupos/categorias. Vazio para todos." }
-        }}
-        onApplyFilters={(filters: any) => {
-            if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
-            if (filters.ageFilter !== undefined) setAgeFilter(filters.ageFilter);
-            if (filters.statusFilter !== undefined) setStatusFilter(filters.statusFilter);
-            if (filters.medicalFilter !== undefined) setMedicalFilter(filters.medicalFilter);
-            if (filters.financeFilter !== undefined) setFinanceFilter(filters.financeFilter);
-            if (filters.docsFilter !== undefined) setDocsFilter(filters.docsFilter);
-            if (filters.planFilter !== undefined) setPlanFilter(filters.planFilter);
-            if (filters.positionFilter !== undefined) setPositionFilter(filters.positionFilter);
-            if (filters.selectedCategories !== undefined) setSelectedCategories(filters.selectedCategories);
-        }}
-      />
+
+
     </div>
   );
 };
