@@ -633,15 +633,13 @@ const AppContent: React.FC = () => {
               const hasConfirmedRsvp = a.rsvps?.some(r => r.studentId === studentId && r.status === 'CONFIRMED');
 
               if (!existingTx) {
-                  if (isPresent || hasConfirmedRsvp) {
-                      transactionsToInsert.push({
-                          description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
-                          amount: a.fee, type: TransactionType.INCOME, date: a.date,
-                          status: PaymentStatus.PENDING, 
-                          student_id: studentId,
-                          external_reference: extRef, recurrence: 'NONE',
-                      });
-                  }
+                  transactionsToInsert.push({
+                      description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
+                      amount: a.fee, type: TransactionType.INCOME, date: a.date,
+                      status: PaymentStatus.PENDING, 
+                      student_id: studentId,
+                      external_reference: extRef, recurrence: 'NONE',
+                  });
               } else {
                   const updates: any = {};
                   let needsUpdate = false;
