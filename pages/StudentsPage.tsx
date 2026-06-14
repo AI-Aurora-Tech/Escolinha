@@ -38,6 +38,34 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
   const [planFilter, setPlanFilter] = useState('ALL');
+
+  const studentDerivedData = useMemo(() => {
+    const data: Record<string, any> = {};
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const currentYear = new Date().getFullYear();
+
+    students.forEach(s => {
+        const overdueCount = transactions.filter(t => t.studentId === s.id && t.type === TransactionType.INCOME && t.status !== PaymentStatus.PAID && t.status !== PaymentStatus.CANCELLED && t.date < today).length;
+        const birthYear = s.birthDate ? parseInt(s.birthDate.split('-')[0]) : currentYear;
+        
+        const overdueBorderClass = overdueCount >= 3 
+            ? 'border-red-500 bg-red-50/50' 
+            : overdueCount === 2 
+            ? 'border-orange-500 bg-orange-50/50' 
+            : overdueCount === 1 
+            ? 'border-red-200 bg-red-50/20' 
+            : 'border-gray-100';
+
+        const overdueBadgeClass = overdueCount >= 3
+            ? 'bg-red-600 text-white'
+            : overdueCount === 2
+            ? 'bg-orange-500 text-white'
+            : 'bg-red-100 text-red-700';
+            
+        data[s.id] = { overdueCount, birthYear, overdueBorderClass, overdueBadgeClass };
+    });
+    return data;
+  }, [students, transactions]);
   const [positionFilter, setPositionFilter] = useState('ALL');
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -1198,28 +1226,11 @@ Equipe Garotos do Martinica 🏆`;
       {/* VISUALIZAÇÃO MOBILE/TABLET EM CARDS (Até LG - 1024px) */}
       <div className="lg:hidden space-y-4">
           {filteredStudents.map((student) => {
-              const overdueCount = getStudentOverdueCount(student.id);
-              const currentYear = new Date().getFullYear(); 
-              const birthYear = student.birthDate ? parseInt(student.birthDate.split('-')[0]) : currentYear;
+              const { overdueCount, birthYear, overdueBorderClass, overdueBadgeClass } = studentDerivedData[student.id];
               const groupBadges = (student.groupIds || []).map(gid => {
                   const g = groups.find(g => g.id === gid);
                   return g ? { name: g.name, type: g.type } : null;
               }).filter(Boolean);
-              
-              // Definir cores conforme o número de mensalidades atrasadas
-              const overdueBorderClass = overdueCount >= 3 
-                  ? 'border-red-500 bg-red-50/50' 
-                  : overdueCount === 2 
-                  ? 'border-orange-500 bg-orange-50/50' 
-                  : overdueCount === 1 
-                  ? 'border-red-200 bg-red-50/20' 
-                  : 'border-gray-100';
-
-              const overdueBadgeClass = overdueCount >= 3
-                  ? 'bg-red-600 text-white'
-                  : overdueCount === 2
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-red-100 text-red-700';
               
               return (
                   <div key={student.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${overdueBorderClass}`}>
