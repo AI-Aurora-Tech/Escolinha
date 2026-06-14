@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
 import { Group, Student, Transaction, TransactionType, PaymentStatus } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy, MessageCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { sendZApiMessage } from '../services/zapiService';
 
 interface GroupsPageProps {
   groups: Group[];
@@ -19,6 +20,10 @@ interface GroupsPageProps {
 export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transactions, onAddGroup, onUpdateGroup, onDeleteGroup, onBatchAssignStudents }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [selectedGroupIdForMessage, setSelectedGroupIdForMessage] = useState<string | null>(null);
+  const [isSendingMessages, setIsSendingMessages] = useState(false);
   
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
@@ -26,6 +31,24 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'MEMBERS' | 'NON_MEMBERS'>('ALL');
   
   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
+
+  const handleSendMessageToGroup = async () => {
+    if (!selectedGroupIdForMessage || !whatsappMessage.trim()) return;
+    setIsSendingMessages(true);
+    const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(selectedGroupIdForMessage));
+    
+    for (const student of groupStudents) {
+        if (student.guardian.phone) {
+            await sendZApiMessage(student.guardian.phone, whatsappMessage);
+            await new Promise(resolve => setTimeout(resolve, 10000)); // 10s delay
+        }
+    }
+    
+    setIsSendingMessages(false);
+    setShowWhatsAppModal(false);
+    setWhatsappMessage('');
+    setSelectedGroupIdForMessage(null);
+  };
 
   const getStudentOverdueCount = (studentId: string) => {
     return transactions.filter(t => t.studentId === studentId && t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr).length;
@@ -304,6 +327,13 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                             >
                                 <Download className="w-4 h-4" />
                             </button>
+                            <button 
+                                onClick={() => { setSelectedGroupIdForMessage(group.id); setShowWhatsAppModal(true); }} 
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Enviar WhatsApp ao Grupo"
+                            >
+                                <MessageCircle className="w-4 h-4" />
+                            </button>
                             <button onClick={() => handleOpenEdit(group)} className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                                 <Edit className="w-4 h-4" />
                             </button>
@@ -487,6 +517,41 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                         <button type="submit" className="px-8 py-2.5 bg-primary-600 text-white font-black rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20 uppercase tracking-tighter">Salvar Grupo</button>
                     </div>
                 </form>
+            </div>
+        </div>
+      )}
+
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-900">Enviar WhatsApp ao Grupo</h3>
+                    <button onClick={() => setShowWhatsAppModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-bold text-gray-600 mb-1">Mensagem</label>
+                        <textarea 
+                            className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" 
+                            rows={4}
+                            value={whatsappMessage} 
+                            onChange={e => setWhatsappMessage(e.target.value)} 
+                            placeholder="Digite a mensagem..."
+                        />
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-6">
+                    <button onClick={() => setShowWhatsAppModal(false)} className="px-5 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                    <button 
+                        onClick={handleSendMessageToGroup} 
+                        disabled={isSendingMessages || !whatsappMessage.trim()}
+                        className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                        {isSendingMessages ? 'Enviando...' : 'Enviar para Todos'}
+                    </button>
+                </div>
             </div>
         </div>
       )}
