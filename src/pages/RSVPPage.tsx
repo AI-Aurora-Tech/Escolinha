@@ -124,126 +124,129 @@ export const RSVPPage: React.FC = () => {
 
       if (error) throw error;
       setStatus(newStatus);
+      setProcessing(false); // Unblock UI early!
 
-      // Send WhatsApp Confirmation
-      const firstName = student.guardian.name.split(" ")[0];
-      let msg = "";
+      // --- Background tasks (WhatsApp + Pix) ---
+      (async () => {
+        // Send WhatsApp Confirmation
+        const firstName = student.guardian.name.split(" ")[0];
+        let msg = "";
 
-      if (newStatus === "CONFIRMED") {
-        msg = `Olá ${firstName}! Recebemos a confirmação de presença do atleta *${student.name}* para o jogo *${activity.title}*. ⚽🔥\n\nContamos com a torcida!`;
+        if (newStatus === "CONFIRMED") {
+          msg = `Olá ${firstName}! Recebemos a confirmação de presença do atleta *${student.name}* para o jogo *${activity.title}*. ⚽🔥\n\nContamos com a torcida!`;
 
-        console.log("Checking fee for transaction creation:", activity.fee);
+          console.log("Checking fee for transaction creation:", activity.fee);
 
-        // Generate PIX if fee exists
-        if (activity.fee && activity.fee > 0) {
-          console.log("Fee exists, proceeding to create transaction...");
-          setGeneratingPix(true);
-          try {
-            // Use deterministic reference to prevent duplicates
-            const externalRef = `game_fee_${activityId}_${studentId}`;
-            console.log("External Reference:", externalRef);
+          // Generate PIX if fee exists
+          if (activity.fee && activity.fee > 0) {
+            console.log("Fee exists, proceeding to create transaction...");
+            setGeneratingPix(true);
+            try {
+              // Use deterministic reference to prevent duplicates
+              const externalRef = `game_fee_${activityId}_${studentId}`;
+              console.log("External Reference:", externalRef);
 
-            // Check if transaction already exists (ignoring cancelled ones)
-            const { data: existingTx, error: checkError } = await supabase
-              .from("transactions")
-              .select("*")
-              .eq("external_reference", externalRef)
-              .neq("status", PaymentStatus.CANCELLED)
-              .maybeSingle();
+              // Check if transaction already exists (ignoring cancelled ones)
+              const { data: existingTx, error: checkError } = await supabase
+                .from("transactions")
+                .select("*")
+                .eq("external_reference", externalRef)
+                .neq("status", PaymentStatus.CANCELLED)
+                .maybeSingle();
 
-            if (checkError) {
-              console.error("Error checking existing transaction:", checkError);
-            }
+              if (checkError) {
+                console.error("Error checking existing transaction:", checkError);
+              }
 
-            if (existingTx && existingTx.status === PaymentStatus.PAID) {
-              console.log("Transaction already paid:", existingTx);
-              setPaymentConfirmed(true);
-              msg += `\n\n✅ *Pagamento já realizado!*`;
-            } else {
-              // If not exists, create it
-              if (!existingTx) {
-                console.log("Creating new transaction...");
-                const { error: txError } = await supabase
-                  .from("transactions")
-                  .insert({
-                    description: `Taxa Jogo: ${activity.title}`,
-                    category: "Taxa de Atividade",
-                    amount: activity.fee,
-                    type: TransactionType.INCOME,
-                    date: new Date().toLocaleDateString("en-CA", {
-                      timeZone: "America/Sao_Paulo",
-                    }),
-                    status: PaymentStatus.PENDING,
-                    student_id: studentId,
-                    payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                    external_reference: externalRef,
-                  });
-
-                if (txError) {
-                  console.error(
-                    "Erro ao criar transação (INSERT failed):",
-                    txError,
-                  );
-                  alert(`Erro ao criar taxa de jogo: ${txError.message}`);
-                  throw txError;
-                }
-                console.log("Transaction created successfully.");
+              if (existingTx && existingTx.status === PaymentStatus.PAID) {
+                console.log("Transaction already paid:", existingTx);
+                setPaymentConfirmed(true);
+                msg += `\n\n✅ *Pagamento já realizado!*`;
               } else {
-                console.log("Pending transaction found, reusing...");
-              }
+                // If not exists, create it
+                if (!existingTx) {
+                  console.log("Creating new transaction...");
+                  const { error: txError } = await supabase
+                    .from("transactions")
+                    .insert({
+                      description: `Taxa Jogo: ${activity.title}`,
+                      category: "Taxa de Atividade",
+                      amount: activity.fee,
+                      type: TransactionType.INCOME,
+                      date: new Date().toLocaleDateString("en-CA", {
+                        timeZone: "America/Sao_Paulo",
+                      }),
+                      status: PaymentStatus.PENDING,
+                      student_id: studentId,
+                      payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                      external_reference: externalRef,
+                    });
 
-              setExternalRef(externalRef); // Start polling
+                  if (txError) {
+                    console.error(
+                      "Erro ao criar transação (INSERT failed):",
+                      txError,
+                    );
+                    throw txError;
+                  }
+                  console.log("Transaction created successfully.");
+                } else {
+                  console.log("Pending transaction found, reusing...");
+                }
 
-              // Generate PIX (idempotent on MP side if we used same key, but here we just want a fresh code for the same ref)
-              const pixResult = await createPixPayment({
-                title: `Taxa Jogo: ${activity.title}`,
-                price: activity.fee,
-                externalReference: externalRef,
-                payer: {
-                  name: student.guardian.name,
-                  email: student.guardian.email,
-                  phone: student.guardian.phone,
-                  identification: {
-                    type: "CPF",
-                    number: student.guardian.cpf || "",
+                setExternalRef(externalRef); // Start polling
+
+                // Generate PIX (idempotent on MP side if we used same key, but here we just want a fresh code for the same ref)
+                const pixResult = await createPixPayment({
+                  title: `Taxa Jogo: ${activity.title}`,
+                  price: activity.fee,
+                  externalReference: externalRef,
+                  payer: {
+                    name: student.guardian.name,
+                    email: student.guardian.email,
+                    phone: student.guardian.phone,
+                    identification: {
+                      type: "CPF",
+                      number: student.guardian.cpf || "",
+                    },
                   },
-                },
-              });
-
-              if (pixResult) {
-                setPixData({
-                  copyPaste: pixResult.qrCode,
-                  qrCodeBase64: pixResult.qrCodeBase64,
                 });
-                msg += `\n\n💰 *Pagamento Pendente*\nValor: R$ ${activity.fee.toFixed(2)}\n\nUtilize o código PIX Copia e Cola abaixo para pagar:\n\n${pixResult.qrCode}`;
+
+                if (pixResult) {
+                  setPixData({
+                    copyPaste: pixResult.qrCode,
+                    qrCodeBase64: pixResult.qrCodeBase64,
+                  });
+                  msg += `\n\n💰 *Pagamento Pendente*\nValor: R$ ${activity.fee.toFixed(2)}\n\nUtilize o código PIX Copia e Cola abaixo para pagar:\n\n${pixResult.qrCode}`;
+                }
               }
+            } catch (pixErr) {
+              console.error("Erro ao gerar PIX:", pixErr);
+            } finally {
+              setGeneratingPix(false);
             }
-          } catch (pixErr) {
-            console.error("Erro ao gerar PIX:", pixErr);
-          } finally {
-            setGeneratingPix(false);
           }
+        } else {
+          msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
+
+          // Delete pending transaction if user declines
+          const externalRef = `game_fee_${activityId}_${studentId}`;
+          await supabase
+            .from("transactions")
+            .delete()
+            .eq("external_reference", externalRef)
+            .eq("status", PaymentStatus.PENDING);
         }
-      } else {
-        msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
 
-        // Delete pending transaction if user declines
-        const externalRef = `game_fee_${activityId}_${studentId}`;
-        await supabase
-          .from("transactions")
-          .delete()
-          .eq("external_reference", externalRef)
-          .eq("status", PaymentStatus.PENDING);
-      }
+        // Fire and forget
+        sendZApiMessage(student.guardian.phone, msg).catch((err) =>
+          console.error("Erro ao enviar confirmação zap:", err),
+        );
+      })().catch(err => console.error("Error in background task:", err));
 
-      // Fire and forget to not block UI
-      sendZApiMessage(student.guardian.phone, msg).catch((err) =>
-        console.error("Erro ao enviar confirmação zap:", err),
-      );
     } catch (err) {
       alert("Erro ao salvar resposta. Tente novamente.");
       console.error(err);
-    } finally {
       setProcessing(false);
     }
   };
