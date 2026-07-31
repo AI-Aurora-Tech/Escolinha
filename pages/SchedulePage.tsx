@@ -114,6 +114,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   });
 
   const selectedActivity = selectedActivityId ? visibleActivities.find(a => a.id === selectedActivityId) || null : null;
+  const myStudents = useMemo(() => {
+    if (isGuardian && currentUser?.cpf) {
+        const cleanCpf = currentUser.cpf.replace(/\D/g, '');
+        return students.filter(s => s.guardian.cpf?.replace(/\D/g, '') === cleanCpf);
+    }
+    return [];
+  }, [currentUser, students, isGuardian]);
   const dailyActivities = visibleActivities.filter(a => a.date === selectedDate).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   const upcomingActivities = visibleActivities.filter(a => a.date >= todayStr).sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
   const allSortedActivities = [...visibleActivities].sort((a, b) => new Date(a.date + 'T' + a.startTime).getTime() - new Date(b.date + 'T' + b.startTime).getTime());
@@ -766,6 +773,16 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
                                         <Users className="w-3 h-3" />
                                         {g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : 'Individual'}
                                     </span>
+                                    {isGuardian && myStudents.map(student => {
+                                        const rsvp = a.rsvps?.find(r => r.studentId === student.id);
+                                        if (!rsvp) return <span key={student.id} className="text-gray-400 text-xs italic">Aguardando resposta de {student.name.split(' ')[0]}...</span>;
+                                        return (
+                                            <span key={student.id} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-black uppercase ${rsvp.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                {rsvp.status === 'CONFIRMED' ? <CheckCircle className="w-3 h-3"/> : <XCircle className="w-3 h-3"/>}
+                                                {student.name.split(' ')[0]}: {rsvp.status === 'CONFIRMED' ? 'Confirmado' : 'Recusado'}
+                                            </span>
+                                        );
+                                    })}
                                     {!isGuardian && (
                                         <span className={`flex flex-wrap items-center gap-2 px-2 py-1 rounded text-[10px] font-black uppercase tracking-tight border ${presenceCount === attendeesCount ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
                                             <CheckCircle className="w-3 h-3" /> Conf: {confirmedCount} / Rec: {declinedCount} / Sem Resp: {noResponseCount}
