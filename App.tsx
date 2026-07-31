@@ -152,14 +152,18 @@ const AppContent: React.FC = () => {
                 lineup: a.activity_type === 'GAME' ? a.lineup : undefined,
                 evaluations: (a.activity_type === 'TRAINING' || a.activity_type === 'MONTHLY_EVALUATION') ? a.lineup : undefined,
                 description: a.description,
-                rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
-                    id: r.id,
-                    activityId: r.activity_id,
-                    studentId: r.student_id,
-                    status: r.status,
-                    transportOption: r.transport_option,
-                    createdAt: r.created_at
-                }))
+                rsvps: (() => {
+                    const activityRsvps = (rsvpsData || []).filter((r: any) => r.activity_id === a.id);
+                    console.log(`RSVPs for activity ${a.id}:`, activityRsvps);
+                    return activityRsvps.map((r: any) => ({
+                        id: r.id,
+                        activityId: r.activity_id,
+                        studentId: r.student_id,
+                        status: r.status,
+                        transportOption: r.transport_option,
+                        createdAt: r.created_at
+                    }));
+                })()
             } as Activity)));
         }
     } catch (error) {
@@ -172,7 +176,8 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
     let timeout: NodeJS.Timeout;
-    const handleDbChange = () => {
+    const handleDbChange = (payload: any) => {
+        console.log("DB Change detected in RSVP table:", payload);
         clearTimeout(timeout);
         timeout = setTimeout(() => fetchData(false), 2000);
     };
