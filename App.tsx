@@ -174,7 +174,7 @@ const AppContent: React.FC = () => {
     let timeout: NodeJS.Timeout;
     const handleDbChange = () => {
         clearTimeout(timeout);
-        timeout = setTimeout(() => fetchData(true), 1500);
+        timeout = setTimeout(() => fetchData(true), 3000);
     };
     const channel = supabase.channel('app-db-changes').on('postgres_changes', { event: '*', schema: 'public' }, handleDbChange).subscribe();
     return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
