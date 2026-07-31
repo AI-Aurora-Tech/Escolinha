@@ -177,9 +177,12 @@ const AppContent: React.FC = () => {
     if (!isAuthenticated) return;
     let timeout: NodeJS.Timeout;
     const handleDbChange = (payload: any) => {
-        console.log("DB Change detected in RSVP table:", payload);
+        console.log("DB Change detected:", payload);
         clearTimeout(timeout);
-        timeout = setTimeout(() => fetchData(false), 2000);
+        timeout = setTimeout(() => {
+            console.log("Triggering fetchData(false) due to DB change");
+            fetchData(false);
+        }, 500);
     };
     const channel = supabase.channel('rsvp-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'activity_rsvps' }, handleDbChange).subscribe();
     return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
