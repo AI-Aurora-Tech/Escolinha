@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar';
@@ -50,9 +50,29 @@ const AppContent: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const activitiesRef = useRef<Activity[]>([]);
+
+  useEffect(() => { activitiesRef.current = activities; }, [activities]);
 
   const safeDate = (d?: string) => (d === '' || !d) ? null : d;
   const safeId = (id?: string) => (id === '' || !id) ? null : id;
+
+  const fetchRSVPsOnly = async () => {
+    const { data: rsvpsData } = await supabase.from('activity_rsvps').select('*').order('created_at', { ascending: false });
+    if (!rsvpsData) return;
+    
+    setActivities(prev => prev.map(a => ({
+        ...a,
+        rsvps: rsvpsData.filter((r: any) => r.activity_id === a.id).map((r: any) => ({
+            id: r.id,
+            activityId: r.activity_id,
+            studentId: r.student_id,
+            status: r.status,
+            transportOption: r.transport_option,
+            createdAt: r.created_at
+        }))
+    })));
+  };
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -178,11 +198,11 @@ const AppContent: React.FC = () => {
     if (!isAuthenticated) return;
     let timeout: NodeJS.Timeout;
     const handleDbChange = (payload: any) => {
-        console.log("DB Change detected:", payload);
+        console.log("DB Change detected, payload:", payload);
         clearTimeout(timeout);
         timeout = setTimeout(() => {
-            console.log("Triggering fetchData(false) due to DB change");
-            fetchData(false);
+            console.log("Triggering fetchRSVPsOnly due to DB change");
+            fetchRSVPsOnly();
         }, 500);
     };
     const channel = supabase.channel('rsvp-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'activity_rsvps' }, handleDbChange).subscribe();
