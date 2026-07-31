@@ -61,8 +61,9 @@ const AppContent: React.FC = () => {
           supabase.from('groups').select('*'),
           supabase.from('plans').select('*'),
           supabase.from('student_occurrences').select('*'),
-          supabase.from('activity_rsvps').select('*')
+          supabase.from('activity_rsvps').select('*').order('created_at', { ascending: false })
         ]);
+        console.log("Fetched RSVPs:", rsvpsData?.length);
         
         let studentsData;
         let transactionsData: any[] = [];
