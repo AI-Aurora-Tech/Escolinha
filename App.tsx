@@ -74,8 +74,13 @@ const AppContent: React.FC = () => {
     })));
   };
 
+  const currentUserRef = useRef<User | null>(null);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
+    const currentUser = currentUserRef.current;
+    console.log("fetchData called, currentUser:", currentUser);
     try {
         const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }, { data: rsvpsData }] = await Promise.all([
           supabase.from('groups').select('*'),
@@ -83,12 +88,13 @@ const AppContent: React.FC = () => {
           supabase.from('student_occurrences').select('*'),
           supabase.from('activity_rsvps').select('*').order('created_at', { ascending: false })
         ]);
-        console.log("Fetched RSVPs:", rsvpsData?.length);
+        console.log("Fetched RSVPs count:", rsvpsData?.length);
         
         let studentsData;
         let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
+             console.log("Fetching data for RESPONSAVEL");
              const { data: allStudents } = await supabase.from('students').select('*');
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
              studentsData = allStudents?.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
@@ -99,6 +105,7 @@ const AppContent: React.FC = () => {
                  transactionsData = myTxs || [];
              } else transactionsData = [];
         } else {
+             console.log("Fetching all data");
              const { data: allStudents } = await supabase.from('students').select('*');
              const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false });
              
@@ -192,7 +199,7 @@ const AppContent: React.FC = () => {
     } finally {
         if (!silent) setIsLoading(false);
     }
-  }, [currentUser]);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
