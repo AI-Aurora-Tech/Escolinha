@@ -216,7 +216,7 @@ const AppContent: React.FC = () => {
     return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
   }, [isAuthenticated, fetchData]);
 
-  useEffect(() => { if (isAuthenticated) fetchData(); }, [isAuthenticated, fetchData]);
+  useEffect(() => { if (isAuthenticated && currentUser) fetchData(); }, [isAuthenticated, currentUser, fetchData]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault(); setIsLoggingIn(true); setLoginError('');
