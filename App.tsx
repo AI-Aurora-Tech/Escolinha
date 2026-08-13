@@ -50,6 +50,28 @@ async function selectWithRetry<T = any>(
   throw new Error(`Não foi possível carregar '${label}': ${(lastError as any)?.message || 'erro de conexão'}`);
 }
 
+// Busca todos os registros em páginas, evitando estourar o statement_timeout do Postgres
+// em tabelas pesadas. É o caso de 'students': as fotos são gravadas como base64 dentro da
+// coluna photo_url, então um único select('*') serializa megabytes de dados de uma vez e é
+// cancelado pelo servidor ('canceling statement due to statement timeout'). Trazendo em
+// lotes menores, cada requisição termina bem abaixo do limite.
+async function selectAllPaginated<T = any>(
+  label: string,
+  buildRange: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>,
+  pageSize = 200
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  for (;;) {
+    const to = from + pageSize - 1;
+    const page = await selectWithRetry(`${label} (${from}-${to})`, () => buildRange(from, to));
+    all.push(...page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 function App() {
   return (
     <Router>
@@ -174,7 +196,8 @@ const AppContent: React.FC = () => {
         let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
-             const allStudents = await selectWithRetry('alunos', () => supabase.from('students').select('*'));
+             const allStudents = await selectAllPaginated('alunos', (from, to) =>
+                 supabase.from('students').select('*').order('id', { ascending: true }).range(from, to));
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
              studentsData = allStudents.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
 
@@ -184,9 +207,10 @@ const AppContent: React.FC = () => {
                      supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds));
              }
         } else {
-             studentsData = await selectWithRetry('alunos', () => supabase.from('students').select('*'));
-             transactionsData = await selectWithRetry('transações', () =>
-                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }));
+             studentsData = await selectAllPaginated('alunos', (from, to) =>
+                 supabase.from('students').select('*').order('id', { ascending: true }).range(from, to));
+             transactionsData = await selectAllPaginated('transações', (from, to) =>
+                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).range(from, to));
         }
 
         setStudents(studentsData.map((s: any) => ({
