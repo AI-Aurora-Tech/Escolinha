@@ -263,8 +263,8 @@ const AppContent: React.FC = () => {
             return { ...mapStudentRow(s), photoUrl: cached || avatarFallback(s.name) };
         }));
 
-        // Segundo plano: busca as fotos (base64) em lotes pequenos e preenche os avatares.
-        void loadStudentPhotos(studentsData.map((s: any) => s.id));
+        // Segundo plano: busca as fotos (base64) apenas dos alunos ATIVOS, em lotes pequenos.
+        void loadStudentPhotos(studentsData.filter((s: any) => s.active).map((s: any) => s.id));
 
         setTransactions(transactionsData.map((t: any) => ({
             id: t.id,
