@@ -72,6 +72,15 @@ async function selectAllPaginated<T = any>(
   return all;
 }
 
+// Converte uma linha da tabela 'students' (snake_case) para o tipo Student usado na UI.
+const mapStudentRow = (s: any): Student => ({
+  id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
+  medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {},
+  guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [],
+  positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason,
+  enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
+});
+
 function App() {
   return (
     <Router>
@@ -213,13 +222,7 @@ const AppContent: React.FC = () => {
                  supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).range(from, to));
         }
 
-        setStudents(studentsData.map((s: any) => ({
-             id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
-             medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {},
-             guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [],
-             positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason,
-             enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
-        } as Student)));
+        setStudents(studentsData.map(mapStudentRow));
 
         setTransactions(transactionsData.map((t: any) => ({
             id: t.id,
@@ -430,9 +433,10 @@ const AppContent: React.FC = () => {
           inactivation_date: safeDate(studentData.inactivationDate),
           documents: studentData.documents || {}
         };
-        const { error } = await supabase.from('students').insert([payload]);
+        // Retorna a linha criada para atualizar o estado local, sem recarregar toda a base.
+        const { data: inserted, error } = await supabase.from('students').insert([payload]).select().single();
         if (error) throw error;
-        await fetchData(true);
+        if (inserted) setStudents(prev => [...prev, mapStudentRow(inserted)]);
         alert("Atleta cadastrado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
@@ -461,7 +465,8 @@ const AppContent: React.FC = () => {
         };
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
-        await fetchData(true);
+        // Atualiza apenas o aluno alterado no estado local, sem recarregar toda a base.
+        setStudents(prev => prev.map(s => s.id === student.id ? student : s));
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
