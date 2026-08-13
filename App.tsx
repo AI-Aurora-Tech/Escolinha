@@ -72,6 +72,14 @@ async function selectAllPaginated<T = any>(
   return all;
 }
 
+// Colunas dos alunos SEM o photo_url. As fotos são gravadas como base64 e, trazidas junto,
+// deixam o select tão grande que estoura o statement_timeout do Postgres. Elas são carregadas
+// à parte, em segundo plano e em lotes pequenos (ver loadStudentPhotos).
+const STUDENT_CORE_COLUMNS = 'id,name,birth_date,rg,cpf,phone,medical_expiry,address,guardian,plan_id,group_ids,positions,active,inactive_reason,enrollment_date,inactivation_date,documents';
+
+const avatarFallback = (name: string) =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Aluno')}&background=random&color=fff&size=200`;
+
 // Converte uma linha da tabela 'students' (snake_case) para o tipo Student usado na UI.
 const mapStudentRow = (s: any): Student => ({
   id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
@@ -153,6 +161,10 @@ const AppContent: React.FC = () => {
   const currentUserRef = useRef<User | null>(null);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
+  // Cache das fotos já carregadas (id -> photo_url), para não rebaixar o desempenho
+  // recarregando o base64 de todos os alunos a cada refresh em tempo real.
+  const studentPhotosRef = useRef<Map<string, string>>(new Map());
+
   // Mantém a sessão persistida sincronizada com o estado de autenticação (sem gravar a senha).
   useEffect(() => {
     try {
@@ -165,6 +177,28 @@ const AppContent: React.FC = () => {
     } catch { /* ignora indisponibilidade do storage */ }
   }, [isAuthenticated, currentUser]);
   
+  // Busca as fotos dos alunos (base64) em segundo plano, em lotes pequenos, e preenche os
+  // avatares conforme chegam. Só busca as que ainda não estão em cache, evitando rebaixar o
+  // desempenho a cada refresh em tempo real. É best-effort: falha de foto não zera a tela.
+  const loadStudentPhotos = useCallback(async (ids: string[]) => {
+    const pending = ids.filter(id => !studentPhotosRef.current.has(id));
+    const BATCH = 20;
+    for (let i = 0; i < pending.length; i += BATCH) {
+        const batch = pending.slice(i, i + BATCH);
+        try {
+            const rows = await selectWithRetry('fotos dos alunos', () =>
+                supabase.from('students').select('id, photo_url').in('id', batch));
+            rows.forEach((r: any) => studentPhotosRef.current.set(r.id, r.photo_url || ''));
+            setStudents(prev => prev.map(s => {
+                const photo = studentPhotosRef.current.get(s.id);
+                return photo ? { ...s, photoUrl: photo } : s;
+            }));
+        } catch {
+            // Fotos são secundárias — se um lote falhar, segue com o avatar temporário.
+        }
+    }
+  }, []);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     const currentUser = currentUserRef.current;
@@ -201,12 +235,13 @@ const AppContent: React.FC = () => {
 
     // Alunos + transações (varia conforme o perfil do usuário logado).
     try {
+        // Carrega os alunos SEM a foto (leve e rápido). As fotos vêm depois, em segundo plano.
         let studentsData: any[];
         let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
              const allStudents = await selectAllPaginated('alunos', (from, to) =>
-                 supabase.from('students').select('*').order('id', { ascending: true }).range(from, to));
+                 supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
              studentsData = allStudents.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
 
@@ -217,12 +252,19 @@ const AppContent: React.FC = () => {
              }
         } else {
              studentsData = await selectAllPaginated('alunos', (from, to) =>
-                 supabase.from('students').select('*').order('id', { ascending: true }).range(from, to));
+                 supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
              transactionsData = await selectAllPaginated('transações', (from, to) =>
                  supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).range(from, to));
         }
 
-        setStudents(studentsData.map(mapStudentRow));
+        // Aplica a foto já em cache (se houver) ou um avatar temporário; preserva fotos já carregadas.
+        setStudents(studentsData.map((s: any) => {
+            const cached = studentPhotosRef.current.get(s.id);
+            return { ...mapStudentRow(s), photoUrl: cached || avatarFallback(s.name) };
+        }));
+
+        // Segundo plano: busca as fotos (base64) em lotes pequenos e preenche os avatares.
+        void loadStudentPhotos(studentsData.map((s: any) => s.id));
 
         setTransactions(transactionsData.map((t: any) => ({
             id: t.id,
@@ -454,7 +496,10 @@ const AppContent: React.FC = () => {
         // Retorna a linha criada para atualizar o estado local, sem recarregar toda a base.
         const { data: inserted, error } = await supabase.from('students').insert([payload]).select().single();
         if (error) throw error;
-        if (inserted) setStudents(prev => [...prev, mapStudentRow(inserted)]);
+        if (inserted) {
+            studentPhotosRef.current.set(inserted.id, inserted.photo_url || '');
+            setStudents(prev => [...prev, mapStudentRow(inserted)]);
+        }
         alert("Atleta cadastrado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
@@ -484,6 +529,7 @@ const AppContent: React.FC = () => {
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         // Atualiza apenas o aluno alterado no estado local, sem recarregar toda a base.
+        studentPhotosRef.current.set(student.id, student.photoUrl || '');
         setStudents(prev => prev.map(s => s.id === student.id ? student : s));
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
