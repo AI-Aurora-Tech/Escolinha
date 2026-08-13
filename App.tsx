@@ -694,7 +694,10 @@ const AppContent: React.FC = () => {
         const plan = plans.find(p => p.id === student.planId);
         if (!plan) continue;
 
-        const existing = transactions.find(t => 
+        // Alunos do plano Bolsista não geram mensalidade.
+        if ((plan.name || '').trim().toLowerCase().includes('bolsista')) continue;
+
+        const existing = transactions.find(t =>
           t.studentId === student.id && 
           t.category === 'Mensalidade' &&
           t.date.startsWith(`${yearStr}-${monthStr}`)
