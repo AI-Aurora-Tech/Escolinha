@@ -264,7 +264,9 @@ const AppContent: React.FC = () => {
 
     if (errors.length > 0) {
         console.error("Erros ao carregar dados:", errors);
-        setLoadError(`Não foi possível carregar todos os dados (${errors.length} ${errors.length === 1 ? 'falha' : 'falhas'}). Toque em "Recarregar" para tentar novamente.`);
+        // Mostra o detalhe de qual carregamento falhou (e o erro do banco) para facilitar o diagnóstico.
+        const detalhes = errors.join(' | ');
+        setLoadError(`${detalhes}. Toque em "Recarregar" para tentar novamente.`);
     } else {
         setLoadError(null);
     }
