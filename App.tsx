@@ -303,17 +303,35 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    let timeout: NodeJS.Timeout;
-    const handleDbChange = (payload: any) => {
-        console.log("DB Change detected, payload:", payload);
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            console.log("Triggering fetchRSVPsOnly due to DB change");
-            fetchRSVPsOnly();
-        }, 500);
+
+    // Sincronização em tempo real: quando qualquer usuário altera dados, os demais recebem
+    // a atualização sem precisar recarregar a página. Os refreshes são "debounced" para
+    // agrupar rajadas de mudanças em uma única recarga.
+    let fullTimer: ReturnType<typeof setTimeout>;
+    const scheduleFullRefresh = () => {
+        clearTimeout(fullTimer);
+        fullTimer = setTimeout(() => fetchData(true), 600);
     };
-    const channel = supabase.channel('rsvp-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'activity_rsvps' }, handleDbChange).subscribe();
-    return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
+
+    // Confirmações de presença mudam com frequência (página pública de RSVP) — refresh leve.
+    let rsvpTimer: ReturnType<typeof setTimeout>;
+    const scheduleRsvpRefresh = () => {
+        clearTimeout(rsvpTimer);
+        rsvpTimer = setTimeout(() => fetchRSVPsOnly(), 500);
+    };
+
+    const channel = supabase
+        .channel('realtime-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_rsvps' }, scheduleRsvpRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_occurrences' }, scheduleFullRefresh)
+        .subscribe();
+
+    return () => { supabase.removeChannel(channel); clearTimeout(fullTimer); clearTimeout(rsvpTimer); };
   }, [isAuthenticated, fetchData]);
 
   useEffect(() => { if (isAuthenticated && currentUser) fetchData(); }, [isAuthenticated, currentUser, fetchData]);
