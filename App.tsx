@@ -20,6 +20,36 @@ import { sendZApiMessage } from './services/zapiService';
 
 const TX_SELECT_FIELDS = '*';
 
+// Chave usada para persistir a sessão do usuário logado (sobrevive ao refresh da página).
+const AUTH_STORAGE_KEY = 'gm_current_user';
+
+// Executa uma leitura no Supabase com novas tentativas em caso de falha transitória.
+// IMPORTANTE: o cliente PostgREST NÃO lança exceção quando uma leitura falha — ele resolve
+// { data: null, error }. Antes, o código lia apenas `data` e ignorava `error`, então uma
+// falha momentânea (timeout, oscilação de rede, 5xx) fazia a tela renderizar com os dados
+// zerados (ex.: "Alunos Ativos: 0") em vez de tentar novamente ou avisar o usuário.
+async function selectWithRetry<T = any>(
+  label: string,
+  build: () => PromiseLike<{ data: T[] | null; error: any }>,
+  retries = 2
+): Promise<T[]> {
+  let lastError: any = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const { data, error } = await build();
+      if (!error) return data ?? [];
+      lastError = error;
+    } catch (err) {
+      lastError = err;
+    }
+    console.warn(`[fetchData] Falha ao carregar '${label}' (tentativa ${attempt + 1}/${retries + 1}):`, (lastError as any)?.message || lastError);
+    if (attempt < retries) {
+      await new Promise(res => setTimeout(res, 500 * Math.pow(2, attempt)));
+    }
+  }
+  throw new Error(`Não foi possível carregar '${label}': ${(lastError as any)?.message || 'erro de conexão'}`);
+}
+
 function App() {
   return (
     <Router>
@@ -29,8 +59,23 @@ function App() {
 }
 
 const AppContent: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    // Restaura a sessão salva para que um refresh não derrube o usuário para a tela de login.
+    try {
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      return saved ? (JSON.parse(saved) as User) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem(AUTH_STORAGE_KEY);
+    } catch {
+      return false;
+    }
+  });
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeLoginTab, setActiveLoginTab] = useState<'EMAIL' | 'CPF'>('EMAIL');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -76,129 +121,155 @@ const AppContent: React.FC = () => {
 
   const currentUserRef = useRef<User | null>(null);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  // Mantém a sessão persistida sincronizada com o estado de autenticação (sem gravar a senha).
+  useEffect(() => {
+    try {
+      if (isAuthenticated && currentUser) {
+        const { password, ...safeUser } = currentUser;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(safeUser));
+      } else {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+    } catch { /* ignora indisponibilidade do storage */ }
+  }, [isAuthenticated, currentUser]);
   
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     const currentUser = currentUserRef.current;
-    console.log("fetchData called, currentUser:", currentUser);
+
+    // Cada tabela é carregada de forma independente: uma falha em uma delas não aborta as
+    // outras nem sobrescreve com vazio os dados já carregados. Falhas são acumuladas e
+    // exibidas ao usuário no lugar de silenciosamente mostrar tudo zerado.
+    const errors: string[] = [];
+
+    // Confirmações de presença (RSVPs) — necessárias para montar as atividades.
+    let rsvpsData: any[] = [];
     try {
-        const [{ data: groupsData }, { data: plansData }, { data: occurrencesData }, { data: rsvpsData }] = await Promise.all([
-          supabase.from('groups').select('*'),
-          supabase.from('plans').select('*'),
-          supabase.from('student_occurrences').select('*'),
-          supabase.from('activity_rsvps').select('*').order('created_at', { ascending: false })
-        ]);
-        console.log("Fetched RSVPs count:", rsvpsData?.length);
-        
-        let studentsData;
+        rsvpsData = await selectWithRetry('confirmações de presença', () =>
+            supabase.from('activity_rsvps').select('*').order('created_at', { ascending: false }));
+    } catch (e: any) { errors.push(e.message); }
+
+    // Grupos
+    try {
+        const groupsData = await selectWithRetry('grupos', () => supabase.from('groups').select('*'));
+        setGroups(groupsData);
+    } catch (e: any) { errors.push(e.message); }
+
+    // Planos
+    try {
+        const plansData = await selectWithRetry('planos', () => supabase.from('plans').select('*'));
+        setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), dueDay: p.due_day, description: p.description })));
+    } catch (e: any) { errors.push(e.message); }
+
+    // Ocorrências
+    try {
+        const occurrencesData = await selectWithRetry('ocorrências', () => supabase.from('student_occurrences').select('*'));
+        setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
+    } catch (e: any) { errors.push(e.message); }
+
+    // Alunos + transações (varia conforme o perfil do usuário logado).
+    try {
+        let studentsData: any[];
         let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
-             console.log("Fetching data for RESPONSAVEL");
-             const { data: allStudents } = await supabase.from('students').select('*');
+             const allStudents = await selectWithRetry('alunos', () => supabase.from('students').select('*'));
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
-             studentsData = allStudents?.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
+             studentsData = allStudents.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
 
-             if (studentsData && studentsData.length > 0) {
+             if (studentsData.length > 0) {
                  const studentIds = studentsData.map((s: any) => s.id);
-                 const { data: myTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds);
-                 transactionsData = myTxs || [];
-             } else transactionsData = [];
+                 transactionsData = await selectWithRetry('transações', () =>
+                     supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds));
+             }
         } else {
-             console.log("Fetching all data");
-             const { data: allStudents } = await supabase.from('students').select('*');
-             const { data: allTxs } = await supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false });
-             
-             console.log("Fetched All Transactions:", allTxs?.length);
-             
-             studentsData = allStudents;
-             transactionsData = allTxs || [];
+             studentsData = await selectWithRetry('alunos', () => supabase.from('students').select('*'));
+             transactionsData = await selectWithRetry('transações', () =>
+                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }));
         }
 
-        const { data: usersData } = await supabase.from('app_users').select('*');
-        if (usersData) setSystemUsers(usersData as User[]);
+        setStudents(studentsData.map((s: any) => ({
+             id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
+             medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {},
+             guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [],
+             positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason,
+             enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
+        } as Student)));
 
-        if (studentsData) {
-             setStudents(studentsData.map((s: any) => ({
-                 id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
-                 medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {}, 
-                 guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [], 
-                 positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason, 
-                 enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
-             } as Student)));
-        }
+        setTransactions(transactionsData.map((t: any) => ({
+            id: t.id,
+            description: t.description,
+            category: t.category,
+            amount: Number(t.amount),
+            type: t.type,
+            date: t.date,
+            paymentDate: t.payment_date,
+            status: t.status,
+            studentId: t.student_id,
+            planId: t.plan_id,
+            paymentMethod: t.payment_method,
+            payment_link: t.payment_link,
+            externalReference: t.external_reference,
+            preferenceId: t.preference_id,
+            recurrence: t.recurrence || 'NONE',
+            createdAt: t.created_at
+        } as Transaction)));
+    } catch (e: any) { errors.push(e.message); }
 
-        if (groupsData) setGroups(groupsData);
-        if (plansData) setPlans(plansData.map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), dueDay: p.due_day, description: p.description })));
-        if (occurrencesData) setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
-        
-        if (transactionsData) {
-            setTransactions(transactionsData.map((t: any) => ({ 
-                id: t.id, 
-                description: t.description, 
-                category: t.category,
-                amount: Number(t.amount), 
-                type: t.type, 
-                date: t.date, 
-                paymentDate: t.payment_date,
-                status: t.status, 
-                studentId: t.student_id, 
-                planId: t.plan_id, 
-                paymentMethod: t.payment_method, 
-                payment_link: t.payment_link, 
-                externalReference: t.external_reference, 
-                preferenceId: t.preference_id,
-                recurrence: t.recurrence || 'NONE',
-                createdAt: t.created_at
-            } as Transaction)));
-        }
+    // Usuários do sistema
+    try {
+        const usersData = await selectWithRetry('usuários', () => supabase.from('app_users').select('*'));
+        setSystemUsers(usersData as User[]);
+    } catch (e: any) { errors.push(e.message); }
 
-        const { data: activitiesData } = await supabase.from('activities').select('*');
-        if (activitiesData) {
-            setActivities(activitiesData.map((a: any) => ({
-                id: a.id,
-                title: a.title,
-                type: a.activity_type || 'TRAINING',
-                fee: a.fee || 0,
-                location: a.location || '',
-                presentationLocation: a.presentation_location,
-                presentationTime: a.presentation_time,
-                directToGameTime: a.direct_to_game_time,
-                askTransport: a.ask_transport,
-                opponent: a.opponent,
-                homeScore: a.home_score,
-                awayScore: a.away_score,
-                scorers: a.scorers || [],
-                groupId: a.group_id,
-                participants: a.participants || [],
-                date: a.date,
-                startTime: a.start_time,
-                endTime: a.end_time,
-                recurrence: a.recurrence || 'none',
-                attendance: a.attendance || [],
-                feePayments: a.fee_payments || [],
-                lineup: a.activity_type === 'GAME' ? a.lineup : undefined,
-                evaluations: (a.activity_type === 'TRAINING' || a.activity_type === 'MONTHLY_EVALUATION') ? a.lineup : undefined,
-                description: a.description,
-                rsvps: (() => {
-                    const activityRsvps = (rsvpsData || []).filter((r: any) => r.activity_id === a.id);
-                    console.log(`RSVPs for activity ${a.id}:`, activityRsvps);
-                    return activityRsvps.map((r: any) => ({
-                        id: r.id,
-                        activityId: r.activity_id,
-                        studentId: r.student_id,
-                        status: r.status,
-                        transportOption: r.transport_option,
-                        createdAt: r.created_at
-                    }));
-                })()
-            } as Activity)));
-        }
-    } catch (error) {
-        console.error("Error fetching data:", error);
-    } finally {
-        if (!silent) setIsLoading(false);
+    // Atividades
+    try {
+        const activitiesData = await selectWithRetry('atividades', () => supabase.from('activities').select('*'));
+        setActivities(activitiesData.map((a: any) => ({
+            id: a.id,
+            title: a.title,
+            type: a.activity_type || 'TRAINING',
+            fee: a.fee || 0,
+            location: a.location || '',
+            presentationLocation: a.presentation_location,
+            presentationTime: a.presentation_time,
+            directToGameTime: a.direct_to_game_time,
+            askTransport: a.ask_transport,
+            opponent: a.opponent,
+            homeScore: a.home_score,
+            awayScore: a.away_score,
+            scorers: a.scorers || [],
+            groupId: a.group_id,
+            participants: a.participants || [],
+            date: a.date,
+            startTime: a.start_time,
+            endTime: a.end_time,
+            recurrence: a.recurrence || 'none',
+            attendance: a.attendance || [],
+            feePayments: a.fee_payments || [],
+            lineup: a.activity_type === 'GAME' ? a.lineup : undefined,
+            evaluations: (a.activity_type === 'TRAINING' || a.activity_type === 'MONTHLY_EVALUATION') ? a.lineup : undefined,
+            description: a.description,
+            rsvps: (rsvpsData || []).filter((r: any) => r.activity_id === a.id).map((r: any) => ({
+                id: r.id,
+                activityId: r.activity_id,
+                studentId: r.student_id,
+                status: r.status,
+                transportOption: r.transport_option,
+                createdAt: r.created_at
+            }))
+        } as Activity)));
+    } catch (e: any) { errors.push(e.message); }
+
+    if (errors.length > 0) {
+        console.error("Erros ao carregar dados:", errors);
+        setLoadError(`Não foi possível carregar todos os dados (${errors.length} ${errors.length === 1 ? 'falha' : 'falhas'}). Toque em "Recarregar" para tentar novamente.`);
+    } else {
+        setLoadError(null);
     }
+
+    if (!silent) setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -932,6 +1003,19 @@ const AppContent: React.FC = () => {
         </header>
 
         <div className="max-w-7xl mx-auto">
+          {loadError && (
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4">
+              <span className="text-sm font-medium">{loadError}</span>
+              <button
+                onClick={() => fetchData()}
+                disabled={isLoading}
+                className="shrink-0 inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                {isLoading && <Loader2 className="animate-spin w-4 h-4" />}
+                Recarregar
+              </button>
+            </div>
+          )}
           <Routes>
             <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
             <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
