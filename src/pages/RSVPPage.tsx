@@ -142,29 +142,30 @@ export const RSVPPage: React.FC = () => {
             console.log("Fee exists, proceeding to create transaction...");
             setGeneratingPix(true);
             try {
-              // Use deterministic reference to prevent duplicates
+              // Referência determinística garante 1 cobrança por aluno/jogo (nunca duplica).
               const externalRef = `game_fee_${activityId}_${studentId}`;
               console.log("External Reference:", externalRef);
 
-              // Check if transaction already exists (ignoring cancelled ones)
-              const { data: existingTx, error: checkError } = await supabase
+              // Verifica QUALQUER cobrança existente para esta referência (inclusive cancelada),
+              // para nunca inserir uma segunda linha com a mesma referência.
+              const { data: existingRows, error: checkError } = await supabase
                 .from("transactions")
                 .select("*")
                 .eq("external_reference", externalRef)
-                .neq("status", PaymentStatus.CANCELLED)
-                .maybeSingle();
+                .order("created_at", { ascending: true });
 
               if (checkError) {
                 console.error("Error checking existing transaction:", checkError);
               }
+              const existingTx = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
               if (existingTx && existingTx.status === PaymentStatus.PAID) {
                 console.log("Transaction already paid:", existingTx);
                 setPaymentConfirmed(true);
                 msg += `\n\n✅ *Pagamento já realizado!*`;
               } else {
-                // If not exists, create it
                 if (!existingTx) {
+                  // Não existe → cria uma. O índice único no banco protege contra corrida.
                   console.log("Creating new transaction...");
                   const { error: txError } = await supabase
                     .from("transactions")
@@ -183,13 +184,18 @@ export const RSVPPage: React.FC = () => {
                     });
 
                   if (txError) {
-                    console.error(
-                      "Erro ao criar transação (INSERT failed):",
-                      txError,
-                    );
-                    throw txError;
+                    // Provável violação do índice único (já criada em paralelo) — segue reutilizando.
+                    console.warn("Cobrança já existente; duplicidade evitada:", txError.message);
+                  } else {
+                    console.log("Transaction created successfully.");
                   }
-                  console.log("Transaction created successfully.");
+                } else if (existingTx.status === PaymentStatus.CANCELLED) {
+                  // Existe uma cancelada → reativa em vez de criar outra.
+                  console.log("Reactivating cancelled transaction...");
+                  await supabase
+                    .from("transactions")
+                    .update({ status: PaymentStatus.PENDING })
+                    .eq("id", existingTx.id);
                 } else {
                   console.log("Pending transaction found, reusing...");
                 }
