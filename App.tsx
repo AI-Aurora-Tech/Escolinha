@@ -918,40 +918,55 @@ const AppContent: React.FC = () => {
 
     await supabase.from('activities').update({ attendance: nextAttendance }).eq('id', activityId);
 
-    // Regra: Se for um JOGO com taxa, sincronizar o status da transação com a presença
+    // Regra: Se for um JOGO com taxa, sincronizar o status da cobrança com a presença.
     if (activity.type === 'GAME' && activity.fee && activity.fee > 0) {
         const extRef = `game_fee_${activityId}_${studentId}`;
-        const linkedTx = transactions.find(t => t.externalReference === extRef);
-
         const isGameFinished = typeof activity.homeScore === 'number' && typeof activity.awayScore === 'number';
 
-        if (linkedTx) {
-            // Se estava presente e agora estamos marcando FALTA
-            if (isPresent && linkedTx.status === PaymentStatus.PENDING && isGameFinished) {
-                setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.CANCELLED } : tx));
-                await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).eq('id', linkedTx.id);
-            } 
-            // Se estava ausente e agora estamos marcando PRESENÇA
-            else if (!isPresent && linkedTx.status === PaymentStatus.CANCELLED) {
-                setTransactions(prev => prev.map(tx => tx.id === linkedTx.id ? { ...tx, status: PaymentStatus.PENDING } : tx));
-                await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).eq('id', linkedTx.id);
+        // Fonte da verdade é o BANCO, não o estado local (que pode estar desatualizado se a
+        // cobrança foi criada pela confirmação do RSVP). Isso evita gerar cobrança duplicada.
+        const { data: existingRows } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('external_reference', extRef)
+            .order('created_at', { ascending: true });
+        const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+
+        if (isPresent) {
+            // Estava presente e agora está marcando FALTA → cancela a cobrança pendente (se o jogo já acabou).
+            if (existing && existing.status === PaymentStatus.PENDING && isGameFinished) {
+                await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).eq('id', existing.id);
+                setTransactions(prev => prev.map(tx => tx.id === existing.id ? { ...tx, status: PaymentStatus.CANCELLED } : tx));
             }
-        } else if (!isPresent) {
-            // Se estava ausente (não tinha transação) e agora estamos marcando PRESENÇA, cria a transação
-            const txPayload = {
-                description: `Taxa Jogo: ${activity.title}`,
-                category: 'Taxa de Atividade',
-                amount: activity.fee,
-                type: TransactionType.INCOME,
-                date: activity.date,
-                status: PaymentStatus.PENDING,
-                student_id: studentId,
-                payment_method: PaymentMethod.PIX_MERCADO_PAGO,
-                external_reference: extRef,
-                recurrence: 'NONE'
-            };
-            setTransactions(prev => [...prev, { ...txPayload, id: 'temp-' + Date.now() } as any]);
-            await supabase.from('transactions').insert([txPayload]);
+        } else {
+            // Estava ausente e agora está marcando PRESENÇA.
+            if (existing) {
+                // Já existe cobrança → nunca duplica. Reativa apenas se estava cancelada; mantém paga/pendente.
+                if (existing.status === PaymentStatus.CANCELLED) {
+                    await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).eq('id', existing.id);
+                    setTransactions(prev => prev.map(tx => tx.id === existing.id ? { ...tx, status: PaymentStatus.PENDING } : tx));
+                }
+            } else {
+                // Não existe nenhuma → cria. O índice único no banco é o backstop contra corrida.
+                const txPayload = {
+                    description: `Taxa Jogo: ${activity.title}`,
+                    category: 'Taxa de Atividade',
+                    amount: activity.fee,
+                    type: TransactionType.INCOME,
+                    date: activity.date,
+                    status: PaymentStatus.PENDING,
+                    student_id: studentId,
+                    payment_method: PaymentMethod.PIX_MERCADO_PAGO,
+                    external_reference: extRef
+                };
+                const { error: insErr } = await supabase.from('transactions').insert([txPayload]);
+                if (insErr) {
+                    // Provável violação do índice único (a cobrança já foi criada em paralelo) — ignora.
+                    console.warn('Cobrança de taxa já existente; duplicidade evitada:', insErr.message);
+                } else {
+                    setTransactions(prev => [...prev, { ...txPayload, id: 'temp-' + Date.now() } as any]);
+                }
+            }
         }
     }
 
