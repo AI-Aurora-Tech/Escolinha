@@ -507,14 +507,18 @@ const AppContent: React.FC = () => {
   const handleUpdateStudent = async (student: Student) => {
     // setIsLoading(true);
     try {
-        const payload = {
+        // As fotos são carregadas sob demanda; ao editar um aluno cuja foto ainda não foi
+        // carregada, student.photoUrl é apenas o avatar temporário. Nesse caso NÃO gravamos
+        // photo_url, para não sobrescrever a foto real que está no banco.
+        const isPlaceholderPhoto = !student.photoUrl || student.photoUrl.includes('ui-avatars.com');
+
+        const payload: any = {
           name: student.name,
           birth_date: safeDate(student.birthDate),
           rg: student.rg || null,
           cpf: student.cpf || null,
           phone: student.phone || null,
           medical_expiry: safeDate(student.medicalCertificateExpiry),
-          photo_url: student.photoUrl,
           address: student.address,
           guardian: student.guardian,
           plan_id: safeId(student.planId),
@@ -526,11 +530,15 @@ const AppContent: React.FC = () => {
           inactivation_date: safeDate(student.inactivationDate),
           documents: student.documents
         };
+        if (!isPlaceholderPhoto) payload.photo_url = student.photoUrl;
+
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
         // Atualiza apenas o aluno alterado no estado local, sem recarregar toda a base.
-        studentPhotosRef.current.set(student.id, student.photoUrl || '');
-        setStudents(prev => prev.map(s => s.id === student.id ? student : s));
+        if (!isPlaceholderPhoto) studentPhotosRef.current.set(student.id, student.photoUrl!);
+        setStudents(prev => prev.map(s => s.id === student.id
+            ? { ...student, photoUrl: isPlaceholderPhoto ? (s.photoUrl || student.photoUrl) : student.photoUrl }
+            : s));
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
