@@ -576,9 +576,10 @@ const AppContent: React.FC = () => {
         // photo_url, para não sobrescrever a foto real que está no banco.
         const isPlaceholderPhoto = !student.photoUrl || student.photoUrl.includes('ui-avatars.com');
 
-        // Detecta a transição ATIVO -> INATIVO para disparar as ações de inativação.
+        // Detecta as transições de status para disparar as ações de inativação/reativação.
         const previous = students.find(s => s.id === student.id);
         const isBeingInactivated = (previous ? previous.active : true) && !student.active;
+        const isBeingReactivated = !!previous && previous.active === false && student.active === true;
 
         // Ao inativar, remove o aluno de todos os grupos.
         const groupIdsToSave = isBeingInactivated ? [] : (student.groupIds || []);
@@ -630,6 +631,46 @@ const AppContent: React.FC = () => {
             }
         }
 
+        // Ao reativar, gera as parcelas do mês da reativação até dezembro do ano corrente:
+        // reativa as canceladas desses meses e cria as que faltam (sem duplicar).
+        let reactivationChanged = false;
+        if (isBeingReactivated && student.planId) {
+            const plan = plans.find(p => p.id === student.planId);
+            if (plan && !isBolsistaPlan(plan)) {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const fromMonth = now.getMonth() + 1; // mês da reativação
+
+                const yearTx = transactions.filter(t =>
+                    t.studentId === student.id &&
+                    t.category === 'Mensalidade' &&
+                    (t.date || '').startsWith(String(currentYear))
+                );
+
+                // Reativa parcelas totalmente canceladas dos meses [fromMonth..dez].
+                const toReactivate: string[] = [];
+                for (let m = fromMonth; m <= 12; m++) {
+                    const mm = String(m).padStart(2, '0');
+                    const inMonth = yearTx.filter(t => t.date.slice(5, 7) === mm);
+                    if (inMonth.length === 0) continue; // será criada abaixo
+                    const hasActive = inMonth.some(t => t.status !== PaymentStatus.CANCELLED);
+                    if (!hasActive) toReactivate.push(inMonth[0].id);
+                }
+                if (toReactivate.length > 0) {
+                    await supabase.from('transactions').update({ status: PaymentStatus.PENDING }).in('id', toReactivate);
+                    reactivationChanged = true;
+                }
+
+                // Cria parcelas para os meses [fromMonth..dez] que não têm nenhuma mensalidade.
+                const studentForGen = { id: student.id, name: student.name, planId: student.planId } as Student;
+                const missing = buildTuitionPayloads(studentForGen, plan, transactions, fromMonth, 12, currentYear);
+                if (missing.length > 0) {
+                    await supabase.from('transactions').insert(missing);
+                    reactivationChanged = true;
+                }
+            }
+        }
+
         // Atualiza o estado local (aluno + eventuais cobranças canceladas) sem recarregar toda a base.
         if (!isPlaceholderPhoto) studentPhotosRef.current.set(student.id, student.photoUrl!);
         const savedStudent: Student = { ...student, groupIds: groupIdsToSave };
@@ -640,6 +681,8 @@ const AppContent: React.FC = () => {
             setTransactions(prev => prev.map(t =>
                 cancelledIds.includes(t.id) ? { ...t, status: PaymentStatus.CANCELLED } : t));
         }
+        // Reflete as parcelas geradas/reativadas na tela (em segundo plano).
+        if (reactivationChanged) void fetchData(true);
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
