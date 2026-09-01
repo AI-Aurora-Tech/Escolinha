@@ -89,6 +89,47 @@ const mapStudentRow = (s: any): Student => ({
   enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
 });
 
+// Alunos do plano Bolsista não geram mensalidade.
+const isBolsistaPlan = (plan?: Plan | null) =>
+  !!plan && (plan.name || '').trim().toLowerCase().includes('bolsista');
+
+// Monta as parcelas de mensalidade de um aluno para os meses [fromMonth..toMonth] do ano,
+// pulando os meses que já possuem mensalidade lançada (evita duplicidade).
+const buildTuitionPayloads = (
+  student: Student,
+  plan: Plan,
+  existingTx: Transaction[],
+  fromMonth: number,
+  toMonth: number,
+  year: number
+) => {
+  const payloads: any[] = [];
+  const yearStr = String(year);
+  for (let m = fromMonth; m <= toMonth; m++) {
+    const monthStr = String(m).padStart(2, '0');
+    const alreadyExists = existingTx.some(t =>
+      t.studentId === student.id &&
+      t.category === 'Mensalidade' &&
+      (t.date || '').startsWith(`${yearStr}-${monthStr}`)
+    );
+    if (alreadyExists) continue;
+    const dueDay = plan.dueDay || 10;
+    payloads.push({
+      description: `Mensalidade (${student.name}) ${monthStr}/${yearStr}`,
+      category: 'Mensalidade',
+      amount: plan.price,
+      type: TransactionType.INCOME,
+      date: `${yearStr}-${monthStr}-${String(dueDay).padStart(2, '0')}`,
+      status: PaymentStatus.PENDING,
+      student_id: student.id,
+      plan_id: student.planId,
+      payment_method: PaymentMethod.CASH,
+      recurrence: 'NONE'
+    });
+  }
+  return payloads;
+};
+
 function App() {
   return (
     <Router>
@@ -496,11 +537,34 @@ const AppContent: React.FC = () => {
         // Retorna a linha criada para atualizar o estado local, sem recarregar toda a base.
         const { data: inserted, error } = await supabase.from('students').insert([payload]).select().single();
         if (error) throw error;
+
+        let generatedTuitions = false;
         if (inserted) {
             studentPhotosRef.current.set(inserted.id, inserted.photo_url || '');
             setStudents(prev => [...prev, mapStudentRow(inserted)]);
+
+            // Gera as mensalidades do novo aluno: do mês da matrícula até dezembro do ano corrente.
+            const plan = plans.find(p => p.id === studentData.planId);
+            if ((studentData.active ?? true) && plan && !isBolsistaPlan(plan)) {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                let fromMonth = now.getMonth() + 1;
+                const enroll = studentData.enrollmentDate; // 'YYYY-MM-DD'
+                if (enroll && enroll.startsWith(String(currentYear))) {
+                    const em = parseInt(enroll.slice(5, 7), 10);
+                    if (!Number.isNaN(em) && em >= 1 && em <= 12) fromMonth = em;
+                }
+                const studentForGen = { id: inserted.id, name: studentData.name, planId: studentData.planId } as Student;
+                const tuitions = buildTuitionPayloads(studentForGen, plan, [], fromMonth, 12, currentYear);
+                if (tuitions.length > 0) {
+                    await supabase.from('transactions').insert(tuitions);
+                    generatedTuitions = true;
+                }
+            }
         }
         alert("Atleta cadastrado!");
+        // Traz as mensalidades recém-geradas para a tela (em segundo plano).
+        if (generatedTuitions) void fetchData(true);
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
 
@@ -512,6 +576,13 @@ const AppContent: React.FC = () => {
         // photo_url, para não sobrescrever a foto real que está no banco.
         const isPlaceholderPhoto = !student.photoUrl || student.photoUrl.includes('ui-avatars.com');
 
+        // Detecta a transição ATIVO -> INATIVO para disparar as ações de inativação.
+        const previous = students.find(s => s.id === student.id);
+        const isBeingInactivated = (previous ? previous.active : true) && !student.active;
+
+        // Ao inativar, remove o aluno de todos os grupos.
+        const groupIdsToSave = isBeingInactivated ? [] : (student.groupIds || []);
+
         const payload: any = {
           name: student.name,
           birth_date: safeDate(student.birthDate),
@@ -522,7 +593,7 @@ const AppContent: React.FC = () => {
           address: student.address,
           guardian: student.guardian,
           plan_id: safeId(student.planId),
-          group_ids: student.groupIds || [],
+          group_ids: groupIdsToSave,
           positions: student.positions || [],
           active: student.active,
           inactive_reason: student.inactiveReason || null,
@@ -534,11 +605,41 @@ const AppContent: React.FC = () => {
 
         const { error } = await supabase.from('students').update(payload).eq('id', student.id);
         if (error) throw error;
-        // Atualiza apenas o aluno alterado no estado local, sem recarregar toda a base.
+
+        // Ao inativar, pergunta se deve cancelar as cobranças em aberto (pendentes/atrasadas).
+        let cancelledIds: string[] = [];
+        if (isBeingInactivated) {
+            const openCharges = transactions.filter(t =>
+                t.studentId === student.id &&
+                (t.status === PaymentStatus.PENDING || t.status === PaymentStatus.LATE)
+            );
+            if (openCharges.length > 0 && window.confirm(
+                `Este aluno possui ${openCharges.length} cobrança(s) em aberto (pendentes/atrasadas). Deseja cancelá-la(s)?`
+            )) {
+                const { error: cancelErr } = await supabase
+                    .from('transactions')
+                    .update({ status: PaymentStatus.CANCELLED })
+                    .eq('student_id', student.id)
+                    .in('status', [PaymentStatus.PENDING, PaymentStatus.LATE]);
+                if (cancelErr) {
+                    console.error('Erro ao cancelar cobranças:', cancelErr);
+                    alert(`Aluno inativado, mas houve erro ao cancelar as cobranças: ${cancelErr.message}`);
+                } else {
+                    cancelledIds = openCharges.map(t => t.id);
+                }
+            }
+        }
+
+        // Atualiza o estado local (aluno + eventuais cobranças canceladas) sem recarregar toda a base.
         if (!isPlaceholderPhoto) studentPhotosRef.current.set(student.id, student.photoUrl!);
+        const savedStudent: Student = { ...student, groupIds: groupIdsToSave };
         setStudents(prev => prev.map(s => s.id === student.id
-            ? { ...student, photoUrl: isPlaceholderPhoto ? (s.photoUrl || student.photoUrl) : student.photoUrl }
+            ? { ...savedStudent, photoUrl: isPlaceholderPhoto ? (s.photoUrl || student.photoUrl) : student.photoUrl }
             : s));
+        if (cancelledIds.length > 0) {
+            setTransactions(prev => prev.map(t =>
+                cancelledIds.includes(t.id) ? { ...t, status: PaymentStatus.CANCELLED } : t));
+        }
         alert("Atleta atualizado!");
     } catch (err: any) { alert(`Erro: ${err.message}`); } finally { setIsLoading(false); }
   };
@@ -687,48 +788,28 @@ const AppContent: React.FC = () => {
     await fetchData(true);
   };
 
-  const handleGenerateGlobalTuitions = async () => {
+  const handleGenerateGlobalTuitions = async (studentId?: string) => {
     setIsLoading(true);
     try {
-      const activeStudents = students.filter(s => s.active);
       const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
-      const monthStr = currentMonth.toString().padStart(2, '0');
-      const yearStr = currentYear.toString();
-      
-      for (const student of activeStudents) {
+      const currentMonth = now.getMonth() + 1; // gera do mês corrente...
+      const currentYear = now.getFullYear();   // ...até dezembro do ano corrente.
+
+      // Um aluno específico (se informado) ou todos os ativos; sempre só ativos.
+      const targets = (studentId ? students.filter(s => s.id === studentId) : students)
+        .filter(s => s.active);
+
+      const allPayloads: any[] = [];
+      for (const student of targets) {
         if (!student.planId) continue;
         const plan = plans.find(p => p.id === student.planId);
-        if (!plan) continue;
+        if (!plan || isBolsistaPlan(plan)) continue; // Bolsista não gera mensalidade.
+        // Ignora meses anteriores (começa no mês corrente) e meses já lançados.
+        allPayloads.push(...buildTuitionPayloads(student, plan, transactions, currentMonth, 12, currentYear));
+      }
 
-        // Alunos do plano Bolsista não geram mensalidade.
-        if ((plan.name || '').trim().toLowerCase().includes('bolsista')) continue;
-
-        const existing = transactions.find(t =>
-          t.studentId === student.id && 
-          t.category === 'Mensalidade' &&
-          t.date.startsWith(`${yearStr}-${monthStr}`)
-        );
-
-        if (!existing) {
-          const dueDay = plan.dueDay || 10;
-          const dueDate = `${yearStr}-${monthStr}-${dueDay.toString().padStart(2, '0')}`;
-          
-          const payload = { 
-            description: `Mensalidade (${student.name}) ${monthStr}/${yearStr}`, 
-            category: 'Mensalidade', 
-            amount: plan.price, 
-            type: TransactionType.INCOME, 
-            date: dueDate, 
-            status: PaymentStatus.PENDING, 
-            student_id: safeId(student.id), 
-            plan_id: safeId(student.planId), 
-            payment_method: PaymentMethod.CASH, 
-            recurrence: 'NONE' 
-          };
-          await supabase.from('transactions').insert([payload]);
-        }
+      if (allPayloads.length > 0) {
+        await supabase.from('transactions').insert(allPayloads);
       }
       await fetchData(true);
     } catch (err) {
