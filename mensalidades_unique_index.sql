@@ -17,6 +17,12 @@ GROUP BY student_id, to_char(date::date, 'YYYY-MM')
 HAVING count(*) > 1;
 
 -- Cria a trava: 1 mensalidade por aluno por mês.
+-- Obs.: em índice por expressão o Postgres exige funções IMMUTABLE. to_char/cast p/ texto
+-- são STABLE (dependem de formato), então usamos EXTRACT(ano/mês), que é IMMUTABLE para date.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_mensalidade_aluno_mes
-  ON public.transactions (student_id, (to_char(date::date, 'YYYY-MM')))
+  ON public.transactions (
+    student_id,
+    (EXTRACT(YEAR  FROM date)),
+    (EXTRACT(MONTH FROM date))
+  )
   WHERE category = 'Mensalidade';
