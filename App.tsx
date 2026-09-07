@@ -384,6 +384,33 @@ const AppContent: React.FC = () => {
     if (!silent) setIsLoading(false);
   }, []);
 
+  // Busca no BANCO as mensalidades já existentes dos alunos informados no ano (qualquer status).
+  // Usado como fonte da verdade na geração, evitando duplicar quando o estado local está desatualizado.
+  const fetchExistingTuitions = async (studentIds: string[], year: number): Promise<Transaction[]> => {
+    if (studentIds.length === 0) return [];
+    const rows = await selectWithRetry('mensalidades existentes', () =>
+      supabase.from('transactions')
+        .select('id,student_id,date,status,category')
+        .eq('category', 'Mensalidade')
+        .in('student_id', studentIds)
+        .gte('date', `${year}-01-01`)
+        .lte('date', `${year}-12-31`));
+    return rows.map((r: any) => ({ id: r.id, studentId: r.student_id, date: r.date, status: r.status, category: r.category } as Transaction));
+  };
+
+  // Insere mensalidades tolerando conflitos: tenta em lote e, se falhar, uma a uma ignorando duplicatas.
+  const insertTuitions = async (payloads: any[]) => {
+    if (payloads.length === 0) return;
+    const { error } = await supabase.from('transactions').insert(payloads);
+    if (!error) return;
+    for (const p of payloads) {
+      const { error: e } = await supabase.from('transactions').insert([p]);
+      if (e && !/duplicate|unique|conflict/i.test(e.message || '')) {
+        console.warn('Erro ao inserir mensalidade:', e.message);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -557,7 +584,7 @@ const AppContent: React.FC = () => {
                 const studentForGen = { id: inserted.id, name: studentData.name, planId: studentData.planId } as Student;
                 const tuitions = buildTuitionPayloads(studentForGen, plan, [], fromMonth, 12, currentYear);
                 if (tuitions.length > 0) {
-                    await supabase.from('transactions').insert(tuitions);
+                    await insertTuitions(tuitions);
                     generatedTuitions = true;
                 }
             }
@@ -641,17 +668,14 @@ const AppContent: React.FC = () => {
                 const currentYear = now.getFullYear();
                 const fromMonth = now.getMonth() + 1; // mês da reativação
 
-                const yearTx = transactions.filter(t =>
-                    t.studentId === student.id &&
-                    t.category === 'Mensalidade' &&
-                    (t.date || '').startsWith(String(currentYear))
-                );
+                // Fonte da verdade vem do BANCO (não do estado local), para não duplicar.
+                const yearTx = await fetchExistingTuitions([student.id], currentYear);
 
                 // Reativa parcelas totalmente canceladas dos meses [fromMonth..dez].
                 const toReactivate: string[] = [];
                 for (let m = fromMonth; m <= 12; m++) {
                     const mm = String(m).padStart(2, '0');
-                    const inMonth = yearTx.filter(t => t.date.slice(5, 7) === mm);
+                    const inMonth = yearTx.filter(t => (t.date || '').slice(5, 7) === mm);
                     if (inMonth.length === 0) continue; // será criada abaixo
                     const hasActive = inMonth.some(t => t.status !== PaymentStatus.CANCELLED);
                     if (!hasActive) toReactivate.push(inMonth[0].id);
@@ -663,9 +687,9 @@ const AppContent: React.FC = () => {
 
                 // Cria parcelas para os meses [fromMonth..dez] que não têm nenhuma mensalidade.
                 const studentForGen = { id: student.id, name: student.name, planId: student.planId } as Student;
-                const missing = buildTuitionPayloads(studentForGen, plan, transactions, fromMonth, 12, currentYear);
+                const missing = buildTuitionPayloads(studentForGen, plan, yearTx, fromMonth, 12, currentYear);
                 if (missing.length > 0) {
-                    await supabase.from('transactions').insert(missing);
+                    await insertTuitions(missing);
                     reactivationChanged = true;
                 }
             }
@@ -842,18 +866,19 @@ const AppContent: React.FC = () => {
       const targets = (studentId ? students.filter(s => s.id === studentId) : students)
         .filter(s => s.active);
 
+      // Fonte da verdade vem do BANCO (não do estado local), para não duplicar mensalidades.
+      const existing = await fetchExistingTuitions(targets.map(s => s.id), currentYear);
+
       const allPayloads: any[] = [];
       for (const student of targets) {
         if (!student.planId) continue;
         const plan = plans.find(p => p.id === student.planId);
         if (!plan || isBolsistaPlan(plan)) continue; // Bolsista não gera mensalidade.
         // Ignora meses anteriores (começa no mês corrente) e meses já lançados.
-        allPayloads.push(...buildTuitionPayloads(student, plan, transactions, currentMonth, 12, currentYear));
+        allPayloads.push(...buildTuitionPayloads(student, plan, existing, currentMonth, 12, currentYear));
       }
 
-      if (allPayloads.length > 0) {
-        await supabase.from('transactions').insert(allPayloads);
-      }
+      await insertTuitions(allPayloads);
       await fetchData(true);
     } catch (err) {
       console.error("Error generating tuitions", err);
@@ -963,17 +988,20 @@ const AppContent: React.FC = () => {
           const transactionsToInsert = [];
           const transactionsToUpdate = [];
 
+          const isGameFinished = typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
+
           for (const studentId of participantIds) {
               const extRef = `game_fee_${a.id}_${studentId}`;
               const existingTx = existingTxs.find(t => t.externalReference === extRef);
               const isPresent = (a.attendance || []).includes(studentId);
-              const hasConfirmedRsvp = a.rsvps?.some(r => r.studentId === studentId && r.status === 'CONFIRMED');
 
               if (!existingTx) {
+                  // Com o jogo já finalizado, não cria taxa para quem não esteve presente.
+                  if (isGameFinished && !isPresent) continue;
                   transactionsToInsert.push({
                       description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
                       amount: a.fee, type: TransactionType.INCOME, date: a.date,
-                      status: PaymentStatus.PENDING, 
+                      status: PaymentStatus.PENDING,
                       student_id: studentId,
                       external_reference: extRef, recurrence: 'NONE',
                   });
@@ -987,13 +1015,9 @@ const AppContent: React.FC = () => {
                       needsUpdate = true;
                   }
 
-                  // Sincronizar status com presença (apenas para transações não pagas)
-                  const isGameFinished = typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
-                  
-                  if (existingTx.status === PaymentStatus.PENDING && !isPresent && isGameFinished) {
-                      updates.status = PaymentStatus.CANCELLED;
-                      needsUpdate = true;
-                  } else if (existingTx.status === PaymentStatus.CANCELLED && isPresent) {
+                  // Reativa a taxa se o aluno passou a constar como presente.
+                  // (O cancelamento de quem confirmou mas não compareceu é feito após o loop.)
+                  if (existingTx.status === PaymentStatus.CANCELLED && isPresent) {
                       updates.status = PaymentStatus.PENDING;
                       needsUpdate = true;
                   }
@@ -1006,13 +1030,26 @@ const AppContent: React.FC = () => {
               }
           }
 
-          const txsToDelete = existingTxs
-              .filter(tx => !participantIdSet.has(tx.studentId!) && tx.status === PaymentStatus.PENDING)
-              .map(tx => tx.id);
-
           if (transactionsToInsert.length > 0) await supabase.from('transactions').insert(transactionsToInsert);
           if (transactionsToUpdate.length > 0) await Promise.all(transactionsToUpdate);
-          if (txsToDelete.length > 0) await supabase.from('transactions').delete().in('id', txsToDelete);
+
+          if (isGameFinished) {
+              // Jogo finalizado: CANCELA a taxa em aberto de qualquer aluno que tenha cobrança
+              // deste jogo (ex.: aceitou a convocação) mas NÃO teve presença marcada.
+              const attendanceSet = new Set(a.attendance || []);
+              const idsToCancel = existingTxs
+                  .filter(tx => tx.status === PaymentStatus.PENDING && tx.studentId && !attendanceSet.has(tx.studentId))
+                  .map(tx => tx.id);
+              if (idsToCancel.length > 0) {
+                  await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).in('id', idsToCancel);
+              }
+          } else {
+              // Jogo ainda não finalizado: remove taxas pendentes de quem saiu da convocação.
+              const txsToDelete = existingTxs
+                  .filter(tx => !participantIdSet.has(tx.studentId!) && tx.status === PaymentStatus.PENDING)
+                  .map(tx => tx.id);
+              if (txsToDelete.length > 0) await supabase.from('transactions').delete().in('id', txsToDelete);
+          }
 
       } else if (wasGameWithFee && !isGameWithFee) {
           await supabase.from('transactions').delete().like('external_reference', `game_fee_${a.id}_%`).eq('status', PaymentStatus.PENDING);
