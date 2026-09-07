@@ -988,17 +988,20 @@ const AppContent: React.FC = () => {
           const transactionsToInsert = [];
           const transactionsToUpdate = [];
 
+          const isGameFinished = typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
+
           for (const studentId of participantIds) {
               const extRef = `game_fee_${a.id}_${studentId}`;
               const existingTx = existingTxs.find(t => t.externalReference === extRef);
               const isPresent = (a.attendance || []).includes(studentId);
-              const hasConfirmedRsvp = a.rsvps?.some(r => r.studentId === studentId && r.status === 'CONFIRMED');
 
               if (!existingTx) {
+                  // Com o jogo já finalizado, não cria taxa para quem não esteve presente.
+                  if (isGameFinished && !isPresent) continue;
                   transactionsToInsert.push({
                       description: `Taxa Jogo: ${a.title}`, category: 'Taxa de Atividade',
                       amount: a.fee, type: TransactionType.INCOME, date: a.date,
-                      status: PaymentStatus.PENDING, 
+                      status: PaymentStatus.PENDING,
                       student_id: studentId,
                       external_reference: extRef, recurrence: 'NONE',
                   });
@@ -1012,13 +1015,9 @@ const AppContent: React.FC = () => {
                       needsUpdate = true;
                   }
 
-                  // Sincronizar status com presença (apenas para transações não pagas)
-                  const isGameFinished = typeof a.homeScore === 'number' && typeof a.awayScore === 'number';
-                  
-                  if (existingTx.status === PaymentStatus.PENDING && !isPresent && isGameFinished) {
-                      updates.status = PaymentStatus.CANCELLED;
-                      needsUpdate = true;
-                  } else if (existingTx.status === PaymentStatus.CANCELLED && isPresent) {
+                  // Reativa a taxa se o aluno passou a constar como presente.
+                  // (O cancelamento de quem confirmou mas não compareceu é feito após o loop.)
+                  if (existingTx.status === PaymentStatus.CANCELLED && isPresent) {
                       updates.status = PaymentStatus.PENDING;
                       needsUpdate = true;
                   }
@@ -1031,13 +1030,26 @@ const AppContent: React.FC = () => {
               }
           }
 
-          const txsToDelete = existingTxs
-              .filter(tx => !participantIdSet.has(tx.studentId!) && tx.status === PaymentStatus.PENDING)
-              .map(tx => tx.id);
-
           if (transactionsToInsert.length > 0) await supabase.from('transactions').insert(transactionsToInsert);
           if (transactionsToUpdate.length > 0) await Promise.all(transactionsToUpdate);
-          if (txsToDelete.length > 0) await supabase.from('transactions').delete().in('id', txsToDelete);
+
+          if (isGameFinished) {
+              // Jogo finalizado: CANCELA a taxa em aberto de qualquer aluno que tenha cobrança
+              // deste jogo (ex.: aceitou a convocação) mas NÃO teve presença marcada.
+              const attendanceSet = new Set(a.attendance || []);
+              const idsToCancel = existingTxs
+                  .filter(tx => tx.status === PaymentStatus.PENDING && tx.studentId && !attendanceSet.has(tx.studentId))
+                  .map(tx => tx.id);
+              if (idsToCancel.length > 0) {
+                  await supabase.from('transactions').update({ status: PaymentStatus.CANCELLED }).in('id', idsToCancel);
+              }
+          } else {
+              // Jogo ainda não finalizado: remove taxas pendentes de quem saiu da convocação.
+              const txsToDelete = existingTxs
+                  .filter(tx => !participantIdSet.has(tx.studentId!) && tx.status === PaymentStatus.PENDING)
+                  .map(tx => tx.id);
+              if (txsToDelete.length > 0) await supabase.from('transactions').delete().in('id', txsToDelete);
+          }
 
       } else if (wasGameWithFee && !isGameWithFee) {
           await supabase.from('transactions').delete().like('external_reference', `game_fee_${a.id}_%`).eq('status', PaymentStatus.PENDING);
