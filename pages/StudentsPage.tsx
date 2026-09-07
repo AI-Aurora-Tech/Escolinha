@@ -594,7 +594,7 @@ Equipe Garotos do Martinica 🏆`;
     
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Lembrete de documentos enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar mensagem via Z-API. Verifique as configurações no menu Financeiro.");
+    else alert("Erro ao enviar mensagem via WhatsApp. Verifique as configurações no menu Financeiro.");
   };
 
   const sendMedicalReminder = async (student: Student) => {
@@ -604,7 +604,7 @@ Equipe Garotos do Martinica 🏆`;
     const msg = `Olá *${student.guardian.name}*, tudo bem? Aqui é da *Garotos do Martinica*! ⚽\n\nIdentificamos que o atestado médico do(a) atleta *${student.name}* venceu em *${date}*. \n\nA renovação do exame médico é fundamental para a segurança e continuidade do aluno nos treinos. Por favor, providencie um novo atestado.\n\nQualquer dúvida, estamos à disposição!`;
     const sent = await sendZApiMessage(phone, msg);
     if (sent) alert(`Aviso de atestado enviado para ${student.guardian.name}!`);
-    else alert("Erro ao enviar via Z-API. Verifique as configurações no menu Financeiro.");
+    else alert("Erro ao enviar via WhatsApp. Verifique as configurações no menu Financeiro.");
   };
 
   const handlePayTransaction = (id: string, method: PaymentMethod) => {
@@ -685,7 +685,7 @@ Equipe Garotos do Martinica 🏆`;
       message += `\n\nObrigado!`;
       
       const sent = await sendZApiMessage(phone, message);
-      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via Z-API. Verifique as configurações.");
+      if (sent) alert("Cobrança enviada com sucesso!"); else alert("Erro ao enviar via WhatsApp. Verifique as configurações.");
   };
 
   const sendBatchSelectedCharges = async (e?: React.MouseEvent) => {
@@ -708,7 +708,7 @@ Equipe Garotos do Martinica 🏆`;
       
       const sent = await sendZApiMessage(phone, message);
       if (sent) alert(`${selectedTxs.length} cobrança(s) enviada(s) com sucesso!`);
-      else alert("Erro ao enviar mensagens via Z-API.");
+      else alert("Erro ao enviar mensagens via WhatsApp.");
   };
 
   const availableCategories = useMemo(() => {
@@ -887,7 +887,7 @@ Equipe Garotos do Martinica 🏆`;
     } else {
       onAddStudent(studentData);
       
-      // Send Welcome Message via WhatsApp (Z-API)
+      // Send Welcome Message via WhatsApp (WhatsApp)
       if (studentData.guardian?.phone) {
         const phone = studentData.guardian.phone.replace(/\D/g, '');
         if (phone) {
@@ -895,7 +895,7 @@ Equipe Garotos do Martinica 🏆`;
           
           sendZApiMessage(phone, message).then(sent => {
             if (!sent) {
-              console.error("Falha ao enviar mensagem de boas-vindas via Z-API.");
+              console.error("Falha ao enviar mensagem de boas-vindas via WhatsApp.");
             } else {
               // Send poll after welcome message
               const pollQuestion = "O objetivo do seu filho na escolinha é:";
@@ -905,7 +905,7 @@ Equipe Garotos do Martinica 🏆`;
                 "Ser Jogador de Futebol"
               ];
               sendZApiPoll(phone, pollQuestion, pollOptions, 1).then(pollSent => {
-                if (!pollSent) console.error("Falha ao enviar enquete via Z-API.");
+                if (!pollSent) console.error("Falha ao enviar enquete via WhatsApp.");
               });
             }
           });

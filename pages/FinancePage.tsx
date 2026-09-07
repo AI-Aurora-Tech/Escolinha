@@ -23,9 +23,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   
   // Settings State
   const [mpToken, setMpToken] = useState('');
-  const [zapiInstanceId, setZapiInstanceId] = useState('');
-  const [zapiToken, setZapiToken] = useState('');
-  const [zapiClientToken, setZapiClientToken] = useState('');
+  const [evolutionBaseUrl, setEvolutionBaseUrl] = useState('');
+  const [evolutionInstance, setEvolutionInstance] = useState('');
+  const [evolutionApiKey, setEvolutionApiKey] = useState('');
   const [loadingSettings, setLoadingSettings] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -64,9 +64,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         if (data) {
             data.forEach(s => {
                 if (s.key === 'mp_access_token') setMpToken(s.value);
-                if (s.key === 'zapi_instance_id') setZapiInstanceId(s.value);
-                if (s.key === 'zapi_token') setZapiToken(s.value);
-                if (s.key === 'zapi_client_token') setZapiClientToken(s.value);
+                if (s.key === 'evolution_base_url') setEvolutionBaseUrl(s.value);
+                if (s.key === 'evolution_instance') setEvolutionInstance(s.value);
+                if (s.key === 'evolution_apikey') setEvolutionApiKey(s.value);
             });
         }
     };
@@ -78,9 +78,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       try {
           const settings = [
               { key: 'mp_access_token', value: mpToken },
-              { key: 'zapi_instance_id', value: zapiInstanceId },
-              { key: 'zapi_token', value: zapiToken },
-              { key: 'zapi_client_token', value: zapiClientToken }
+              { key: 'evolution_base_url', value: evolutionBaseUrl },
+              { key: 'evolution_instance', value: evolutionInstance },
+              { key: 'evolution_apikey', value: evolutionApiKey }
           ];
           const { error } = await supabase.from('app_settings').upsert(settings);
           if (error) throw error;
@@ -341,13 +341,13 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
               <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                   <div className="mb-6 border-b border-gray-100 pb-4">
-                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-600" /> Z-API (WhatsApp)</h3>
+                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-600" /> Evolution API (WhatsApp)</h3>
                       <p className="text-xs text-gray-500 mt-1">Integração para envios de comunicados e cobranças automáticas.</p>
                   </div>
                   <div className="space-y-4">
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">ID da instancia</label><input type="text" value={zapiInstanceId} onChange={(e) => setZapiInstanceId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="ID da sua instância" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Token da instancia</label><input type="password" value={zapiToken} onChange={(e) => setZapiToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Token da instância" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Client- Token</label><input type="password" value={zapiClientToken} onChange={(e) => setZapiClientToken(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Client-Token da Z-API" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Base URL</label><input type="text" value={evolutionBaseUrl} onChange={(e) => setEvolutionBaseUrl(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="https://sua-evolution.com" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Instância</label><input type="text" value={evolutionInstance} onChange={(e) => setEvolutionInstance(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Nome da instância" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">API Key</label><input type="password" value={evolutionApiKey} onChange={(e) => setEvolutionApiKey(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="apikey da instância" /></div>
                   </div>
               </div>
 
