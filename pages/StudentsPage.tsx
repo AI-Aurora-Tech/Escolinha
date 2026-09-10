@@ -998,10 +998,15 @@ Equipe Garotos do Martinica 🏆`;
   const copyPixCode = () => { if (pixData?.qrCode) { navigator.clipboard.writeText(pixData.qrCode); alert("Código PIX Copiado!"); } };
 
   const studentTransactions = useMemo(() => {
+    const seen = new Set<string>();
     const txs = transactions
       .filter(t => t.studentId === editingId)
+      .filter(t => { // remove qualquer id repetido, evitando linha duplicada na tela
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      })
       .sort((a, b) => b.date.localeCompare(a.date)); // Sort descending (newest first)
-    console.log(`Student ${editingId} has ${txs.length} transactions`);
     return txs;
   }, [transactions, editingId]);
   const selectedTotal = studentTransactions.filter(t => selectedFinanceIds.has(t.id)).reduce((acc, t) => acc + t.amount, 0);

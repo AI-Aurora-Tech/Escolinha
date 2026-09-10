@@ -319,7 +319,15 @@ const AppContent: React.FC = () => {
         // Segundo plano: busca as fotos (base64) apenas dos alunos ATIVOS, em lotes pequenos.
         void loadStudentPhotos(studentsData.filter((s: any) => s.active).map((s: any) => s.id));
 
-        setTransactions(transactionsData.map((t: any) => ({
+        // Garante que nunca haja a mesma transação (id) repetida no estado (evita exibição duplicada).
+        const seenTxIds = new Set<string>();
+        const uniqueTransactions = transactionsData.filter((t: any) => {
+            if (seenTxIds.has(t.id)) return false;
+            seenTxIds.add(t.id);
+            return true;
+        });
+
+        setTransactions(uniqueTransactions.map((t: any) => ({
             id: t.id,
             description: t.description,
             category: t.category,
