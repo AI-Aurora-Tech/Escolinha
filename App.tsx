@@ -61,11 +61,20 @@ async function selectAllPaginated<T = any>(
   pageSize = 200
 ): Promise<T[]> {
   const all: T[] = [];
+  const seen = new Set<any>();
   let from = 0;
   for (;;) {
     const to = from + pageSize - 1;
     const page = await selectWithRetry(`${label} (${from}-${to})`, () => buildRange(from, to));
-    all.push(...page);
+    for (const row of page) {
+      // Proteção contra sobreposição de páginas: nunca adiciona a mesma linha (id) duas vezes.
+      const id = (row as any)?.id;
+      if (id !== undefined && id !== null) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
+      all.push(row);
+    }
     if (page.length < pageSize) break;
     from += pageSize;
   }
@@ -295,7 +304,10 @@ const AppContent: React.FC = () => {
              studentsData = await selectAllPaginated('alunos', (from, to) =>
                  supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
              transactionsData = await selectAllPaginated('transações', (from, to) =>
-                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).range(from, to));
+                 // 'id' como desempate garante ordem TOTAL/estável entre páginas (date/created_at
+                 // não são únicos — lote de mensalidades compartilha created_at), evitando linhas
+                 // duplicadas (ou omitidas) na paginação.
+                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to));
         }
 
         // Aplica a foto já em cache (se houver) ou um avatar temporário; preserva fotos já carregadas.
