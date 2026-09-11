@@ -157,6 +157,12 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const realizedBalance = totalIncome - totalExpense;
 
+  // Saldo na conta: tudo que já foi RECEBIDO menos tudo que já foi PAGO até a data final
+  // informada (acumulado, ignora a data inicial). Usa a data de pagamento (fallback: vencimento).
+  const accountBalance = transactions
+    .filter(t => t.status === PaymentStatus.PAID && (t.paymentDate || t.date) <= endDate)
+    .reduce((acc, t) => acc + (t.type === TransactionType.INCOME ? t.amount : -t.amount), 0);
+
   const pendingIncome = transactionsInPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date >= todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
@@ -497,8 +503,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${realizedBalance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-5 h-5" /></div>
-                    <div><p className="text-[9px] font-black text-gray-400 uppercase">Saldo Período</p><h3 className={`text-base font-black truncate ${realizedBalance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {realizedBalance.toFixed(2)}</h3></div>
+                    <div className={`p-2 rounded-lg ${accountBalance >= 0 ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}><Filter className="w-5 h-5" /></div>
+                    <div><p className="text-[9px] font-black text-gray-400 uppercase">Saldo na Conta</p><h3 className={`text-base font-black truncate ${accountBalance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {accountBalance.toFixed(2)}</h3></div>
                 </div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-blue-50 shadow-sm ring-1 ring-blue-50">
