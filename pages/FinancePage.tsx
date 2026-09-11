@@ -170,8 +170,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
     .filter(t => t.status === PaymentStatus.PAID)
     .reduce((acc, t) => acc + (t.type === TransactionType.INCOME ? t.amount : -t.amount), 0);
 
-  // A Receber: todo saldo a receber pendente (a vencer), sem filtro de data.
-  const pendingIncome = transactions
+  // A Receber: receitas pendentes a vencer no período filtrado (por vencimento).
+  const pendingIncome = transactionsInPeriod
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date >= todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
