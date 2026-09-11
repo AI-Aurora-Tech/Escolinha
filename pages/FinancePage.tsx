@@ -147,31 +147,41 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // --- CÁLCULOS TOTAIS DOS CARDS ---
-  const totalIncome = transactionsInPeriod
-    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID)
+  // Data efetiva de recebimento/pagamento (fallback no vencimento se não houver data de pagamento).
+  const paidInPeriod = (t: Transaction) => {
+    const d = t.paymentDate || t.date;
+    return d >= startDate && d <= endDate;
+  };
+
+  // Recebido: tudo que foi RECEBIDO no período (receitas pagas, pela data de recebimento).
+  const totalIncome = transactions
+    .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID && paidInPeriod(t))
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const totalExpense = transactionsInPeriod
-    .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID)
+  // Despesas Pagas: tudo que foi PAGO no período (despesas pagas, pela data de pagamento).
+  const totalExpense = transactions
+    .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID && paidInPeriod(t))
     .reduce((acc, curr) => acc + curr.amount, 0);
 
   const realizedBalance = totalIncome - totalExpense;
 
-  // Saldo real na conta: TUDO que já foi recebido menos TUDO que já foi pago,
-  // sem qualquer filtro de data.
+  // Saldo real na conta: TUDO que já foi recebido menos TUDO que já foi pago, sem filtro de data.
   const accountBalance = transactions
     .filter(t => t.status === PaymentStatus.PAID)
     .reduce((acc, t) => acc + (t.type === TransactionType.INCOME ? t.amount : -t.amount), 0);
 
-  const pendingIncome = transactionsInPeriod
+  // A Receber: todo saldo a receber pendente (a vencer), sem filtro de data.
+  const pendingIncome = transactions
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date >= todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
+  // A Pagar: despesas pendentes + atrasadas do período (por vencimento).
   const pendingExpense = transactionsInPeriod
     .filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PENDING)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const lateIncomeTotal = transactionsInPeriod
+  // Total Atrasado: todas as receitas em atraso, sem filtro de data.
+  const lateIncomeTotal = transactions
     .filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PENDING && t.date < todayStr)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
