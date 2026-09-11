@@ -13,7 +13,7 @@ import { UsersPage } from './pages/UsersPage';
 import { AICoachPage } from './pages/AICoachPage';
 import { RSVPPage } from './src/pages/RSVPPage';
 import LogsPage from './src/pages/LogsPage';
-import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence } from './types';
+import { Student, Group, Plan, Transaction, Activity, User, UserRole, PaymentStatus, TransactionType, PaymentMethod, Occurrence, TransactionCategory } from './types';
 import { supabase } from './lib/supabaseClient';
 import { Menu, Loader2 } from 'lucide-react';
 import { sendZApiMessage } from './services/zapiService';
@@ -184,6 +184,7 @@ const AppContent: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const activitiesRef = useRef<Activity[]>([]);
 
   useEffect(() => { activitiesRef.current = activities; }, [activities]);
@@ -283,6 +284,12 @@ const AppContent: React.FC = () => {
         setOccurrences(occurrencesData.map((o: any) => ({ id: o.id, studentId: o.student_id, description: o.description, date: o.date, createdAt: o.created_at })));
     } catch (e: any) { errors.push(e.message); }
 
+    // Categorias de receita/despesa (best-effort: tela do Financeiro tem fallback padrão).
+    try {
+        const catData = await selectWithRetry('categorias', () => supabase.from('transaction_categories').select('*').order('name', { ascending: true }));
+        setCategories(catData.map((c: any) => ({ id: c.id, name: c.name, type: c.type } as TransactionCategory)));
+    } catch (e: any) { console.warn('Categorias indisponíveis:', e.message); }
+
     // Alunos + transações (varia conforme o perfil do usuário logado).
     try {
         // Carrega os alunos SEM a foto (leve e rápido). As fotos vêm depois, em segundo plano.
@@ -343,6 +350,7 @@ const AppContent: React.FC = () => {
             externalReference: t.external_reference,
             preferenceId: t.preference_id,
             recurrence: t.recurrence || 'NONE',
+            recurrenceGroupId: t.recurrence_group_id || undefined,
             createdAt: t.created_at
         } as Transaction)));
     } catch (e: any) { errors.push(e.message); }
@@ -459,6 +467,7 @@ const AppContent: React.FC = () => {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, scheduleFullRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, scheduleFullRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'student_occurrences' }, scheduleFullRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_categories' }, scheduleFullRefresh)
         .subscribe();
 
     return () => { supabase.removeChannel(channel); clearTimeout(fullTimer); clearTimeout(rsvpTimer); };
@@ -869,10 +878,63 @@ const AppContent: React.FC = () => {
       }
   };
 
-  const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
-    const payload = { description: t.description, category: t.category || 'Outros', amount: t.amount, type: t.type, date: t.date, payment_date: t.paymentDate, status: t.status, student_id: safeId(t.studentId), plan_id: safeId(t.planId), payment_method: t.paymentMethod, recurrence: t.recurrence || 'NONE' };
-    await supabase.from('transactions').insert([payload]);
+  const handleAddTransaction = async (t: Omit<Transaction, 'id'> & { recurrenceMonths?: number }) => {
+    const base = {
+      description: t.description, category: t.category || 'Outros', amount: t.amount, type: t.type,
+      payment_date: t.paymentDate, status: t.status, student_id: safeId(t.studentId),
+      plan_id: safeId(t.planId), payment_method: t.paymentMethod
+    };
+
+    if (t.recurrence === 'MONTHLY') {
+      // Recorrência real: gera 1 lançamento por mês, todos vinculados por um mesmo grupo.
+      const months = Math.max(1, Math.min(Number(t.recurrenceMonths) || 12, 60));
+      const groupId = (globalThis.crypto?.randomUUID?.() || `rec_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+      const [y, m, d] = (t.date || '').split('-').map(Number);
+      const rows = [];
+      for (let i = 0; i < months; i++) {
+        const dt = new Date(y, (m - 1) + i, d || 1);
+        const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        rows.push({
+          ...base,
+          date: dateStr,
+          // Só o 1º mês herda o status/pagamento informado; os próximos nascem pendentes.
+          status: i === 0 ? t.status : PaymentStatus.PENDING,
+          payment_date: i === 0 ? t.paymentDate : null,
+          recurrence: 'MONTHLY',
+          recurrence_group_id: groupId
+        });
+      }
+      await supabase.from('transactions').insert(rows);
+    } else {
+      await supabase.from('transactions').insert([{ ...base, date: t.date, recurrence: 'NONE' }]);
+    }
     await fetchData(true);
+  };
+
+  // Exclui uma transação; se recorrente, permite excluir todo o grupo.
+  const handleDeleteTransaction = async (t: Transaction, deleteAll: boolean) => {
+    if (deleteAll && t.recurrenceGroupId) {
+      await supabase.from('transactions').delete().eq('recurrence_group_id', t.recurrenceGroupId);
+    } else {
+      await supabase.from('transactions').delete().eq('id', t.id);
+    }
+    await fetchData(true);
+  };
+
+  // Categorias de receita/despesa (criar/excluir).
+  const handleAddCategory = async (name: string, type: TransactionType) => {
+    const clean = (name || '').trim();
+    if (!clean) return;
+    const { data, error } = await supabase.from('transaction_categories').insert([{ name: clean, type }]).select().single();
+    if (!error && data) {
+      setCategories(prev => [...prev, { id: data.id, name: data.name, type: data.type }]);
+    } else if (error && !/duplicate|unique/i.test(error.message || '')) {
+      alert(`Erro ao criar categoria: ${error.message}`);
+    }
+  };
+  const handleDeleteCategory = async (id: string) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
+    await supabase.from('transaction_categories').delete().eq('id', id);
   };
 
   const handleGenerateGlobalTuitions = async (studentId?: string) => {
@@ -1321,7 +1383,7 @@ const AppContent: React.FC = () => {
           <Routes>
             <Route path="/dashboard" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
             <Route path="/students" element={<StudentsPage students={students} groups={groups} plans={plans} transactions={transactions} activities={activities} occurrences={occurrences} onAddStudent={handleAddStudent} onUpdateStudent={handleUpdateStudent} onUpdateTransaction={handleUpdateTransaction} onAddTransaction={handleAddTransaction} onAddOccurrence={handleAddOccurrence} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onGenerateTuitions={handleGenerateGlobalTuitions} initialFilter={location.state?.filter} currentUser={currentUser} onBatchAddStudents={() => {}} />} />
-            <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} />} />
+            <Route path="/finance" element={<FinancePage students={students} groups={groups} transactions={transactions} plans={plans} categories={categories} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddCategory={handleAddCategory} onDeleteCategory={handleDeleteCategory} />} />
             <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
             <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />
             <Route path="/plans" element={<PlansPage plans={plans} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />} />

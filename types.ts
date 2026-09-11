@@ -191,7 +191,14 @@ export interface Transaction {
   externalReference?: string; 
   preferenceId?: string; 
   recurrence?: 'NONE' | 'MONTHLY'; // Novo campo
+  recurrenceGroupId?: string; // Vincula lançamentos recorrentes gerados juntos
   createdAt?: string;
+}
+
+export interface TransactionCategory {
+  id: string;
+  name: string;
+  type: TransactionType; // INCOME (Receita) ou EXPENSE (Despesa)
 }
 
 export interface Occurrence {

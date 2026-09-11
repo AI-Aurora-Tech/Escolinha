@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student, Group } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, FileSpreadsheet, User as UserIcon, ShieldCheck, Sparkles } from 'lucide-react';
+import { Transaction, TransactionType, PaymentStatus, Plan, PaymentMethod, Student, Group, TransactionCategory } from '../types';
+import { ArrowUpCircle, ArrowDownCircle, Plus, Filter, Download, Calendar, FileText, CheckCircle, X, Settings, Save, Lock, Smartphone, Search, Users, Repeat, Clock, CreditCard, AlertCircle, ChevronRight, Edit, Trash2, FileSpreadsheet, User as UserIcon, ShieldCheck, Sparkles } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -14,12 +14,18 @@ interface FinancePageProps {
   groups: Group[]; // Adicionado prop de grupos
   transactions: Transaction[];
   plans: Plan[];
+  categories: TransactionCategory[];
   onAddTransaction: (t: Omit<Transaction, 'id'> & { recurrenceMonths?: number }) => void;
   onUpdateTransaction: (t: Partial<Transaction>) => void;
+  onDeleteTransaction: (t: Transaction, deleteAll: boolean) => void;
+  onAddCategory: (name: string, type: TransactionType) => void;
+  onDeleteCategory: (id: string) => void;
 }
 
-export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, groups, onAddTransaction, onUpdateTransaction }) => {
-  const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SETTINGS'>('TRANSACTIONS');
+export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, students, groups, categories, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onAddCategory, onDeleteCategory }) => {
+  const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'SUMMARY' | 'SETTINGS'>('TRANSACTIONS');
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatType, setNewCatType] = useState<TransactionType>(TransactionType.EXPENSE);
   
   // Settings State
   const [mpToken, setMpToken] = useState('');
@@ -48,8 +54,14 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
   const [targetStudentId, setTargetStudentId] = useState('');
   const [targetGroupId, setTargetGroupId] = useState('');
 
-  const INCOME_CATEGORIES = ['Mensalidade', 'Uniforme', 'Taxa de Torneio', 'Patrocínio', 'Doação', 'Outros'];
-  const EXPENSE_CATEGORIES = ['Aluguel Campo', 'Salário Professor', 'Energia/Água', 'Material Esportivo', 'Marketing', 'Manutenção', 'Outros'];
+  // Categorias vêm do banco (criáveis). Fallback nos padrões caso ainda não carregadas.
+  const DEFAULT_INCOME = ['Mensalidade', 'Taxa de Jogo'];
+  const DEFAULT_EXPENSE = ['Transporte', 'Alimentação', 'Salário'];
+  const withOutros = (arr: string[]) => (arr.includes('Outros') ? arr : [...arr, 'Outros']);
+  const incomeFromDb = categories.filter(c => c.type === TransactionType.INCOME).map(c => c.name);
+  const expenseFromDb = categories.filter(c => c.type === TransactionType.EXPENSE).map(c => c.name);
+  const INCOME_CATEGORIES = withOutros(incomeFromDb.length ? incomeFromDb : DEFAULT_INCOME);
+  const EXPENSE_CATEGORIES = withOutros(expenseFromDb.length ? expenseFromDb : DEFAULT_EXPENSE);
 
   const [newTx, setNewTx] = useState<Partial<Transaction> & { recurrenceMonths?: number }>({
     description: '', category: 'Outros', amount: 0, type: TransactionType.EXPENSE, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), status: PaymentStatus.PAID, paymentMethod: PaymentMethod.CASH, recurrence: 'NONE', recurrenceMonths: 12
@@ -245,6 +257,39 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
       }
   };
 
+  // Exclusão com tratamento de recorrência (excluir só este ou todo o grupo).
+  const handleDeleteTx = (t: Transaction) => {
+    if (!confirm('Deseja excluir este lançamento?')) return;
+    if (t.recurrenceGroupId) {
+      const groupCount = transactions.filter(x => x.recurrenceGroupId === t.recurrenceGroupId).length;
+      const all = confirm(`Este lançamento é recorrente (${groupCount} parcelas no grupo).\n\nOK = excluir TODAS as ${groupCount} parcelas.\nCancelar = excluir somente esta.`);
+      onDeleteTransaction(t, all);
+    } else {
+      onDeleteTransaction(t, false);
+    }
+  };
+
+  // Resumo (fluxo de caixa realizado) por mês e por categoria.
+  const summaryByMonth = (() => {
+    const map = new Map<string, { income: number; expense: number; incomeByCat: Record<string, number>; expenseByCat: Record<string, number> }>();
+    transactionsInPeriod.filter(t => t.status === PaymentStatus.PAID).forEach(t => {
+      const month = (t.date || '').slice(0, 7);
+      if (!month) return;
+      if (!map.has(month)) map.set(month, { income: 0, expense: 0, incomeByCat: {}, expenseByCat: {} });
+      const e = map.get(month)!;
+      const cat = t.category || 'Outros';
+      if (t.type === TransactionType.INCOME) { e.income += t.amount; e.incomeByCat[cat] = (e.incomeByCat[cat] || 0) + t.amount; }
+      else { e.expense += t.amount; e.expenseByCat[cat] = (e.expenseByCat[cat] || 0) + t.amount; }
+    });
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  })();
+
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-');
+    const nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return `${nomes[Number(m) - 1] || m}/${y}`;
+  };
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
     const parts = dateString.split('-');
@@ -321,8 +366,9 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
         <h2 className="text-2xl font-bold text-gray-800">Fluxo de Caixa</h2>
         <div className="flex gap-2 w-full md:w-auto">
              <div className="flex bg-gray-100 p-1 rounded-lg w-full md:w-auto">
-                <button onClick={() => setActiveTab('TRANSACTIONS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Transações</button>
-                <button onClick={() => setActiveTab('SETTINGS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}><Settings className="w-4 h-4" /> Configurações</button>
+                <button onClick={() => setActiveTab('TRANSACTIONS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'TRANSACTIONS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Lançamentos</button>
+                <button onClick={() => setActiveTab('SUMMARY')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'SUMMARY' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Resumo</button>
+                <button onClick={() => setActiveTab('SETTINGS')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'SETTINGS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}><Settings className="w-4 h-4" /> Config.</button>
              </div>
         </div>
       </div>
@@ -351,9 +397,88 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                   </div>
               </div>
 
-              <div className="lg:col-span-2 flex justify-center pt-4">
-                  <button onClick={handleSaveSettings} disabled={loadingSettings} className="flex items-center gap-2 bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-lg font-bold disabled:opacity-50"><Save className="w-5 h-5" />{loadingSettings ? 'Salvando...' : 'Salvar Todas as Configurações'}</button>
+              {/* Gestão de categorias */}
+              <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="mb-4 border-b border-gray-100 pb-4">
+                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Filter className="w-5 h-5 text-primary-600" /> Categorias</h3>
+                      <p className="text-xs text-gray-500 mt-1">Crie e organize as categorias de Receitas e Despesas.</p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                      <select value={newCatType} onChange={e => setNewCatType(e.target.value as TransactionType)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500">
+                          <option value={TransactionType.INCOME}>Receita</option>
+                          <option value={TransactionType.EXPENSE}>Despesa</option>
+                      </select>
+                      <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="Nome da categoria" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500" />
+                      <button onClick={() => { const n = newCatName.trim(); if (n) { onAddCategory(n, newCatType); setNewCatName(''); } }} className="flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 text-sm font-bold"><Plus className="w-4 h-4" /> Adicionar</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {[{ t: TransactionType.INCOME, label: 'Receitas', color: 'green' }, { t: TransactionType.EXPENSE, label: 'Despesas', color: 'red' }].map(sec => (
+                          <div key={sec.t}>
+                              <p className={`text-xs font-black uppercase mb-2 text-${sec.color}-600`}>{sec.label}</p>
+                              <div className="space-y-1">
+                                  {categories.filter(c => c.type === sec.t).sort((a, b) => a.name.localeCompare(b.name)).map(c => (
+                                      <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                          <span className="text-sm text-gray-700">{c.name}</span>
+                                          <button onClick={() => { if (confirm(`Excluir a categoria "${c.name}"?`)) onDeleteCategory(c.id); }} className="text-gray-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                                      </div>
+                                  ))}
+                                  {categories.filter(c => c.type === sec.t).length === 0 && <p className="text-xs text-gray-400 italic">Nenhuma categoria cadastrada.</p>}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
               </div>
+
+              <div className="lg:col-span-2 flex justify-center pt-4">
+                  <button onClick={handleSaveSettings} disabled={loadingSettings} className="flex items-center gap-2 bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors shadow-lg font-bold disabled:opacity-50"><Save className="w-5 h-5" />{loadingSettings ? 'Salvando...' : 'Salvar Configurações de Integração'}</button>
+              </div>
+          </div>
+      ) : activeTab === 'SUMMARY' ? (
+          <div className="space-y-4">
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <h3 className="text-lg font-bold text-gray-800">Resumo do período (realizado)</h3>
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5"><Calendar className="w-4 h-4 text-gray-400" /><input type="date" className="bg-transparent text-sm outline-none text-gray-600" value={startDate} onChange={e => setStartDate(e.target.value)} /><span className="text-gray-400">-</span><input type="date" className="bg-transparent text-sm outline-none text-gray-600" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><p className="text-[10px] font-black text-green-500 uppercase">Entradas</p><h3 className="text-xl font-black text-green-600">R$ {totalIncome.toFixed(2)}</h3></div>
+                  <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><p className="text-[10px] font-black text-red-500 uppercase">Saídas</p><h3 className="text-xl font-black text-red-600">R$ {totalExpense.toFixed(2)}</h3></div>
+                  <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><p className="text-[10px] font-black text-gray-400 uppercase">Saldo</p><h3 className={`text-xl font-black ${realizedBalance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>R$ {realizedBalance.toFixed(2)}</h3></div>
+              </div>
+
+              {summaryByMonth.length === 0 && <div className="bg-white p-10 rounded-xl border border-gray-100 text-center text-gray-400 italic">Sem lançamentos realizados no período.</div>}
+
+              {summaryByMonth.map(([ym, data]) => {
+                  const saldo = data.income - data.expense;
+                  return (
+                    <div key={ym} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-100">
+                            <h4 className="font-black text-gray-800 uppercase text-sm">{monthLabel(ym)}</h4>
+                            <div className="flex items-center gap-4 text-sm font-bold">
+                                <span className="text-green-600">+{data.income.toFixed(2)}</span>
+                                <span className="text-red-600">-{data.expense.toFixed(2)}</span>
+                                <span className={saldo >= 0 ? 'text-blue-600' : 'text-orange-600'}>= {saldo.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5">
+                            <div>
+                                <p className="text-[10px] font-black text-green-500 uppercase mb-2">Entradas por categoria</p>
+                                {Object.entries(data.incomeByCat).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                                    <div key={cat} className="flex justify-between text-sm py-1 border-b border-gray-50"><span className="text-gray-600">{cat}</span><span className="font-bold text-green-600">R$ {val.toFixed(2)}</span></div>
+                                ))}
+                                {Object.keys(data.incomeByCat).length === 0 && <p className="text-xs text-gray-400 italic">—</p>}
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-red-500 uppercase mb-2">Saídas por categoria</p>
+                                {Object.entries(data.expenseByCat).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                                    <div key={cat} className="flex justify-between text-sm py-1 border-b border-gray-50"><span className="text-gray-600">{cat}</span><span className="font-bold text-red-600">R$ {val.toFixed(2)}</span></div>
+                                ))}
+                                {Object.keys(data.expenseByCat).length === 0 && <p className="text-xs text-gray-400 italic">—</p>}
+                            </div>
+                        </div>
+                    </div>
+                  );
+              })}
           </div>
       ) : (
       <>
@@ -489,6 +614,7 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                       <div className="flex justify-end gap-2">
                                         <button onClick={() => handleOpenEditModal(t)} className="text-primary-600 hover:text-primary-800 p-1.5 hover:bg-primary-50 rounded-lg transition-colors" title="Editar"><Edit className="w-4 h-4" /></button>
                                         {t.status === PaymentStatus.PENDING && (<button onClick={() => handleOpenPayModal(t)} className="text-green-600 hover:text-green-800 p-1.5 hover:bg-green-50 rounded-lg transition-colors" title="Dar Baixa"><CheckCircle className="w-6 h-6" /></button>)}
+                                        <button onClick={() => handleDeleteTx(t)} className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
                                       </div>
                                     </td>
                                 </tr>
@@ -529,7 +655,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                                     }`}>
                                         {t.status === PaymentStatus.PAID ? 'Pago' : t.status === PaymentStatus.CANCELLED ? 'Cancelado' : (isLate ? 'Atrasada' : 'Pendente')}
                                     </span>
-                                    <button onClick={() => handleOpenEditModal(t)} className="mt-2 text-primary-600"><Edit className="w-4 h-4" /></button>
+                                    <div className="flex items-center gap-3 mt-2">
+                                        <button onClick={() => handleOpenEditModal(t)} className="text-primary-600"><Edit className="w-4 h-4" /></button>
+                                        <button onClick={() => handleDeleteTx(t)} className="text-red-500"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -630,9 +759,15 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Categoria</label>
-                            <select className="w-full border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={newTx.category} onChange={e => setNewTx({...newTx, category: e.target.value})}>
-                                {(newTx.type === TransactionType.INCOME ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                            </select>
+                            <div className="flex gap-2">
+                                <select className="flex-1 border rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-primary-500" value={newTx.category} onChange={e => setNewTx({...newTx, category: e.target.value})}>
+                                    {(newTx.type === TransactionType.INCOME ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                                <button type="button" title="Nova categoria" onClick={() => {
+                                    const nome = (window.prompt(`Nova categoria de ${newTx.type === TransactionType.INCOME ? 'Receita' : 'Despesa'}:`) || '').trim();
+                                    if (nome) { onAddCategory(nome, newTx.type as TransactionType); setNewTx({ ...newTx, category: nome }); }
+                                }} className="px-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"><Plus className="w-4 h-4" /></button>
+                            </div>
                         </div>
                         <div><label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Valor (R$)</label><input className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-primary-500 font-bold" type="number" step="0.01" min="0" required value={newTx.amount || ''} onChange={e => setNewTx({...newTx, amount: parseFloat(e.target.value)})} /></div>
                     </div>
