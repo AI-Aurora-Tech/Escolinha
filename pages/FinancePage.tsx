@@ -157,10 +157,10 @@ export const FinancePage: React.FC<FinancePageProps> = ({ transactions, plans, s
 
   const realizedBalance = totalIncome - totalExpense;
 
-  // Saldo na conta: tudo que já foi RECEBIDO menos tudo que já foi PAGO até a data final
-  // informada (acumulado, ignora a data inicial). Usa a data de pagamento (fallback: vencimento).
+  // Saldo real na conta: TUDO que já foi recebido menos TUDO que já foi pago,
+  // sem qualquer filtro de data.
   const accountBalance = transactions
-    .filter(t => t.status === PaymentStatus.PAID && (t.paymentDate || t.date) <= endDate)
+    .filter(t => t.status === PaymentStatus.PAID)
     .reduce((acc, t) => acc + (t.type === TransactionType.INCOME ? t.amount : -t.amount), 0);
 
   const pendingIncome = transactionsInPeriod
