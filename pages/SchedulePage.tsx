@@ -26,6 +26,16 @@ interface SchedulePageProps {
   onRefresh?: () => Promise<void>;
 }
 
+type ConvocationRecipient = 'GUARDIAN' | 'STUDENT';
+
+// Telefone e nome de quem recebe a convocação, conforme a escolha feita antes do envio.
+const getConvocationContact = (student: Student, recipient: ConvocationRecipient) =>
+  recipient === 'STUDENT'
+    ? { phone: (student.phone || '').replace(/\D/g, ''), name: student.name }
+    : { phone: (student.guardian?.phone || '').replace(/\D/g, ''), name: student.guardian?.name || 'Responsável' };
+
+const recipientLabel = (recipient: ConvocationRecipient) => recipient === 'STUDENT' ? 'alunos' : 'responsáveis';
+
 export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students, groups, transactions, onAddActivity, onUpdateActivity, onUpdateAttendance, onUpdateFeePayment, onDeleteActivity, onAddTransaction, onUpdateTransaction, currentUser, onRefresh }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
@@ -107,6 +117,9 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
   const [notifyLogs, setNotifyLogs] = useState<string[]>([]);
   const [notifyActivity, setNotifyActivity] = useState<Activity | null>(null);
   const [notifyIsFeeCharging, setNotifyIsFeeCharging] = useState(false); 
+  // Destinatário da convocação: telefone do responsável ou do próprio aluno.
+  const [notifyRecipient, setNotifyRecipient] = useState<ConvocationRecipient>('GUARDIAN');
+  const [recipientPrompt, setRecipientPrompt] = useState<{ activity: Activity; students: Student[]; individual: boolean } | null>(null);
   const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
@@ -270,20 +283,13 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       return list.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  const handleIndividualNotify = async (activity: Activity, student: Student) => {
-    if (!confirm(`Enviar convite para ${student.name}?`)) return;
-
-    const phone = student.guardian.phone.replace(/\D/g, '');
-    if (!phone) {
-        alert("Sem telefone para este aluno.");
-        return;
-    }
-
+  const buildConvocationMessage = (activity: Activity, student: Student, recipient: ConvocationRecipient) => {
     const type = activity.type === 'GAME' ? 'JOGO' : 'TREINO';
     const emoji = activity.type === 'GAME' ? '🏆' : '⚽';
     const rsvpLink = `${window.location.origin}/rsvp/${activity.id}/${student.id}`;
-    
-    let msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${activity.title}*\n📅 Data: ${formatDate(activity.date)}\n`;
+    const { name } = getConvocationContact(student, recipient);
+
+    let msg = `Olá ${name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${activity.title}*\n📅 Data: ${formatDate(activity.date)}\n`;
     if (activity.type === 'GAME') msg += `⏰ Horário do Jogo: ${activity.startTime}\n`; else msg += `⏰ Horário: ${activity.startTime} às ${activity.endTime}\n`;
     if (activity.type === 'GAME') {
         if (activity.opponent) msg += `⚔️ Adversário: ${activity.opponent}\n`;
@@ -303,8 +309,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
         msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
     }
     msg += `\n\nContamos com a presença!`;
+    return msg;
+  };
 
-    const sent = await sendZApiMessage(phone, msg);
+  const handleIndividualNotify = (activity: Activity, student: Student) => {
+    // Antes de enviar, pergunta se a convocação vai para o responsável ou para o aluno.
+    setRecipientPrompt({ activity, students: [student], individual: true });
+  };
+
+  const sendIndividualConvocation = async (activity: Activity, student: Student, recipient: ConvocationRecipient) => {
+    const { phone } = getConvocationContact(student, recipient);
+    if (!phone) {
+        alert(recipient === 'STUDENT' ? `O aluno ${student.name} não tem telefone cadastrado.` : `O responsável pelo aluno ${student.name} não tem telefone cadastrado.`);
+        return;
+    }
+
+    const sent = await sendZApiMessage(phone, buildConvocationMessage(activity, student, recipient));
     
     if (sent) {
         await supabase.from('activities').update({ sent_at: new Date().toISOString() }).eq('id', activity.id);
@@ -312,6 +332,20 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
     } else {
         alert(`Erro ao enviar convite para ${student.name}.`);
     }
+  };
+
+  const handleChooseRecipient = (recipient: ConvocationRecipient) => {
+    if (!recipientPrompt) return;
+    const { activity, students: targets, individual } = recipientPrompt;
+    setRecipientPrompt(null);
+
+    if (individual) {
+        sendIndividualConvocation(activity, targets[0], recipient);
+        return;
+    }
+
+    setNotifyRecipient(recipient);
+    setNotifyActivity(activity); setNotifyQueue(targets); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targets.length} atletas (envio para os ${recipientLabel(recipient)})...`]); setNotifyCountdown(1);
   };
 
   const getFilteredActivitiesForReport = (type?: 'TRAINING' | 'GAME') => allSortedActivities.filter(a => a.date >= reportStartDate && a.date <= reportEndDate && (type ? a.type === type : true));
@@ -623,7 +657,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           : `Convocar ${targetStudents.length} atletas via WhatsApp?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`;
 
       if (confirm(confirmMsg)) {
-          setNotifyActivity(currentActivity); setNotifyQueue(targetStudents); setNotifyCurrentIndex(0); setNotifyIsRunning(true); setNotifyModalOpen(true); setNotifyIsFeeCharging(false); setNotifyLogs([`Fila iniciada para ${targetStudents.length} atletas...`]); setNotifyCountdown(1);
+          // Antes de enviar, pergunta se a convocação vai para os responsáveis ou para os alunos.
+          setRecipientPrompt({ activity: currentActivity, students: targetStudents, individual: false });
       }
   };
 
@@ -641,7 +676,12 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
 
   const processNotifyItem = async (student: Student) => {
       if (!notifyActivity) return;
-      const phone = student.guardian.phone.replace(/\D/g, '');
+      const isResults = notifyLogs.some(l => l.includes('resultados'));
+      const isConvocation = !notifyIsFeeCharging && !isResults;
+      // Convocação usa o destinatário escolhido; cobrança e resultado continuam indo para o responsável.
+      const phone = isConvocation
+          ? getConvocationContact(student, notifyRecipient).phone
+          : student.guardian.phone.replace(/\D/g, '');
       const extRef = `game_fee_${notifyActivity.id}_${student.id}`;
 
       if (phone) {
@@ -649,7 +689,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
           
           if (notifyIsFeeCharging) {
               msg = `⚽ *COBRANÇA DE TAXA - Garotos do Martinica*\n\nOlá *${student.guardian.name}*! Notamos que a taxa referente ao jogo *${notifyActivity.title}* do atleta *${student.name}* (presente na partida) ainda não foi regularizada.\n\n💰 Valor: *R$ ${notifyActivity.fee?.toFixed(2)}*\n\n*Pagamento via PIX (Celular):* 11987019721\nNome: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA\n\nPor favor, realize o pagamento para mantermos o histórico financeiro em dia. Caso já tenha pago, favor desconsiderar.`;
-          } else if (notifyLogs.some(l => l.includes('resultados'))) {
+          } else if (isResults) {
               msg = `⚽ *RESULTADO DE JOGO - Garotos do Martinica*\n\nOlá ${student.guardian.name}, o jogo de hoje terminou! 🏆\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n⚔️ Adversário: *${notifyActivity.opponent || 'Não informado'}*\n\n📊 *PLACAR FINAL:* \n*GAROTOS ${notifyActivity.homeScore} X ${notifyActivity.awayScore} ${notifyActivity.opponent || 'ADVERSÁRIO'}*\n`;
               if ((notifyActivity.homeScore || 0) > 0 && notifyActivity.scorers && notifyActivity.scorers.length > 0) {
                   msg += `\n⚽ *NOSSOS GOLS:*`;
@@ -661,30 +701,7 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
               }
               msg += `\n\nParabéns a todos os atletas pelo empenho! ⚽🔥`;
           } else {
-              const type = notifyActivity.type === 'GAME' ? 'JOGO' : 'TREINO';
-              const emoji = notifyActivity.type === 'GAME' ? '🏆' : '⚽';
-              const rsvpLink = `${window.location.origin}/rsvp/${notifyActivity.id}/${student.id}`;
-              
-              msg = `Olá ${student.guardian.name}, aqui é da Garotos do Martinica! ${emoji}\n\n*COMUNICADO: ${type}*\nAtleta: *${student.name}*\n\n📌 *${notifyActivity.title}*\n📅 Data: ${formatDate(notifyActivity.date)}\n`;
-              if (notifyActivity.type === 'GAME') msg += `⏰ Horário do Jogo: ${notifyActivity.startTime}\n`; else msg += `⏰ Horário: ${notifyActivity.startTime} às ${notifyActivity.endTime}\n`;
-              if (notifyActivity.type === 'GAME') {
-                  if (notifyActivity.opponent) msg += `⚔️ Adversário: ${notifyActivity.opponent}\n`;
-                  if (notifyActivity.presentationLocation) msg += `📍 Local de Apresentação: ${notifyActivity.presentationLocation}\n`;
-                  if (notifyActivity.presentationTime) msg += `🕒 Horário de Apresentação: ${notifyActivity.presentationTime}\n`;
-                  if (notifyActivity.directToGameTime) msg += `🕒 Se for direto para o jogo chegar às: ${notifyActivity.directToGameTime}\n`;
-                  if (notifyActivity.askTransport) msg += `🚌 Enquete de Transporte: Responda no link se vai direto ou com a Van do Martinica!\n`;
-                  if (notifyActivity.fee && notifyActivity.fee > 0) {
-                      msg += `💰 Taxa: R$ ${notifyActivity.fee.toFixed(2)}\n`;
-                  }
-              }
-              if (notifyActivity.location) msg += `📍 ${notifyActivity.type === 'GAME' ? 'Local do Jogo' : 'Local'}: ${notifyActivity.location}\n`;
-              if (notifyActivity.description) msg += `\n📝 *Observação:* ${notifyActivity.description}\n`;
-              if (notifyActivity.type === 'GAME') {
-                  msg += `\n✅ *CONFIRMAÇÃO DE PRESENÇA OBRIGATÓRIA*\nClique no link abaixo para confirmar ou justificar ausência:\n${rsvpLink}`;
-              } else {
-                  msg += `\n✅ *Por favor, confirme a participação do atleta respondendo a este convite.*`;
-              }
-              msg += `\n\nContamos com a presença!`;
+              msg = buildConvocationMessage(notifyActivity, student, notifyRecipient);
           }
           
       const sent = await sendZApiMessage(phone, msg);
@@ -694,7 +711,8 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
       }
       setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
       } else {
-          setNotifyLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
+          const who = isConvocation && notifyRecipient === 'STUDENT' ? 'do aluno' : 'do responsável';
+          setNotifyLogs(prev => [`⚠️ Sem telefone ${who} para ${student.name}`, ...prev]);
       }
       
       setNotifyCurrentIndex(prev => prev + 1); 
@@ -1064,6 +1082,24 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({ activities, students
             <div className="mb-6"><div className="flex justify-between text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><span>Progresso da Fila:</span><span>{notifyCurrentIndex} de {notifyQueue.length}</span></div><div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${(notifyCurrentIndex / notifyQueue.length) * 100}%` }}></div></div>{notifyIsRunning ? (<div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm text-center font-bold animate-pulse">Enviando em {notifyCountdown}s...</div>) : (<div className="bg-green-50 text-green-800 p-3 rounded-xl text-sm text-center font-bold">Processo Concluído!</div>)}</div>
             <div className="bg-gray-900 text-green-400 p-4 rounded-xl h-48 overflow-y-auto text-xs font-mono shadow-inner mb-4">{notifyLogs.map((log, i) => (<div key={i} className="mb-1 border-b border-gray-800 pb-1 last:border-0">{log}</div>))}</div>
             <div className="flex justify-end gap-2">{notifyIsRunning ? (<button onClick={() => setNotifyIsRunning(false)} className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors"><Pause className="w-4 h-4 inline mr-1" /> PAUSAR</button>) : (<button onClick={() => setNotifyIsRunning(true)} className="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-xl text-sm font-bold hover:bg-green-200 transition-colors" disabled={notifyCurrentIndex >= notifyQueue.length}><Play className="w-4 h-4 inline mr-1" /> CONTINUAR</button>)}<button onClick={() => setNotifyModalOpen(false)} className="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">FECHAR</button></div>
+          </div>
+        </div>
+      )}
+
+      {recipientPrompt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border-t-4 border-blue-500">
+            <div className="flex justify-between items-center mb-2"><h3 className="text-lg font-black flex items-center gap-2 text-gray-800 uppercase tracking-tighter"><Megaphone className="w-5 h-5 text-blue-600" /> Enviar convocação</h3><button onClick={() => setRecipientPrompt(null)}><X className="text-gray-400" /></button></div>
+            <p className="text-sm text-gray-600 mb-5">
+              {recipientPrompt.individual
+                ? <>Para quem enviar a convocação de <strong>{recipientPrompt.students[0]?.name}</strong>?</>
+                : <>Para quem enviar a convocação dos <strong>{recipientPrompt.students.length}</strong> atletas?</>}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => handleChooseRecipient('GUARDIAN')} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"><Users className="w-4 h-4" /> Responsáveis (telefone do responsável)</button>
+              <button onClick={() => handleChooseRecipient('STUDENT')} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-bold hover:bg-indigo-100 transition-colors"><UserIcon className="w-4 h-4" /> Alunos (telefone do aluno)</button>
+              <button onClick={() => setRecipientPrompt(null)} className="w-full px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">Cancelar</button>
+            </div>
           </div>
         </div>
       )}
