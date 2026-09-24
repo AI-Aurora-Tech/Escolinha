@@ -826,16 +826,45 @@ const AppContent: React.FC = () => {
       if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
       if (t.recurrence !== undefined) payload.recurrence = t.recurrence;
 
+      // Duplicidade: só é bloqueada quando o mesmo aluno já tem OUTRA cobrança (não cancelada)
+      // com a descrição EXATAMENTE igual (descrição inteira). Mudar só o vencimento é permitido.
+      const currentTx = transactions.find(tx => tx.id === t.id);
+      const targetStudentId = t.studentId !== undefined ? t.studentId : currentTx?.studentId;
+      const targetDescription = (t.description ?? currentTx?.description ?? '').trim();
+      if (targetStudentId && targetDescription) {
+          // Taxas de jogo têm unicidade própria (external_reference) e podem repetir o título do jogo.
+          const isGameFee = (ref?: string) => !!ref && ref.startsWith('game_fee_');
+          const editingGameFee = isGameFee(t.externalReference ?? currentTx?.externalReference);
+          const duplicate = transactions.find(tx =>
+              tx.id !== t.id &&
+              !(editingGameFee && isGameFee(tx.externalReference)) &&
+              tx.studentId === targetStudentId &&
+              tx.status !== PaymentStatus.CANCELLED &&
+              (tx.description || '').trim() === targetDescription
+          );
+          if (duplicate) {
+              alert(`Não foi possível salvar: este aluno já possui outra cobrança com a descrição exatamente igual ("${targetDescription}"). Altere a descrição ou ajuste a cobrança existente.`);
+              return;
+          }
+      }
+
       // Optimistic update
       setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
 
-      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
+      const { data: savedRows, error } = await supabase.from('transactions').update(payload).eq('id', t.id).select('id');
+      if (!error && (!savedRows || savedRows.length === 0)) {
+        // Nenhuma linha foi alterada (ex.: bloqueio de permissão no banco): não finge que salvou.
+        alert("Não foi possível salvar a alteração da cobrança (nenhum registro atualizado). Tente novamente.");
+        fetchData(true);
+        return;
+      }
       if(!error) {
-        if (t.status === PaymentStatus.PAID) {
-            const fullTx = transactions.find(tx => tx.id === t.id);
+        const fullTx = transactions.find(tx => tx.id === t.id);
+        // Só avisa quando a transação passa a ficar paga (não em edições de lançamentos já pagos).
+        if (t.status === PaymentStatus.PAID && fullTx?.status !== PaymentStatus.PAID) {
             const student = students.find(s => s.id === (fullTx?.studentId));
             if (student && student.guardian.phone && fullTx) {
-                const amount = t.amount || fullTx.amount;
+                const amount = Number(t.amount ?? fullTx.amount) || 0;
                 const description = t.description || fullTx.description;
                 const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}*:\n\n📌 *${description}*\n💰 Valor: *R$ ${amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                 sendZApiMessage(student.guardian.phone, msg);
@@ -844,7 +873,15 @@ const AppContent: React.FC = () => {
         // Background fetch will happen via realtime subscription, no need to await it here
         fetchData(true);
       } else {
-        // Revert on error
+        // Revert on error — avisando o motivo, para a alteração não "sumir" sem explicação.
+        console.error('Erro ao atualizar transação:', error);
+        const isDuplicate = /duplicate|unique|conflict/i.test(error.message || '');
+        // A descrição já foi validada acima; se o banco ainda recusar por unicidade, é uma regra
+        // antiga do banco (ex.: uma mensalidade por mês) que precisa ser trocada pelo script
+        // fix_transactions_unique_description.sql.
+        alert(isDuplicate
+          ? `Não foi possível salvar: o banco de dados ainda possui uma regra antiga de duplicidade que impede esta data. Execute o script "fix_transactions_unique_description.sql" no Supabase para que só descrições idênticas sejam bloqueadas.\n\nDetalhe: ${error.message}`
+          : `Não foi possível salvar a alteração da cobrança: ${error.message}`);
         fetchData(true);
       }
   };
@@ -1009,10 +1046,20 @@ const AppContent: React.FC = () => {
                   const updates: any = {};
                   let needsUpdate = false;
 
-                  if (existingTx.status === PaymentStatus.PENDING && (existingTx.amount !== a.fee || existingTx.date !== a.date)) {
-                      updates.amount = a.fee;
-                      updates.date = a.date;
-                      needsUpdate = true;
+                  // Só acompanha o jogo quando a data/taxa DO JOGO mudou. Assim, um vencimento
+                  // ajustado manualmente na cobrança não volta para a data do jogo a cada
+                  // atualização da atividade (presença, placar, escalação...).
+                  if (existingTx.status === PaymentStatus.PENDING) {
+                      const feeChanged = !!originalActivity && originalActivity.fee !== a.fee;
+                      const dateChanged = !!originalActivity && originalActivity.date !== a.date;
+                      if (feeChanged && existingTx.amount !== a.fee) {
+                          updates.amount = a.fee;
+                          needsUpdate = true;
+                      }
+                      if (dateChanged && existingTx.date === originalActivity!.date) {
+                          updates.date = a.date;
+                          needsUpdate = true;
+                      }
                   }
 
                   // Reativa a taxa se o aluno passou a constar como presente.
