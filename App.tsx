@@ -831,11 +831,12 @@ const AppContent: React.FC = () => {
 
       const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
       if(!error) {
-        if (t.status === PaymentStatus.PAID) {
-            const fullTx = transactions.find(tx => tx.id === t.id);
+        const fullTx = transactions.find(tx => tx.id === t.id);
+        // Só avisa quando a transação passa a ficar paga (não em edições de lançamentos já pagos).
+        if (t.status === PaymentStatus.PAID && fullTx?.status !== PaymentStatus.PAID) {
             const student = students.find(s => s.id === (fullTx?.studentId));
             if (student && student.guardian.phone && fullTx) {
-                const amount = t.amount || fullTx.amount;
+                const amount = Number(t.amount ?? fullTx.amount) || 0;
                 const description = t.description || fullTx.description;
                 const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}*:\n\n📌 *${description}*\n💰 Valor: *R$ ${amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                 sendZApiMessage(student.guardian.phone, msg);
