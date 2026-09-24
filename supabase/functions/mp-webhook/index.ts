@@ -1,6 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
+// Número no formato esperado pela Evolution: apenas dígitos, com DDI 55.
+const toEvolutionNumber = (phone: string) => {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("55") && digits.length >= 12 ? digits : `55${digits}`;
+};
+
 serve(async (req) => {
   // Responde a requisições GET (útil para testar se a função está no ar)
   if (req.method === "GET") {
@@ -18,9 +24,19 @@ serve(async (req) => {
       return new Response("Nenhum ID de pagamento encontrado", { status: 200 });
     }
 
-    const mpToken = Deno.env.get("MP_ACCESS_TOKEN");
+    // Cliente do Supabase usando a Service Role Key (ignora RLS)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Configurações salvas na tela Financeiro (token do MP e Evolution API)
+    const { data: settingsRows } = await supabase.from("app_settings").select("key, value");
+    const settings: Record<string, string> = {};
+    (settingsRows || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value; });
+
+    const mpToken = Deno.env.get("MP_ACCESS_TOKEN") || settings["mp_access_token"];
     if (!mpToken) {
-      console.error("MP_ACCESS_TOKEN não configurado nas secrets do Supabase");
+      console.error("Token do Mercado Pago não configurado (secret MP_ACCESS_TOKEN ou app_settings.mp_access_token)");
       return new Response("Erro de configuração", { status: 500 });
     }
 
@@ -39,12 +55,8 @@ serve(async (req) => {
 
     // 2. Se o pagamento foi aprovado, atualizar no Supabase
     if (paymentData.status === "approved" && paymentData.external_reference) {
-      // Inicializar o cliente do Supabase usando a Service Role Key (ignora RLS)
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      // Atualizar a transação para PAID
+      // Atualiza apenas as transações que ainda não estavam pagas: o MP reenvia
+      // notificações do mesmo pagamento, e assim o aviso não é enviado em duplicidade.
       const { data: updatedTxs, error: updateError } = await supabase
         .from("transactions")
         .update({ 
@@ -52,6 +64,7 @@ serve(async (req) => {
           payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) 
         })
         .eq("external_reference", paymentData.external_reference)
+        .neq("status", "PAID")
         .select();
 
       if (updateError) {
@@ -59,42 +72,36 @@ serve(async (req) => {
         throw updateError;
       }
 
-      // 3. Enviar mensagem via WhatsApp (Z-API) se a transação foi atualizada
+      // 3. Enviar aviso via WhatsApp (Evolution API) para cada transação baixada
       if (updatedTxs && updatedTxs.length > 0) {
-        const tx = updatedTxs[0];
-        console.log("Transação atualizada com sucesso:", tx.id);
+        const baseUrl = (settings["evolution_base_url"] || "").replace(/\/+$/, "");
+        const instance = settings["evolution_instance"] || "";
+        const apikey = settings["evolution_apikey"] || "";
 
-        if (tx.student_id) {
-          const { data: student } = await supabase
-            .from("students")
-            .select("name, guardian")
-            .eq("id", tx.student_id)
-            .single();
+        if (!baseUrl || !instance || !apikey) {
+          console.log("Evolution API não configurada em app_settings (tela Financeiro). Aviso não enviado.");
+        } else {
+          for (const tx of updatedTxs) {
+            console.log("Transação atualizada com sucesso:", tx.id);
+            if (!tx.student_id) continue;
 
-          if (student?.guardian?.phone) {
-            const zapiInstance = Deno.env.get("ZAPI_INSTANCE_ID");
-            const zapiToken = Deno.env.get("ZAPI_TOKEN");
-            const zapiClientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
+            const { data: student } = await supabase
+              .from("students")
+              .select("name, guardian")
+              .eq("id", tx.student_id)
+              .single();
 
-            if (zapiInstance && zapiToken && zapiClientToken) {
-              const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+            if (!student?.guardian?.phone) continue;
 
-              const zapiRes = await fetch(`https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Client-Token": zapiClientToken,
-                },
-                body: JSON.stringify({
-                  phone: student.guardian.phone,
-                  message: msg,
-                }),
-              });
-              
-              console.log("Status do envio Z-API:", zapiRes.status);
-            } else {
-              console.log("Credenciais do Z-API não configuradas nas secrets.");
-            }
+            const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${Number(tx.amount).toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+
+            const evoRes = await fetch(`${baseUrl}/message/sendText/${instance}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "apikey": apikey },
+              body: JSON.stringify({ number: toEvolutionNumber(student.guardian.phone), text: msg }),
+            });
+
+            console.log("Status do envio Evolution:", evoRes.status, evoRes.ok ? "" : await evoRes.text());
           }
         }
       }

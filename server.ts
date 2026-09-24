@@ -69,6 +69,7 @@ async function startServer() {
                         .from('transactions')
                         .update({ status: PaymentStatus.PAID, payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) })
                         .eq('external_reference', paymentData.external_reference)
+                        .neq('status', PaymentStatus.PAID)
                         .select();
                     
                     if (updated && updated.length > 0) {
@@ -77,7 +78,7 @@ async function startServer() {
                             if (tx.student_id) {
                                 const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
                                 if (student?.guardian?.phone) {
-                                    const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+                                    const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${Number(tx.amount).toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                                     await sendZApiMessage(student.guardian.phone, msg);
                                 }
                             }
@@ -153,6 +154,7 @@ async function startServer() {
                 .from('transactions')
                 .update({ status: PaymentStatus.PAID, payment_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) })
                 .eq('external_reference', ref)
+                .neq('status', PaymentStatus.PAID)
                 .select();
 
             if (!updateError && updated && updated.length > 0) {
@@ -161,7 +163,7 @@ async function startServer() {
                     if (tx.student_id) {
                         const { data: student } = await supabase.from('students').select('name, guardian').eq('id', tx.student_id).single();
                         if (student?.guardian?.phone) {
-                            const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${tx.amount.toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
+                            const msg = `✅ *PAGAMENTO RECEBIDO* ⚽\n\nOlá *${student.guardian.name}*!\nConfirmamos o recebimento do pagamento do atleta *${student.name}* via Mercado Pago:\n\n📌 *${tx.description}*\n💰 Valor: *R$ ${Number(tx.amount).toFixed(2)}*\n\nObrigado! Garotos do Martinica.`;
                             await sendZApiMessage(student.guardian.phone, msg);
                         }
                     }
