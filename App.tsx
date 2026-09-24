@@ -826,6 +826,28 @@ const AppContent: React.FC = () => {
       if (t.preferenceId !== undefined) payload.preference_id = t.preferenceId;
       if (t.recurrence !== undefined) payload.recurrence = t.recurrence;
 
+      // Duplicidade: só é bloqueada quando o mesmo aluno já tem OUTRA cobrança (não cancelada)
+      // com a descrição EXATAMENTE igual (descrição inteira). Mudar só o vencimento é permitido.
+      const currentTx = transactions.find(tx => tx.id === t.id);
+      const targetStudentId = t.studentId !== undefined ? t.studentId : currentTx?.studentId;
+      const targetDescription = (t.description ?? currentTx?.description ?? '').trim();
+      if (targetStudentId && targetDescription) {
+          // Taxas de jogo têm unicidade própria (external_reference) e podem repetir o título do jogo.
+          const isGameFee = (ref?: string) => !!ref && ref.startsWith('game_fee_');
+          const editingGameFee = isGameFee(t.externalReference ?? currentTx?.externalReference);
+          const duplicate = transactions.find(tx =>
+              tx.id !== t.id &&
+              !(editingGameFee && isGameFee(tx.externalReference)) &&
+              tx.studentId === targetStudentId &&
+              tx.status !== PaymentStatus.CANCELLED &&
+              (tx.description || '').trim() === targetDescription
+          );
+          if (duplicate) {
+              alert(`Não foi possível salvar: este aluno já possui outra cobrança com a descrição exatamente igual ("${targetDescription}"). Altere a descrição ou ajuste a cobrança existente.`);
+              return;
+          }
+      }
+
       // Optimistic update
       setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
 
@@ -854,8 +876,11 @@ const AppContent: React.FC = () => {
         // Revert on error — avisando o motivo, para a alteração não "sumir" sem explicação.
         console.error('Erro ao atualizar transação:', error);
         const isDuplicate = /duplicate|unique|conflict/i.test(error.message || '');
+        // A descrição já foi validada acima; se o banco ainda recusar por unicidade, é uma regra
+        // antiga do banco (ex.: uma mensalidade por mês) que precisa ser trocada pelo script
+        // fix_transactions_unique_description.sql.
         alert(isDuplicate
-          ? "Não foi possível salvar: já existe outra cobrança igual para este aluno nesse período (ex.: mensalidade do mesmo mês). Escolha outra data ou ajuste a cobrança existente."
+          ? `Não foi possível salvar: o banco de dados ainda possui uma regra antiga de duplicidade que impede esta data. Execute o script "fix_transactions_unique_description.sql" no Supabase para que só descrições idênticas sejam bloqueadas.\n\nDetalhe: ${error.message}`
           : `Não foi possível salvar a alteração da cobrança: ${error.message}`);
         fetchData(true);
       }
