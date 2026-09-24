@@ -829,7 +829,13 @@ const AppContent: React.FC = () => {
       // Optimistic update
       setTransactions(prev => prev.map(tx => tx.id === t.id ? { ...tx, ...t } : tx));
 
-      const { error } = await supabase.from('transactions').update(payload).eq('id', t.id);
+      const { data: savedRows, error } = await supabase.from('transactions').update(payload).eq('id', t.id).select('id');
+      if (!error && (!savedRows || savedRows.length === 0)) {
+        // Nenhuma linha foi alterada (ex.: bloqueio de permissão no banco): não finge que salvou.
+        alert("Não foi possível salvar a alteração da cobrança (nenhum registro atualizado). Tente novamente.");
+        fetchData(true);
+        return;
+      }
       if(!error) {
         const fullTx = transactions.find(tx => tx.id === t.id);
         // Só avisa quando a transação passa a ficar paga (não em edições de lançamentos já pagos).
@@ -845,7 +851,12 @@ const AppContent: React.FC = () => {
         // Background fetch will happen via realtime subscription, no need to await it here
         fetchData(true);
       } else {
-        // Revert on error
+        // Revert on error — avisando o motivo, para a alteração não "sumir" sem explicação.
+        console.error('Erro ao atualizar transação:', error);
+        const isDuplicate = /duplicate|unique|conflict/i.test(error.message || '');
+        alert(isDuplicate
+          ? "Não foi possível salvar: já existe outra cobrança igual para este aluno nesse período (ex.: mensalidade do mesmo mês). Escolha outra data ou ajuste a cobrança existente."
+          : `Não foi possível salvar a alteração da cobrança: ${error.message}`);
         fetchData(true);
       }
   };
@@ -1010,10 +1021,20 @@ const AppContent: React.FC = () => {
                   const updates: any = {};
                   let needsUpdate = false;
 
-                  if (existingTx.status === PaymentStatus.PENDING && (existingTx.amount !== a.fee || existingTx.date !== a.date)) {
-                      updates.amount = a.fee;
-                      updates.date = a.date;
-                      needsUpdate = true;
+                  // Só acompanha o jogo quando a data/taxa DO JOGO mudou. Assim, um vencimento
+                  // ajustado manualmente na cobrança não volta para a data do jogo a cada
+                  // atualização da atividade (presença, placar, escalação...).
+                  if (existingTx.status === PaymentStatus.PENDING) {
+                      const feeChanged = !!originalActivity && originalActivity.fee !== a.fee;
+                      const dateChanged = !!originalActivity && originalActivity.date !== a.date;
+                      if (feeChanged && existingTx.amount !== a.fee) {
+                          updates.amount = a.fee;
+                          needsUpdate = true;
+                      }
+                      if (dateChanged && existingTx.date === originalActivity!.date) {
+                          updates.date = a.date;
+                          needsUpdate = true;
+                      }
                   }
 
                   // Reativa a taxa se o aluno passou a constar como presente.
