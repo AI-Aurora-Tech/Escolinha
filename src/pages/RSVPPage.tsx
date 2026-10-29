@@ -128,8 +128,8 @@ export const RSVPPage: React.FC = () => {
 
       // --- Background tasks (WhatsApp + Pix) ---
       (async () => {
-        // Send WhatsApp Confirmation
-        const firstName = student.guardian.name.split(" ")[0];
+        // Send WhatsApp Confirmation (nome é opcional: se não houver, não quebra o envio)
+        const firstName = (student.guardian?.name || '').trim().split(" ")[0] || 'responsável';
         let msg = "";
 
         if (newStatus === "CONFIRMED") {
@@ -235,19 +235,28 @@ export const RSVPPage: React.FC = () => {
         } else {
           msg = `Olá ${firstName}. Recebemos a informação de ausência do atleta *${student.name}* para o jogo *${activity.title}*.\n\nObrigado por avisar! 👍`;
 
-          // Delete pending transaction if user declines
-          const externalRef = `game_fee_${activityId}_${studentId}`;
-          await supabase
-            .from("transactions")
-            .delete()
-            .eq("external_reference", externalRef)
-            .eq("status", PaymentStatus.PENDING);
+          // Delete pending transaction if user declines (não deve impedir o envio da mensagem)
+          try {
+            const externalRef = `game_fee_${activityId}_${studentId}`;
+            await supabase
+              .from("transactions")
+              .delete()
+              .eq("external_reference", externalRef)
+              .eq("status", PaymentStatus.PENDING);
+          } catch (delErr) {
+            console.error("Erro ao remover cobrança pendente:", delErr);
+          }
         }
 
-        // Fire and forget
-        sendZApiMessage(student.guardian.phone, msg).catch((err) =>
-          console.error("Erro ao enviar confirmação zap:", err),
-        );
+        // Fire and forget — só envia se houver telefone do responsável.
+        const phone = (student.guardian?.phone || '').trim();
+        if (phone) {
+          sendZApiMessage(phone, msg).catch((err) =>
+            console.error("Erro ao enviar confirmação zap:", err),
+          );
+        } else {
+          console.warn("Responsável sem telefone cadastrado; mensagem não enviada.");
+        }
       })().catch(err => console.error("Error in background task:", err));
 
     } catch (err) {
