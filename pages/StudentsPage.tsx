@@ -750,6 +750,13 @@ Equipe Garotos do Martinica 🏆`;
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, searchTerm, ageFilter, positionFilter, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
 
+  const hasActiveFilters = !!searchTerm || !!ageFilter || positionFilter !== 'ALL' || selectedCategories.length > 0 || statusFilter !== 'ALL' || medicalFilter !== 'ALL' || financeFilter !== 'ALL' || docsFilter !== 'ALL' || planFilter !== 'ALL';
+
+  const clearFilters = () => {
+    setSearchTerm(''); setAgeFilter(''); setPositionFilter('ALL'); setSelectedCategories([]);
+    setStatusFilter('ALL'); setMedicalFilter('ALL'); setFinanceFilter('ALL'); setDocsFilter('ALL'); setPlanFilter('ALL');
+  };
+
   const startCamera = async () => {
     setIsCameraOpen(true);
     try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }); if (videoRef.current) videoRef.current.srcObject = stream; } 
@@ -1219,6 +1226,16 @@ Equipe Garotos do Martinica 🏆`;
                         <option value="EXPIRED">Vencido</option>
                     </select>
                 </div>
+            </div>
+            <div className={`flex items-center justify-between gap-2 text-sm rounded-lg px-3 py-2 ${hasActiveFilters ? 'bg-primary-50 text-primary-800' : 'bg-gray-50 text-gray-600'}`}>
+                <span>
+                    {hasActiveFilters ? 'Filtro aplicado: ' : 'Total: '}
+                    <strong>{filteredStudents.length}</strong> {filteredStudents.length === 1 ? 'aluno' : 'alunos'}
+                    {hasActiveFilters && <> de {students.length}</>}
+                </span>
+                {hasActiveFilters && (
+                    <button onClick={clearFilters} className="flex items-center gap-1 text-xs font-bold text-primary-700 hover:text-primary-900"><X className="w-3 h-3" /> Limpar filtros</button>
+                )}
             </div>
         </div>
       )}
