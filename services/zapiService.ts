@@ -32,11 +32,7 @@ const getEvolutionConfig = async (): Promise<EvolutionConfig | null> => {
 };
 
 // Número no formato esperado pela Evolution: apenas dígitos, com DDI 55.
-// Não duplica o DDI se o telefone já foi cadastrado com ele (ex.: +55 11 9...).
-const toEvolutionNumber = (phone: string) => {
-  const digits = phone.replace(/\D/g, '');
-  return digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`;
-};
+const toEvolutionNumber = (phone: string) => `55${phone.replace(/\D/g, '')}`;
 
 /**
  * Envia uma mensagem de texto via Evolution API.
@@ -44,10 +40,7 @@ const toEvolutionNumber = (phone: string) => {
 export const sendZApiMessage = async (phone: string, message: string): Promise<boolean> => {
   try {
     const cfg = await getEvolutionConfig();
-    if (!cfg) {
-      console.error('Evolution API não configurada (tela Financeiro): mensagem não enviada.');
-      return false;
-    }
+    if (!cfg) return false;
 
     const response = await fetch(`${cfg.baseUrl}/message/sendText/${cfg.instance}`, {
       method: 'POST',
@@ -61,7 +54,6 @@ export const sendZApiMessage = async (phone: string, message: string): Promise<b
       })
     });
 
-    if (!response.ok) console.error('Evolution recusou a mensagem de texto:', response.status, await response.text());
     return response.ok;
   } catch (err) {
     console.error('Erro de conexão Evolution (texto):', err);
