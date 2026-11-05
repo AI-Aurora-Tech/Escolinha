@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Group, Student, Transaction, TransactionType, PaymentStatus } from '../types';
-import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy, MessageCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Shield, X, Search, CheckSquare, Square, Users, Download, ChevronRight, Filter, FileSpreadsheet, AlertTriangle, Target, Trophy, MessageCircle, Megaphone, Pause, Play } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -23,7 +23,6 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [selectedGroupIdForMessage, setSelectedGroupIdForMessage] = useState<string | null>(null);
-  const [isSendingMessages, setIsSendingMessages] = useState(false);
   
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
@@ -32,22 +31,81 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
   
   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), []);
 
-  const handleSendMessageToGroup = async () => {
-    if (!selectedGroupIdForMessage || !whatsappMessage.trim()) return;
-    setIsSendingMessages(true);
-    const groupStudents = students.filter(s => s.groupIds && s.groupIds.includes(selectedGroupIdForMessage));
-    
-    for (const student of groupStudents) {
-        if (student.guardian.phone) {
-            await sendZApiMessage(student.guardian.phone, whatsappMessage);
-            await new Promise(resolve => setTimeout(resolve, 10000)); // 10s delay
-        }
-    }
-    
-    setIsSendingMessages(false);
+  // Fila de envio com contagem regressiva (igual à convocação da Agenda)
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [notifyQueue, setNotifyQueue] = useState<Student[]>([]);
+  const [notifyCurrentIndex, setNotifyCurrentIndex] = useState(0);
+  const [notifyIsRunning, setNotifyIsRunning] = useState(false);
+  const [notifyCountdown, setNotifyCountdown] = useState(10);
+  const [notifyLogs, setNotifyLogs] = useState<string[]>([]);
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [notifyGroupName, setNotifyGroupName] = useState('');
+  const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notifyProcessingRef = useRef(false);
+
+  const closeWhatsAppModal = () => {
     setShowWhatsAppModal(false);
     setWhatsappMessage('');
     setSelectedGroupIdForMessage(null);
+  };
+
+  const handleSendMessageToGroup = () => {
+    if (!selectedGroupIdForMessage || !whatsappMessage.trim()) return;
+    const groupStudents = students
+      .filter(s => s.groupIds && s.groupIds.includes(selectedGroupIdForMessage))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (groupStudents.length === 0) {
+      alert('Este grupo não possui atletas vinculados.');
+      return;
+    }
+    if (!confirm(`Enviar a mensagem para ${groupStudents.length} responsáveis via WhatsApp?\n(Será aplicado um intervalo de 10 segundos entre cada envio por segurança)`)) return;
+
+    const groupName = groups.find(g => g.id === selectedGroupIdForMessage)?.name || '';
+    setNotifyMessage(whatsappMessage);
+    setNotifyGroupName(groupName);
+    setNotifyQueue(groupStudents);
+    setNotifyCurrentIndex(0);
+    setNotifyLogs([`Fila iniciada para ${groupStudents.length} atletas...`]);
+    setNotifyCountdown(1);
+    setNotifyIsRunning(true);
+    setNotifyModalOpen(true);
+    closeWhatsAppModal();
+  };
+
+  useEffect(() => {
+    if (!notifyModalOpen || !notifyIsRunning) return;
+    if (notifyCurrentIndex >= notifyQueue.length) {
+      setNotifyIsRunning(false);
+      setNotifyLogs(prev => ['✅ Todas as mensagens enviadas!', ...prev]);
+      return;
+    }
+    if (notifyCountdown > 0) {
+      notifyTimerRef.current = setTimeout(() => setNotifyCountdown(prev => prev - 1), 1000);
+    } else {
+      processNotifyItem(notifyQueue[notifyCurrentIndex]);
+    }
+    return () => { if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current); };
+  }, [notifyModalOpen, notifyIsRunning, notifyCountdown, notifyCurrentIndex, notifyQueue]);
+
+  const processNotifyItem = async (student: Student) => {
+    if (notifyProcessingRef.current) return;
+    notifyProcessingRef.current = true;
+    try {
+      const phone = (student.guardian?.phone || '').replace(/\D/g, '');
+      if (phone) {
+        const sent = await sendZApiMessage(phone, notifyMessage);
+        setNotifyLogs(prev => [`${sent ? '✅' : '❌'} ${student.name}`, ...prev]);
+      } else {
+        setNotifyLogs(prev => [`⚠️ Sem telefone para ${student.name}`, ...prev]);
+      }
+    } catch (e) {
+      setNotifyLogs(prev => [`❌ ${student.name}`, ...prev]);
+    } finally {
+      notifyProcessingRef.current = false;
+      setNotifyCurrentIndex(prev => prev + 1);
+      setNotifyCountdown(10);
+    }
   };
 
   const getStudentOverdueCount = (studentId: string) => {
@@ -526,7 +584,7 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-gray-900">Enviar WhatsApp ao Grupo</h3>
-                    <button onClick={() => setShowWhatsAppModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                    <button onClick={closeWhatsAppModal} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
                 </div>
                 
                 <div className="space-y-4">
@@ -543,16 +601,48 @@ export const GroupsPage: React.FC<GroupsPageProps> = ({ groups, students, transa
                 </div>
 
                 <div className="flex justify-end gap-3 pt-6">
-                    <button onClick={() => setShowWhatsAppModal(false)} className="px-5 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                    <button onClick={closeWhatsAppModal} className="px-5 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
                     <button 
                         onClick={handleSendMessageToGroup} 
-                        disabled={isSendingMessages || !whatsappMessage.trim()}
+                        disabled={notifyIsRunning || !whatsappMessage.trim()}
                         className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
-                        {isSendingMessages ? 'Enviando...' : 'Enviar para Todos'}
+                        Enviar para Todos
                     </button>
                 </div>
             </div>
+        </div>
+      )}
+
+      {notifyModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border-t-4 border-blue-500">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-black flex items-center gap-2 text-gray-800 uppercase tracking-tighter"><Megaphone className="w-5 h-5 text-blue-600" /> Disparos WhatsApp</h3>
+              {!notifyIsRunning && <button onClick={() => setNotifyModalOpen(false)}><X className="text-gray-400" /></button>}
+            </div>
+            {notifyGroupName && <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-3">Grupo: {notifyGroupName}</p>}
+            <div className="mb-6">
+              <div className="flex justify-between text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><span>Progresso da Fila:</span><span>{notifyCurrentIndex} de {notifyQueue.length}</span></div>
+              <div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${notifyQueue.length ? (notifyCurrentIndex / notifyQueue.length) * 100 : 0}%` }}></div></div>
+              {notifyIsRunning ? (
+                <div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm text-center font-bold animate-pulse">Enviando em {notifyCountdown}s...</div>
+              ) : notifyCurrentIndex >= notifyQueue.length ? (
+                <div className="bg-green-50 text-green-800 p-3 rounded-xl text-sm text-center font-bold">Processo Concluído!</div>
+              ) : (
+                <div className="bg-yellow-50 text-yellow-800 p-3 rounded-xl text-sm text-center font-bold">Envio pausado</div>
+              )}
+            </div>
+            <div className="bg-gray-900 text-green-400 p-4 rounded-xl h-48 overflow-y-auto text-xs font-mono shadow-inner mb-4">{notifyLogs.map((log, i) => (<div key={i} className="mb-1 border-b border-gray-800 pb-1 last:border-0">{log}</div>))}</div>
+            <div className="flex justify-end gap-2">
+              {notifyIsRunning ? (
+                <button onClick={() => setNotifyIsRunning(false)} className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors"><Pause className="w-4 h-4 inline mr-1" /> PAUSAR</button>
+              ) : (
+                <button onClick={() => setNotifyIsRunning(true)} className="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-xl text-sm font-bold hover:bg-green-200 transition-colors disabled:opacity-50" disabled={notifyCurrentIndex >= notifyQueue.length}><Play className="w-4 h-4 inline mr-1" /> CONTINUAR</button>
+              )}
+              <button onClick={() => { setNotifyIsRunning(false); setNotifyModalOpen(false); }} className="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">FECHAR</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
