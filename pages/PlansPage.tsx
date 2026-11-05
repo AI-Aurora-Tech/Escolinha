@@ -1,15 +1,32 @@
-import React, { useState } from 'react';
-import { Plan } from '../types';
-import { Plus, Edit, Trash2, Ticket, X } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plan, Student } from '../types';
+import { Plus, Edit, Trash2, Ticket, X, Users } from 'lucide-react';
 
 interface PlansPageProps {
   plans: Plan[];
+  students: Student[];
   onAddPlan: (plan: Omit<Plan, 'id'>) => void;
   onUpdatePlan: (plan: Plan) => void;
   onDeletePlan: (id: string) => void;
 }
 
-export const PlansPage: React.FC<PlansPageProps> = ({ plans, onAddPlan, onUpdatePlan, onDeletePlan }) => {
+export const PlansPage: React.FC<PlansPageProps> = ({ plans, students, onAddPlan, onUpdatePlan, onDeletePlan }) => {
+  // Alunos ativos por plano; o percentual é sobre o total de alunos ativos.
+  const { countByPlan, totalActive, withoutPlan } = useMemo(() => {
+    const active = students.filter(s => s.active);
+    const planIds = new Set(plans.map(p => p.id));
+    const counts: Record<string, number> = {};
+    let noPlan = 0;
+    active.forEach(s => {
+      if (s.planId && planIds.has(s.planId)) counts[s.planId] = (counts[s.planId] || 0) + 1;
+      else noPlan++;
+    });
+    return { countByPlan: counts, totalActive: active.length, withoutPlan: noPlan };
+  }, [students, plans]);
+
+  const percentOf = (n: number) => totalActive > 0 ? (n / totalActive) * 100 : 0;
+  const formatPercent = (n: number) => `${percentOf(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -77,6 +94,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ plans, onAddPlan, onUpdate
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vencimento</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Observações</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Valor Mensal</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Alunos Ativos</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ações</th>
                 </tr>
                 </thead>
@@ -102,6 +120,16 @@ export const PlansPage: React.FC<PlansPageProps> = ({ plans, onAddPlan, onUpdate
                         <td className="px-6 py-4 font-bold text-gray-900">
                             R$ {plan.price.toFixed(2)}
                         </td>
+                        <td className="px-6 py-4">
+                            <div className="flex items-center gap-2 text-sm">
+                                <Users className="w-4 h-4 text-gray-400" />
+                                <span className="font-bold text-gray-900">{countByPlan[plan.id] || 0}</span>
+                                <span className="text-gray-500">({formatPercent(countByPlan[plan.id] || 0)})</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5 overflow-hidden min-w-[80px]">
+                                <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${percentOf(countByPlan[plan.id] || 0)}%` }}></div>
+                            </div>
+                        </td>
                         <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-2">
                                 <button onClick={() => handleOpenEdit(plan)} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
@@ -115,6 +143,20 @@ export const PlansPage: React.FC<PlansPageProps> = ({ plans, onAddPlan, onUpdate
                     </tr>
                 ))}
                 </tbody>
+                <tfoot className="bg-gray-50 border-t border-gray-100 text-sm">
+                    {withoutPlan > 0 && (
+                        <tr>
+                            <td colSpan={4} className="px-6 py-3 text-gray-500">Sem plano</td>
+                            <td className="px-6 py-3 text-gray-700"><span className="font-bold">{withoutPlan}</span> <span className="text-gray-500">({formatPercent(withoutPlan)})</span></td>
+                            <td></td>
+                        </tr>
+                    )}
+                    <tr>
+                        <td colSpan={4} className="px-6 py-3 font-bold text-gray-700">Total de alunos ativos</td>
+                        <td className="px-6 py-3 font-bold text-gray-900">{totalActive} <span className="text-gray-500 font-normal">(100%)</span></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
       </div>
