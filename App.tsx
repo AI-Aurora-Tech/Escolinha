@@ -294,8 +294,11 @@ const AppContent: React.FC = () => {
         } else {
              studentsData = await selectAllPaginated('alunos', (from, to) =>
                  supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
+             // O 'id' no fim da ordenação é obrigatório: mensalidades geradas em lote têm a mesma
+             // data e o mesmo created_at, e sem um desempate único o banco pode devolvê-las em
+             // ordem diferente a cada página, pulando umas (somem da tela) e repetindo outras.
              transactionsData = await selectAllPaginated('transações', (from, to) =>
-                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).range(from, to));
+                 supabase.from('transactions').select(TX_SELECT_FIELDS).order('date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to));
         }
 
         // Aplica a foto já em cache (se houver) ou um avatar temporário; preserva fotos já carregadas.
