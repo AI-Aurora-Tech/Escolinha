@@ -38,6 +38,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = ({ students, groups, pl
   const [financeFilter, setFinanceFilter] = useState('ALL'); 
   const [docsFilter, setDocsFilter] = useState('ALL'); 
   const [planFilter, setPlanFilter] = useState('ALL');
+  const [competitiveFilter, setCompetitiveFilter] = useState('ALL');
 
   const studentDerivedData = useMemo(() => {
     const data: Record<string, any> = {};
@@ -530,6 +531,7 @@ Equipe Garotos do Martinica 🏆`;
                   return g ? `${g.name} (${g.type === 'GAME' ? 'Jogo' : 'Treino'})` : null;
               }).filter(Boolean).join(', '),
               'Status': s.active ? 'Ativo' : 'Inativo',
+              'Competitivo': s.competitive ? 'Sim' : 'Não',
               'Mensalidades Atrasadas': getStudentOverdueCount(s.id),
               'Doc: RG': checkDoc(s.documents.rg),
               'Doc: CPF': checkDoc(s.documents.cpf),
@@ -624,7 +626,7 @@ Equipe Garotos do Martinica 🏆`;
   };
 
   const initialFormState: any = {
-    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, inactiveReason: '', enrollmentDate: '', inactivationDate: '', positions: [],
+    name: '', birthDate: '', rg: '', cpf: '', phone: '', medicalCertificateExpiry: '', groupIds: [], planId: '', active: true, competitive: false, inactiveReason: '', enrollmentDate: '', inactivationDate: '', positions: [],
     address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '' },
     guardian: { name: '', phone: '', email: '', cpf: '' },
     documents: { rg: { delivered: false, isDigital: false }, cpf: { delivered: false, isDigital: false }, medical: { delivered: false, isDigital: false }, address: { delivered: false, isDigital: false }, school: { delivered: false, isDigital: false } }
@@ -745,16 +747,17 @@ Equipe Garotos do Martinica 🏆`;
       let mfinOk = financeFilter === 'ALL' || (financeFilter === 'OK' ? getStudentOverdueCount(s.id) === 0 : true);
       let mdoc = docsFilter === 'ALL' || (docsFilter === 'MISSING_DOCS' ? hasMissingDocs(s) : !hasMissingDocs(s));
       let mplan = planFilter === 'ALL' || s.planId === planFilter;
+      let mcomp = competitiveFilter === 'ALL' || (competitiveFilter === 'YES' ? !!s.competitive : !s.competitive);
 
-      return ms && mage && mpos && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan;
+      return ms && mage && mpos && mc && mstat && mmed && mfin && mfinOk && mdoc && mplan && mcomp;
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, searchTerm, ageFilter, positionFilter, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter]);
+  }, [students, searchTerm, ageFilter, positionFilter, selectedCategories, statusFilter, medicalFilter, financeFilter, docsFilter, planFilter, competitiveFilter]);
 
-  const hasActiveFilters = !!searchTerm || !!ageFilter || positionFilter !== 'ALL' || selectedCategories.length > 0 || statusFilter !== 'ALL' || medicalFilter !== 'ALL' || financeFilter !== 'ALL' || docsFilter !== 'ALL' || planFilter !== 'ALL';
+  const hasActiveFilters = !!searchTerm || !!ageFilter || positionFilter !== 'ALL' || selectedCategories.length > 0 || statusFilter !== 'ALL' || medicalFilter !== 'ALL' || financeFilter !== 'ALL' || docsFilter !== 'ALL' || planFilter !== 'ALL' || competitiveFilter !== 'ALL';
 
   const clearFilters = () => {
     setSearchTerm(''); setAgeFilter(''); setPositionFilter('ALL'); setSelectedCategories([]);
-    setStatusFilter('ALL'); setMedicalFilter('ALL'); setFinanceFilter('ALL'); setDocsFilter('ALL'); setPlanFilter('ALL');
+    setStatusFilter('ALL'); setMedicalFilter('ALL'); setFinanceFilter('ALL'); setDocsFilter('ALL'); setPlanFilter('ALL'); setCompetitiveFilter('ALL');
   };
 
   const startCamera = async () => {
@@ -1202,6 +1205,14 @@ Equipe Garotos do Martinica 🏆`;
                 </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-2 relative">
+                    <Trophy className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={competitiveFilter} onChange={(e) => setCompetitiveFilter(e.target.value)}>
+                        <option value="ALL">Competitivo: Todos</option>
+                        <option value="YES">Competitivos</option>
+                        <option value="NO">Não competitivos</option>
+                    </select>
+                </div>
                 <div className="lg:col-span-3 relative">
                     <Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <select className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white text-gray-600 text-sm" value={financeFilter} onChange={(e) => setFinanceFilter(e.target.value)}>
@@ -1259,9 +1270,14 @@ Equipe Garotos do Martinica 🏆`;
                                   <span className="text-xs text-gray-500 font-medium">Sub-{currentYear - birthYear} • {calculateAge(student.birthDate)} anos</span>
                               </div>
                           </div>
-                          <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${student.active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                              {student.active ? 'Ativo' : 'Inat.'}
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                              <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${student.active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                                  {student.active ? 'Ativo' : 'Inat.'}
+                              </span>
+                              {student.competitive && (
+                                  <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase border bg-amber-100 text-amber-700 border-amber-200 flex items-center gap-1"><Trophy className="w-3 h-3" /> Competitivo</span>
+                              )}
+                          </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-2 mb-4">
@@ -1428,6 +1444,9 @@ Equipe Garotos do Martinica 🏆`;
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
                           <span className={`w-fit px-3 py-1 rounded-full text-xs font-medium border ${student.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{student.active ? 'Ativo' : 'Inativo'}</span>
+                          {student.competitive && (
+                            <span className="w-fit px-3 py-1 rounded-full text-xs font-medium border bg-amber-50 text-amber-700 border-amber-200 flex items-center gap-1"><Trophy className="w-3 h-3" /> Competitivo</span>
+                          )}
                           {isMedicalExpired(student.medicalCertificateExpiry) && !isGuardian && (
                             <button 
                               onClick={() => sendMedicalReminder(student)}
@@ -1548,6 +1567,17 @@ Equipe Garotos do Martinica 🏆`;
                                         <option value="false">Inativo / Trancado</option>
                                     </select>
                                 </div>
+                                <label className={`flex items-center gap-3 p-2.5 border rounded-lg ${studentForm.competitive ? 'bg-amber-50 border-amber-300' : 'bg-white'} ${isGuardian ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
+                                    <input
+                                        type="checkbox"
+                                        className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                                        checked={!!studentForm.competitive}
+                                        onChange={e => setStudentForm({...studentForm, competitive: e.target.checked})}
+                                        disabled={isGuardian}
+                                    />
+                                    <Trophy className={`w-4 h-4 ${studentForm.competitive ? 'text-amber-600' : 'text-gray-400'}`} />
+                                    <span className="text-sm font-medium text-gray-700">Aluno competitivo</span>
+                                </label>
                                 <div>
                                     <label className="block text-xs font-medium text-gray-500 mb-1">Data da Matrícula</label>
                                     <input type="date" className="w-full border rounded-lg p-2.5 bg-gray-100 text-gray-500 cursor-not-allowed outline-none" value={studentForm.enrollmentDate || ''} readOnly />

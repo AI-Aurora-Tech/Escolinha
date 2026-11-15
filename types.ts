@@ -100,6 +100,7 @@ export interface Student {
   positions: string[];
   active: boolean;
   inactiveReason?: string;
+  competitive?: boolean; // aluno competitivo
   enrollmentDate?: string;
   inactivationDate?: string;
   documents: StudentDocuments;

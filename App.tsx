@@ -75,7 +75,30 @@ async function selectAllPaginated<T = any>(
 // Colunas dos alunos SEM o photo_url. As fotos são gravadas como base64 e, trazidas junto,
 // deixam o select tão grande que estoura o statement_timeout do Postgres. Elas são carregadas
 // à parte, em segundo plano e em lotes pequenos (ver loadStudentPhotos).
-const STUDENT_CORE_COLUMNS = 'id,name,birth_date,rg,cpf,phone,medical_expiry,address,guardian,plan_id,group_ids,positions,active,inactive_reason,enrollment_date,inactivation_date,documents';
+const STUDENT_BASE_COLUMNS = 'id,name,birth_date,rg,cpf,phone,medical_expiry,address,guardian,plan_id,group_ids,positions,active,inactive_reason,enrollment_date,inactivation_date,documents';
+
+// Coluna 'competitive' (aluno competitivo) é criada pelo script add_competitive.sql. Enquanto o
+// script não for executado no banco, o app segue funcionando sem ela (lista carrega normalmente
+// e o cadastro salva sem o campo), em vez de quebrar a tela de alunos.
+let competitiveColumnAvailable = true;
+const studentCoreColumns = () => competitiveColumnAvailable ? `${STUDENT_BASE_COLUMNS},competitive` : STUDENT_BASE_COLUMNS;
+const isMissingCompetitiveColumn = (err: any) => /competitive/i.test(err?.message || String(err || ''));
+const COMPETITIVE_SQL_HINT = 'Para salvar a marcação de "Aluno competitivo", execute o script add_competitive.sql no SQL Editor do Supabase.';
+
+// Carrega todos os alunos (sem foto). Se o banco ainda não tem a coluna 'competitive',
+// carrega de novo sem ela.
+async function loadAllStudents(): Promise<any[]> {
+  const load = () => selectAllPaginated('alunos', (from, to) =>
+    supabase.from('students').select(studentCoreColumns()).order('id', { ascending: true }).range(from, to), 500);
+  try {
+    return await load();
+  } catch (err) {
+    if (!competitiveColumnAvailable || !isMissingCompetitiveColumn(err)) throw err;
+    console.warn('Coluna "competitive" ainda não existe em students.', COMPETITIVE_SQL_HINT);
+    competitiveColumnAvailable = false;
+    return await load();
+  }
+}
 
 const avatarFallback = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Aluno')}&background=random&color=fff&size=200`;
@@ -85,7 +108,7 @@ const mapStudentRow = (s: any): Student => ({
   id: s.id, name: s.name, birthDate: s.birth_date, rg: s.rg, cpf: s.cpf, phone: s.phone,
   medicalCertificateExpiry: s.medical_expiry, photoUrl: s.photo_url, address: s.address || {},
   guardian: s.guardian || {}, planId: s.plan_id || '', groupIds: s.group_ids || [],
-  positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason,
+  positions: s.positions || [], active: s.active, inactiveReason: s.inactive_reason, competitive: !!s.competitive,
   enrollmentDate: s.enrollment_date, inactivationDate: s.inactivation_date, documents: s.documents || {}
 });
 
@@ -281,8 +304,7 @@ const AppContent: React.FC = () => {
         let transactionsData: any[] = [];
 
         if (currentUser?.role === UserRole.RESPONSAVEL && currentUser.cpf) {
-             const allStudents = await selectAllPaginated('alunos', (from, to) =>
-                 supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
+             const allStudents = await loadAllStudents();
              const cleanUserCpf = currentUser.cpf.replace(/\D/g, '');
              studentsData = allStudents.filter((s: any) => (s.guardian?.cpf?.replace(/\D/g, '') || '') === cleanUserCpf);
 
@@ -292,8 +314,7 @@ const AppContent: React.FC = () => {
                      supabase.from('transactions').select(TX_SELECT_FIELDS).in('student_id', studentIds));
              }
         } else {
-             studentsData = await selectAllPaginated('alunos', (from, to) =>
-                 supabase.from('students').select(STUDENT_CORE_COLUMNS).order('id', { ascending: true }).range(from, to), 500);
+             studentsData = await loadAllStudents();
              // O 'id' no fim da ordenação é obrigatório: mensalidades geradas em lote têm a mesma
              // data e o mesmo created_at, e sem um desempate único o banco pode devolvê-las em
              // ordem diferente a cada página, pulando umas (somem da tela) e repetindo outras.
@@ -562,10 +583,18 @@ const AppContent: React.FC = () => {
           inactive_reason: studentData.inactiveReason || null,
           enrollment_date: safeDate(studentData.enrollmentDate),
           inactivation_date: safeDate(studentData.inactivationDate),
-          documents: studentData.documents || {}
+          documents: studentData.documents || {},
+          competitive: !!studentData.competitive
         };
         // Retorna a linha criada para atualizar o estado local, sem recarregar toda a base.
-        const { data: inserted, error } = await supabase.from('students').insert([payload]).select().single();
+        let { data: inserted, error } = await supabase.from('students').insert([payload]).select().single();
+        if (error && isMissingCompetitiveColumn(error)) {
+            // Banco ainda sem a coluna 'competitive': salva o aluno sem ela.
+            competitiveColumnAvailable = false;
+            const { competitive, ...withoutCompetitive } = payload;
+            ({ data: inserted, error } = await supabase.from('students').insert([withoutCompetitive]).select().single());
+            if (!error && competitive) alert(`Aluno salvo, mas sem a marcação de competitivo. ${COMPETITIVE_SQL_HINT}`);
+        }
         if (error) throw error;
 
         let generatedTuitions = false;
@@ -630,11 +659,20 @@ const AppContent: React.FC = () => {
           inactive_reason: student.inactiveReason || null,
           enrollment_date: safeDate(student.enrollmentDate),
           inactivation_date: safeDate(student.inactivationDate),
-          documents: student.documents
+          documents: student.documents,
+          competitive: !!student.competitive
         };
         if (!isPlaceholderPhoto) payload.photo_url = student.photoUrl;
 
-        const { error } = await supabase.from('students').update(payload).eq('id', student.id);
+        let { error } = await supabase.from('students').update(payload).eq('id', student.id);
+        if (error && isMissingCompetitiveColumn(error)) {
+            // Banco ainda sem a coluna 'competitive': salva o restante do cadastro.
+            competitiveColumnAvailable = false;
+            const wantedCompetitive = payload.competitive;
+            delete payload.competitive;
+            ({ error } = await supabase.from('students').update(payload).eq('id', student.id));
+            if (!error && wantedCompetitive) alert(`Aluno salvo, mas sem a marcação de competitivo. ${COMPETITIVE_SQL_HINT}`);
+        }
         if (error) throw error;
 
         // Ao inativar, pergunta se deve cancelar as cobranças em aberto (pendentes/atrasadas).
