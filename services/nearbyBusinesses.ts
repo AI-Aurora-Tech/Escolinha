@@ -26,13 +26,16 @@ export interface NearbyBusiness {
 }
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-// Servidores públicos do Overpass: se um estiver sobrecarregado (504/429) ou demorar, tenta o próximo.
+// Servidores públicos do Overpass. São consultados AO MESMO TEMPO e vale a primeira
+// resposta boa: um servidor lento ou fora do ar não atrasa mais a busca.
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
-const OVERPASS_TIMEOUT_MS = 35000;
+const OVERPASS_TIMEOUT_MS = 25000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // resultados guardados no navegador por 24 h
 
 // ---------- Geocodificação ----------
 
@@ -66,20 +69,30 @@ const AMENITIES = 'restaurant|cafe|fast_food|bar|pub|biergarten|food_court|ice_c
 const LEISURE = 'fitness_centre|sports_centre|dance|bowling_alley|escape_game|amusement_arcade';
 const TOURISM = 'hotel|motel|guest_house|hostel';
 
-// Uma única varredura da área (tudo que tem nome) e o filtro por tipo em memória:
-// bem mais leve para o servidor do que uma varredura por tipo.
-export const buildOverpassQuery = (lat: number, lon: number, radius: number) => `[out:json][timeout:30];
-nwr(around:${radius},${lat},${lon})["name"]->.all;
+// Retângulo que contém o círculo do raio (sul, oeste, norte, leste).
+export const boundingBox = (lat: number, lon: number, radius: number) => {
+  const dLat = radius / 111320;
+  const dLon = radius / (111320 * Math.cos((lat * Math.PI) / 180));
+  const f = (n: number) => n.toFixed(6);
+  return `${f(lat - dLat)},${f(lon - dLon)},${f(lat + dLat)},${f(lon + dLon)}`;
+};
+
+// Busca por retângulo + índice de tags (bem mais rápido no Overpass do que "around").
+// O corte exato pelo raio é feito depois, em parseOverpassResult.
+export const buildOverpassQuery = (lat: number, lon: number, radius: number) => {
+  const b = `(${boundingBox(lat, lon, radius)})`;
+  return `[out:json][timeout:25];
 (
-  nwr.all["shop"];
-  nwr.all["office"];
-  nwr.all["craft"];
-  nwr.all["healthcare"];
-  nwr.all["amenity"~"^(${AMENITIES})$"];
-  nwr.all["leisure"~"^(${LEISURE})$"];
-  nwr.all["tourism"~"^(${TOURISM})$"];
+  nwr["shop"]["name"]${b};
+  nwr["office"]["name"]${b};
+  nwr["craft"]["name"]${b};
+  nwr["healthcare"]["name"]${b};
+  nwr["amenity"~"^(${AMENITIES})$"]["name"]${b};
+  nwr["leisure"~"^(${LEISURE})$"]["name"]${b};
+  nwr["tourism"~"^(${TOURISM})$"]["name"]${b};
 );
-out center tags;`;
+out center tags qt;`;
+};
 
 const CATEGORY_PT: Record<string, string> = {
   bakery: 'Padaria', supermarket: 'Supermercado', convenience: 'Conveniência', butcher: 'Açougue', greengrocer: 'Hortifruti',
@@ -158,34 +171,82 @@ export const parseOverpassResult = (json: any, center: { lat: number; lon: numbe
   return out.sort((a, b) => a.distanceMeters - b.distanceMeters);
 };
 
+// ---------- Memória de resultados (no navegador) ----------
+
+interface CachedSearch { radius: number; savedAt: number; items: NearbyBusiness[] }
+const cacheKey = (c: { lat: number; lon: number }) => `nearby_businesses:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+
+const readCache = (c: { lat: number; lon: number }, radius: number): { items: NearbyBusiness[]; savedAt: number } | null => {
+  try {
+    const raw = localStorage.getItem(cacheKey(c));
+    if (!raw) return null;
+    const v: CachedSearch = JSON.parse(raw);
+    if (!v || Date.now() - v.savedAt > CACHE_TTL_MS || v.radius < radius) return null;
+    // Uma busca maior já feita serve para um raio menor: só filtra pela distância.
+    return { items: v.items.filter(b => b.distanceMeters <= radius), savedAt: v.savedAt };
+  } catch { return null; }
+};
+
+const writeCache = (c: { lat: number; lon: number }, radius: number, items: NearbyBusiness[]) => {
+  try {
+    const prev = localStorage.getItem(cacheKey(c));
+    const old: CachedSearch | null = prev ? JSON.parse(prev) : null;
+    // Mantém a busca de raio maior, se ainda estiver valendo.
+    if (old && Date.now() - old.savedAt <= CACHE_TTL_MS && old.radius > radius) return;
+    localStorage.setItem(cacheKey(c), JSON.stringify({ radius, savedAt: Date.now(), items }));
+  } catch { /* navegador sem espaço ou bloqueado: segue sem memória */ }
+};
+
+// ---------- Busca ----------
+
+const queryEndpoint = async (url: string, body: string, signal: AbortSignal) => {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  // O Overpass às vezes responde 200 com um aviso de tempo esgotado e sem resultados.
+  if (json?.remark && /timed out|runtime error|out of memory/i.test(json.remark) && !(json.elements || []).length) {
+    throw new Error('tempo esgotado no servidor');
+  }
+  return json;
+};
+
+export interface NearbySearchResult {
+  items: NearbyBusiness[];
+  cachedAt: number | null; // preenchido quando veio da memória do navegador
+}
+
 export const searchNearbyBusinesses = async (
   center: { lat: number; lon: number },
   radius: number,
-  onAttempt?: (attempt: number, total: number) => void,
-): Promise<NearbyBusiness[]> => {
-  const body = 'data=' + encodeURIComponent(buildOverpassQuery(center.lat, center.lon, radius));
-  const errors: string[] = [];
-  for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
-    const url = OVERPASS_ENDPOINTS[i];
-    onAttempt?.(i + 1, OVERPASS_ENDPOINTS.length);
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal: ctrl.signal });
-      if (!res.ok) { errors.push(`HTTP ${res.status}`); continue; }
-      const json = await res.json();
-      // O Overpass às vezes responde 200 com um aviso de tempo esgotado e sem resultados.
-      if (json?.remark && /timed out|runtime error|out of memory/i.test(json.remark) && !(json.elements || []).length) {
-        errors.push('tempo esgotado no servidor'); continue;
-      }
-      return parseOverpassResult(json, center, radius);
-    } catch (e: any) {
-      errors.push(e?.name === 'AbortError' ? 'sem resposta' : (e?.message || 'falha de conexão'));
-    } finally {
-      clearTimeout(timer);
-    }
+  opts: { force?: boolean } = {},
+): Promise<NearbySearchResult> => {
+  if (!opts.force) {
+    const cached = readCache(center, radius);
+    if (cached) return { items: cached.items, cachedAt: cached.savedAt };
   }
-  throw new Error(`Os servidores do mapa estão ocupados agora (${errors.join(', ')}). Aguarde alguns minutos e clique em "Tentar novamente"; um raio menor também ajuda.`);
+
+  const body = 'data=' + encodeURIComponent(buildOverpassQuery(center.lat, center.lon, radius));
+  const controllers = OVERPASS_ENDPOINTS.map(() => new AbortController());
+  const timer = setTimeout(() => controllers.forEach(c => c.abort()), OVERPASS_TIMEOUT_MS);
+  const errors: string[] = [];
+  try {
+    // Todos ao mesmo tempo; a primeira resposta boa vence e as outras são canceladas.
+    const json = await Promise.any(OVERPASS_ENDPOINTS.map((url, i) =>
+      queryEndpoint(url, body, controllers[i].signal).catch((e: any) => {
+        errors.push(e?.name === 'AbortError' ? 'sem resposta' : (e?.message || 'falha de conexão'));
+        throw e;
+      })
+    ));
+    controllers.forEach(c => c.abort());
+    const items = parseOverpassResult(json, center, radius);
+    writeCache(center, radius, items);
+    return { items, cachedAt: null };
+  } catch {
+    const detail = [...new Set(errors)].join(', ');
+    throw new Error(`Os servidores do mapa não responderam agora${detail ? ` (${detail})` : ''}. Clique em "Tentar novamente" em alguns instantes; um raio menor também ajuda.`);
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------

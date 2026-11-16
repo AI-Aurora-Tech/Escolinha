@@ -58,7 +58,8 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [radiusInput, setRadiusInput] = useState(kmText(DEFAULT_RADIUS_METERS)); // km, como digitado
   const [searchedRadius, setSearchedRadius] = useState<number | null>(null); // raio da última busca feita
   const [searching, setSearching] = useState(false);
-  const [attempt, setAttempt] = useState<{ n: number; total: number } | null>(null);
+  const [elapsed, setElapsed] = useState(0);                      // segundos de busca
+  const [cachedAt, setCachedAt] = useState<number | null>(null);   // resultado veio da memória
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
@@ -70,19 +71,22 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     await supabase.from('app_settings').upsert({ key: CENTER_SETTING_KEY, value: JSON.stringify(p) });
   };
 
-  const runSearch = useCallback(async (c: GeoPoint, r: number) => {
+  const runSearch = useCallback(async (c: GeoPoint, r: number, force = false) => {
     setSearchedRadius(r);
-    setSearching(true); setSearchError(null); setResults(null); setSelected(new Set());
+    setSearching(true); setSearchError(null); setResults(null); setSelected(new Set()); setElapsed(0);
+    const started = Date.now();
+    const tick = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     try {
-      const found = await searchNearbyBusinesses(c, r, (n, total) => setAttempt({ n, total }));
+      const { items: found, cachedAt: fromCache } = await searchNearbyBusinesses(c, r, { force });
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
+      setCachedAt(fromCache);
     } catch (e: any) {
       setSearchError(e?.message || 'Erro ao buscar empresas.');
     } finally {
+      clearInterval(tick);
       setSearching(false);
-      setAttempt(null);
     }
   }, [existingContacts]);
 
@@ -268,12 +272,12 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           </div>
         )}
 
-        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...{attempt && attempt.n > 1 && <p className="text-xs text-gray-400 mt-1">O primeiro servidor do mapa não respondeu; tentando outro ({attempt.n} de {attempt.total})...</p>}</div>}
+        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...<p className="text-xs text-gray-400 mt-1">{elapsed > 0 ? `${elapsed} s · ` : ''}consultando vários servidores do mapa ao mesmo tempo</p></div>}
 
         {searchError && !searching && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span>{searchError}</span>
-            {center && <button onClick={() => void runSearch(center, searchedRadius ?? radius)} className="font-bold underline shrink-0">Tentar novamente</button>}
+            {center && <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="font-bold underline shrink-0">Tentar novamente</button>}
           </div>
         )}
 
@@ -284,6 +288,12 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                 <strong className="text-gray-900">{results.length}</strong> empresa(s) nova(s) encontrada(s){searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
                 {results.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · WhatsApp: {stats.whatsapp} · e-mail: {stats.email}</span>}
+                {cachedAt && center && (
+                  <span className="block text-xs text-gray-400 mt-0.5">
+                    Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.{' '}
+                    <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="text-primary-600 font-bold underline">Buscar de novo no mapa</button>
+                  </span>
+                )}
               </p>
               <div className="flex flex-wrap gap-2 md:shrink-0">
                 <button onClick={() => void handleAdd()} disabled={selected.size === 0 || adding} className="flex-1 md:flex-none justify-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap">
