@@ -31,3 +31,39 @@ BEGIN
         CREATE POLICY marketing_leads_all ON public.marketing_leads FOR ALL USING (true) WITH CHECK (true);
     END IF;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Tipos de patrocínio (Camisa, Placa no campo, Banner...), cadastrados pela tela.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.sponsorship_types (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    description text,
+    suggested_value numeric(10,2),                     -- valor de referência (opcional)
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.sponsorship_types ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sponsorship_types' AND policyname = 'sponsorship_types_all') THEN
+        CREATE POLICY sponsorship_types_all ON public.sponsorship_types FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+
+-- Tipos iniciais (só se a tabela estiver vazia).
+INSERT INTO public.sponsorship_types (name, description)
+SELECT v.name, v.description
+FROM (VALUES
+    ('Camisa', 'Logo na camisa / uniforme'),
+    ('Placa', 'Placa no campo'),
+    ('Banner', 'Banner em jogos e eventos'),
+    ('Redes sociais', 'Divulgação no Instagram / Facebook')
+) AS v(name, description)
+WHERE NOT EXISTS (SELECT 1 FROM public.sponsorship_types);
+
+-- Tipos de patrocínio escolhidos e valor negociado em cada contato de patrocinador.
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS sponsorship_type_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS deal_value numeric(10,2);

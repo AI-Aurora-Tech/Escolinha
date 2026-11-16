@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { sendZApiMessage } from '../services/zapiService';
 import {
   Megaphone, Plus, Search, X, Edit, Trash2, MessageCircle, Phone, MapPin, CalendarClock, AlertTriangle,
-  Users, Handshake, CheckSquare, Square, Pause, Play, Loader2, BarChart3, ListChecks, History, Send, RefreshCw
+  Users, Handshake, CheckSquare, Square, Pause, Play, Loader2, BarChart3, ListChecks, History, Send, RefreshCw, Tags, Eye, EyeOff
 } from 'lucide-react';
 
 // ---------- Tipos e constantes ----------
@@ -31,7 +31,17 @@ interface Lead {
   status: LeadStatus;
   nextContactDate: string; // 'YYYY-MM-DD' ou ''
   history: LeadHistoryEntry[];
+  sponsorshipTypeIds: string[]; // tipos de patrocínio de interesse (só patrocinador)
+  dealValue: string;            // valor negociado, como digitado ('' = não informado)
   createdAt?: string;
+}
+
+interface SponsorshipType {
+  id: string;
+  name: string;
+  description: string;
+  suggestedValue: number | null;
+  active: boolean;
 }
 
 const STATUS_LIST: { id: LeadStatus; label: string; badge: string; bar: string }[] = [
@@ -49,7 +59,18 @@ const SOURCES = ['Indicação', 'Instagram', 'Facebook', 'WhatsApp', 'Panfleto',
 
 const EMPTY_LEAD: Omit<Lead, 'id'> = {
   leadType: 'STUDENT', name: '', contactName: '', phone: '', email: '', neighborhood: '', source: '',
-  interest: '', status: 'NEW', nextContactDate: '', history: [],
+  interest: '', status: 'NEW', nextContactDate: '', history: [], sponsorshipTypeIds: [], dealValue: '',
+};
+
+const formatMoney = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+// Aceita "1.500,50", "1500,50", "1500.50" e "1500".
+const parseMoney = (v: string): number | null => {
+  let t = String(v ?? '').replace(/[^\d.,]/g, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (!/^\d+(\.\d{1,2})?$/.test(t)) t = t.replace(/\./g, '');
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : null;
 };
 
 const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -80,7 +101,14 @@ const mapRow = (r: any): Lead => ({
   status: (STATUS_LIST.some(s => s.id === r.status) ? r.status : 'NEW') as LeadStatus,
   nextContactDate: r.next_contact_date || '',
   history: Array.isArray(r.history) ? r.history : [],
+  sponsorshipTypeIds: Array.isArray(r.sponsorship_type_ids) ? r.sponsorship_type_ids : [],
+  dealValue: r.deal_value != null ? String(r.deal_value).replace('.', ',') : '',
   createdAt: r.created_at,
+});
+
+const mapTypeRow = (r: any): SponsorshipType => ({
+  id: r.id, name: r.name || '', description: r.description || '',
+  suggestedValue: r.suggested_value != null ? Number(r.suggested_value) : null, active: r.active !== false,
 });
 
 const toRow = (l: Omit<Lead, 'id'>) => ({
@@ -95,12 +123,17 @@ const toRow = (l: Omit<Lead, 'id'>) => ({
   status: l.status,
   next_contact_date: l.nextContactDate || null,
   history: l.history,
+  sponsorship_type_ids: l.leadType === 'SPONSOR' ? l.sponsorshipTypeIds : [],
+  deal_value: l.leadType === 'SPONSOR' ? parseMoney(l.dealValue) : null,
   updated_at: new Date().toISOString(),
 });
 
 // A tabela é criada pelo script marketing_setup.sql; sem ela mostramos as instruções.
 const isMissingTable = (err: any) =>
-  /marketing_leads/i.test(err?.message || '') && /(does not exist|could not find|schema cache)/i.test(err?.message || '');
+  /(marketing_leads|sponsorship_types)/i.test(err?.message || '') && /(does not exist|could not find|schema cache)/i.test(err?.message || '');
+// Colunas novas (tipos de patrocínio / valor) ausentes: o script precisa ser executado de novo.
+const isMissingColumn = (err: any) => /(sponsorship_type_ids|deal_value)/i.test(err?.message || '');
+const SETUP_HINT = 'Execute novamente o script marketing_setup.sql no SQL Editor do Supabase (ele foi atualizado com os tipos de patrocínio).';
 
 // ---------- Componente ----------
 
@@ -113,7 +146,10 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
   const [loading, setLoading] = useState(true);
   const [tableMissing, setTableMissing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'DASHBOARD' | 'LEADS'>('DASHBOARD');
+  const [tab, setTab] = useState<'DASHBOARD' | 'LEADS' | 'TYPES'>('DASHBOARD');
+  const [types, setTypes] = useState<SponsorshipType[]>([]);
+  const [typeForm, setTypeForm] = useState<{ id: string | null; name: string; description: string; suggestedValue: string } | null>(null);
+  const [sponsorshipFilter, setSponsorshipFilter] = useState<string>('ALL');
 
   // Filtros
   const [search, setSearch] = useState('');
@@ -151,14 +187,19 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
   const loadLeads = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    const { data, error } = await supabase.from('marketing_leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: true });
+    const [leadsRes, typesRes] = await Promise.all([
+      supabase.from('marketing_leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: true }),
+      supabase.from('sponsorship_types').select('*').order('name', { ascending: true }),
+    ]);
+    const error = leadsRes.error || typesRes.error;
     if (error) {
       if (isMissingTable(error)) setTableMissing(true);
       else setLoadError(`Não foi possível carregar os contatos: ${error.message}`);
       setLeads([]);
     } else {
       setTableMissing(false);
-      setLeads((data || []).map(mapRow));
+      setLeads((leadsRes.data || []).map(mapRow));
+      setTypes((typesRes.data || []).map(mapTypeRow));
     }
     setLoading(false);
   }, []);
@@ -176,6 +217,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       if (statusFilter === 'OPEN' && !isOpenStatus(l.status)) return false;
       if (statusFilter !== 'ALL' && statusFilter !== 'OPEN' && l.status !== statusFilter) return false;
       if (followUpFilter === 'DUE' && !isDue(l)) return false;
+      if (sponsorshipFilter !== 'ALL' && !(l.leadType === 'SPONSOR' && l.sponsorshipTypeIds.includes(sponsorshipFilter))) return false;
       if (q && ![l.name, l.contactName, l.phone, l.neighborhood, l.interest, l.email].some(v => (v || '').toLowerCase().includes(q))) return false;
       return true;
     }).sort((a, b) => {
@@ -186,7 +228,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       if (na !== nb) return na.localeCompare(nb);
       return a.name.localeCompare(b.name);
     });
-  }, [leads, search, typeFilter, statusFilter, followUpFilter, today]);
+  }, [leads, search, typeFilter, statusFilter, followUpFilter, sponsorshipFilter, today]);
 
   const stats = useMemo(() => {
     const byStatus: Record<LeadStatus, number> = { NEW: 0, CONTACTED: 0, NEGOTIATING: 0, WON: 0, LOST: 0 };
@@ -212,6 +254,21 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       sources: Object.entries(bySource).sort((a, b) => b[1].total - a[1].total),
     };
   }, [leads, today]);
+
+  // Por tipo de patrocínio: interessados em aberto, fechados e soma dos valores fechados.
+  const typeStats = useMemo(() => types.map(t => {
+    const sponsors = leads.filter(l => l.leadType === 'SPONSOR' && l.sponsorshipTypeIds.includes(t.id));
+    const won = sponsors.filter(l => l.status === 'WON');
+    return {
+      type: t,
+      open: sponsors.filter(l => isOpenStatus(l.status)).length,
+      won: won.length,
+      wonValue: won.reduce((acc, l) => acc + (parseMoney(l.dealValue) || 0), 0),
+    };
+  }), [types, leads]);
+  const totalWonSponsorValue = useMemo(() => leads.filter(l => l.leadType === 'SPONSOR' && l.status === 'WON').reduce((acc, l) => acc + (parseMoney(l.dealValue) || 0), 0), [leads]);
+
+  const typeName = (id: string) => types.find(t => t.id === id)?.name || 'Tipo removido';
 
   const dueLeads = useMemo(() => leads.filter(isDue).sort((a, b) => a.nextContactDate.localeCompare(b.nextContactDate)), [leads, today]);
 
@@ -241,7 +298,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       : supabase.from('marketing_leads').insert([row]).select().single();
     const { data: saved, error } = await req;
     if (error || !saved) {
-      alert(`Não foi possível salvar o contato: ${error?.message || 'nenhum registro retornado'}`);
+      alert(`Não foi possível salvar o contato: ${error?.message || 'nenhum registro retornado'}${isMissingColumn(error) ? `\n\n${SETUP_HINT}` : ''}`);
       return null;
     }
     const lead = mapRow(saved);
@@ -289,6 +346,45 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     setLeads(prev => prev.filter(x => x.id !== l.id));
     setSelectedIds(prev => { const n = new Set(prev); n.delete(l.id); return n; });
   };
+
+  // ---------- Tipos de patrocínio ----------
+
+  const handleSaveType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!typeForm || !typeForm.name.trim()) return;
+    const name = typeForm.name.trim();
+    if (types.some(t => t.id !== typeForm.id && t.name.trim().toLowerCase() === name.toLowerCase())) return alert('Já existe um tipo de patrocínio com este nome.');
+    const row = { name, description: typeForm.description.trim() || null, suggested_value: parseMoney(typeForm.suggestedValue) };
+    const req = typeForm.id
+      ? supabase.from('sponsorship_types').update(row).eq('id', typeForm.id).select().single()
+      : supabase.from('sponsorship_types').insert([row]).select().single();
+    const { data, error } = await req;
+    if (error || !data) return alert(`Não foi possível salvar o tipo: ${error?.message || 'nenhum registro retornado'}`);
+    const saved = mapTypeRow(data);
+    setTypes(prev => (typeForm.id ? prev.map(t => t.id === saved.id ? saved : t) : [...prev, saved]).sort((a, b) => a.name.localeCompare(b.name)));
+    setTypeForm(null);
+  };
+
+  const handleToggleTypeActive = async (t: SponsorshipType) => {
+    const { error } = await supabase.from('sponsorship_types').update({ active: !t.active }).eq('id', t.id);
+    if (error) return alert(`Não foi possível alterar: ${error.message}`);
+    setTypes(prev => prev.map(x => x.id === t.id ? { ...x, active: !t.active } : x));
+  };
+
+  const handleDeleteType = async (t: SponsorshipType) => {
+    const inUse = leads.filter(l => l.sponsorshipTypeIds.includes(t.id)).length;
+    if (inUse > 0) return alert(`"${t.name}" está em ${inUse} contato(s) e não pode ser excluído. Use "Desativar" para escondê-lo dos novos cadastros.`);
+    if (!confirm(`Excluir o tipo de patrocínio "${t.name}"?`)) return;
+    const { error } = await supabase.from('sponsorship_types').delete().eq('id', t.id);
+    if (error) return alert(`Não foi possível excluir: ${error.message}`);
+    setTypes(prev => prev.filter(x => x.id !== t.id));
+    if (sponsorshipFilter === t.id) setSponsorshipFilter('ALL');
+  };
+
+  const toggleFormType = (id: string) => setForm(f => ({
+    ...f,
+    sponsorshipTypeIds: f.sponsorshipTypeIds.includes(id) ? f.sponsorshipTypeIds.filter(x => x !== id) : [...f.sponsorshipTypeIds, id],
+  }));
 
   // ---------- Seleção ----------
 
@@ -416,8 +512,9 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       {loadError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex justify-between items-center gap-2"><span>{loadError}</span><button onClick={() => void loadLeads()} className="font-bold underline">Recarregar</button></div>}
 
       <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-full md:w-fit">
-        <button onClick={() => setTab('DASHBOARD')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-bold ${tab === 'DASHBOARD' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}><BarChart3 className="w-4 h-4" /> Painel</button>
-        <button onClick={() => setTab('LEADS')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-bold ${tab === 'LEADS' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}><ListChecks className="w-4 h-4" /> Contatos ({leads.length})</button>
+        <button onClick={() => setTab('DASHBOARD')} className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-bold whitespace-nowrap ${tab === 'DASHBOARD' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}><BarChart3 className="w-4 h-4" /> Painel</button>
+        <button onClick={() => setTab('LEADS')} className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-bold whitespace-nowrap ${tab === 'LEADS' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}><ListChecks className="w-4 h-4" /> Contatos ({leads.length})</button>
+        <button onClick={() => setTab('TYPES')} className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-bold whitespace-nowrap ${tab === 'TYPES' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}><Tags className="w-4 h-4" /> <span className="hidden sm:inline">Tipos de patrocínio</span><span className="sm:hidden">Patrocínios</span></button>
       </div>
 
       {tab === 'DASHBOARD' && (
@@ -462,6 +559,26 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
           </div>
 
           <div className="bg-white p-5 rounded-xl border shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2"><Tags className="w-5 h-5 text-amber-600" /> Patrocínios por tipo</h3>
+              <span className="text-sm text-gray-500">Total fechado: <strong className="text-green-600">{formatMoney(totalWonSponsorValue)}</strong></span>
+            </div>
+            {typeStats.length === 0 ? <p className="text-sm text-gray-400">Nenhum tipo cadastrado. Cadastre na aba "Tipos de patrocínio".</p> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead><tr className="text-xs text-gray-400 uppercase text-left"><th className="pb-2">Tipo</th><th className="pb-2 text-right">Em negociação</th><th className="pb-2 text-right">Fechados</th><th className="pb-2 text-right">Valor fechado</th></tr></thead>
+                  <tbody className="divide-y">
+                    {typeStats.map(ts => (
+                      <tr key={ts.type.id}><td className="py-2 text-gray-700">{ts.type.name}{!ts.type.active && <span className="ml-2 text-[10px] text-gray-400 uppercase">(inativo)</span>}</td><td className="py-2 text-right font-bold">{ts.open}</td><td className="py-2 text-right text-green-600 font-bold">{ts.won}</td><td className="py-2 text-right text-gray-700">{formatMoney(ts.wonValue)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-gray-400 mt-2">Um patrocinador pode ter mais de um tipo; o valor dele aparece em cada tipo marcado.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border shadow-sm">
             <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><CalendarClock className="w-5 h-5 text-red-500" /> Retornos para hoje e atrasados</h3>
             {dueLeads.length === 0 ? <p className="text-sm text-gray-400">Nenhum retorno pendente. 👍</p> : (
               <div className="divide-y">
@@ -484,11 +601,11 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
       {tab === 'LEADS' && (
         <div className="space-y-4">
           <div className="bg-white p-4 rounded-xl border shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-            <div className="lg:col-span-4 relative">
+            <div className="lg:col-span-3 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Buscar nome, telefone, bairro..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <select className="lg:col-span-3 border rounded-lg px-3 py-2 text-sm bg-white text-gray-600" value={typeFilter} onChange={e => setTypeFilter(e.target.value as any)}>
+            <select className="lg:col-span-2 border rounded-lg px-3 py-2 text-sm bg-white text-gray-600" value={typeFilter} onChange={e => setTypeFilter(e.target.value as any)}>
               <option value="ALL">Tipo: Todos</option>
               <option value="STUDENT">Possíveis alunos</option>
               <option value="SPONSOR">Possíveis patrocinadores</option>
@@ -501,6 +618,10 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
             <select className="lg:col-span-2 border rounded-lg px-3 py-2 text-sm bg-white text-gray-600" value={followUpFilter} onChange={e => setFollowUpFilter(e.target.value as any)}>
               <option value="ALL">Retorno: Todos</option>
               <option value="DUE">Hoje / atrasados</option>
+            </select>
+            <select className="lg:col-span-2 border rounded-lg px-3 py-2 text-sm bg-white text-gray-600" value={sponsorshipFilter} onChange={e => setSponsorshipFilter(e.target.value)}>
+              <option value="ALL">Patrocínio: Todos</option>
+              {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
 
@@ -542,6 +663,12 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                     <div className="text-xs text-gray-600 space-y-1">
                       {l.phone && <p className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-gray-400" /> {l.phone}</p>}
                       {l.neighborhood && <p className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-gray-400" /> {l.neighborhood}</p>}
+                      {l.leadType === 'SPONSOR' && (l.sponsorshipTypeIds.length > 0 || l.dealValue) && (
+                        <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                          {l.sponsorshipTypeIds.map(id => <span key={id} className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">{typeName(id)}</span>)}
+                          {parseMoney(l.dealValue) != null && <span className="text-[11px] font-bold text-green-700 ml-1">{formatMoney(parseMoney(l.dealValue)!)}</span>}
+                        </div>
+                      )}
                       {l.interest && <p className="text-gray-500 line-clamp-2">{l.interest}</p>}
                       {l.source && <p className="text-gray-400">Origem: {l.source}</p>}
                       {l.nextContactDate && isOpenStatus(l.status) && (
@@ -561,6 +688,54 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'TYPES' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <p className="text-sm text-gray-500">Cadastre o que a escolinha oferece aos patrocinadores (ex.: Camisa, Placa, Banner). Eles aparecem no cadastro de cada patrocinador.</p>
+            <button onClick={() => setTypeForm({ id: null, name: '', description: '', suggestedValue: '' })} className="flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm font-bold text-sm shrink-0"><Plus className="w-4 h-4" /> Novo tipo</button>
+          </div>
+          {types.length === 0 ? (
+            <div className="py-12 text-center bg-white rounded-xl border border-dashed text-gray-400"><Tags className="w-10 h-10 mx-auto mb-2 opacity-40" /><p className="font-medium">Nenhum tipo de patrocínio cadastrado.</p></div>
+          ) : (
+            <div className="bg-white rounded-xl border shadow-sm divide-y">
+              {types.map(t => {
+                const inUse = leads.filter(l => l.sponsorshipTypeIds.includes(t.id)).length;
+                return (
+                  <div key={t.id} className={`p-4 flex items-center gap-3 ${t.active ? '' : 'opacity-60'}`}>
+                    <div className="bg-amber-50 p-2 rounded-lg text-amber-600"><Tags className="w-5 h-5" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900">{t.name}{!t.active && <span className="ml-2 text-[10px] text-gray-500 uppercase bg-gray-100 px-1.5 py-0.5 rounded">inativo</span>}</p>
+                      <p className="text-xs text-gray-500 truncate">{[t.description, t.suggestedValue != null ? `Valor sugerido: ${formatMoney(t.suggestedValue)}` : '', `${inUse} contato(s)`].filter(Boolean).join(' · ')}</p>
+                    </div>
+                    <button onClick={() => setTypeForm({ id: t.id, name: t.name, description: t.description, suggestedValue: t.suggestedValue != null ? String(t.suggestedValue).replace('.', ',') : '' })} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg" title="Editar"><Edit className="w-4 h-4" /></button>
+                    <button onClick={() => void handleToggleTypeActive(t)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title={t.active ? 'Desativar (esconde dos novos cadastros)' : 'Reativar'}>{t.active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                    <button onClick={() => void handleDeleteType(t)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {typeForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <form onSubmit={handleSaveType} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900">{typeForm.id ? 'Editar tipo de patrocínio' : 'Novo tipo de patrocínio'}</h3>
+              <button type="button" onClick={() => setTypeForm(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div><label className="block text-xs font-medium text-gray-500 mb-1">Nome *</label><input required autoFocus className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Ex.: Camisa, Placa, Banner" value={typeForm.name} onChange={e => setTypeForm({ ...typeForm, name: e.target.value })} /></div>
+            <div><label className="block text-xs font-medium text-gray-500 mb-1">Descrição</label><input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Ex.: Logo na frente da camisa" value={typeForm.description} onChange={e => setTypeForm({ ...typeForm, description: e.target.value })} /></div>
+            <div><label className="block text-xs font-medium text-gray-500 mb-1">Valor sugerido (R$)</label><input inputMode="decimal" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Opcional" value={typeForm.suggestedValue} onChange={e => setTypeForm({ ...typeForm, suggestedValue: e.target.value })} /></div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setTypeForm(null)} className="px-5 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+              <button type="submit" className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-700">Salvar</button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -592,6 +767,29 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                   <div><label className="block text-xs font-medium text-gray-500 mb-1">Origem</label><select className="w-full border rounded-lg p-2.5 bg-white" value={form.source} onChange={e => setForm({ ...form, source: e.target.value })}><option value="">Selecione...</option>{SOURCES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                 </div>
                 <div><label className="block text-xs font-medium text-gray-500 mb-1">{form.leadType === 'SPONSOR' ? 'Interesse (ex.: uniforme, placa no campo, valor)' : 'Interesse (ex.: idade, categoria, horário)'}</label><textarea rows={2} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={form.interest} onChange={e => setForm({ ...form, interest: e.target.value })} /></div>
+                {form.leadType === 'SPONSOR' && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-gray-500">Tipos de patrocínio</label>
+                    {types.filter(t => t.active || form.sponsorshipTypeIds.includes(t.id)).length === 0 ? (
+                      <p className="text-xs text-gray-400">Nenhum tipo cadastrado. Cadastre na aba "Tipos de patrocínio".</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {types.filter(t => t.active || form.sponsorshipTypeIds.includes(t.id)).map(t => {
+                          const on = form.sponsorshipTypeIds.includes(t.id);
+                          return (
+                            <button type="button" key={t.id} onClick={() => toggleFormType(t.id)} title={t.description || undefined} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${on ? 'bg-amber-50 border-amber-500 text-amber-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                              {on ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />} {t.name}{t.suggestedValue != null && <span className="font-normal text-gray-400">({formatMoney(t.suggestedValue)})</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Valor negociado (R$)</label>
+                      <input inputMode="decimal" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder={(() => { const sug = form.sponsorshipTypeIds.reduce((acc, id) => acc + (types.find(t => t.id === id)?.suggestedValue || 0), 0); return sug > 0 ? `Sugerido: ${formatMoney(sug)}` : 'Ex.: 500,00'; })()} value={form.dealValue} onChange={e => setForm({ ...form, dealValue: e.target.value })} />
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="block text-xs font-medium text-gray-500 mb-1">Etapa</label><select className="w-full border rounded-lg p-2.5 bg-white" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as LeadStatus })}>{STATUS_LIST.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
                   <div><label className="block text-xs font-medium text-gray-500 mb-1">Próximo contato</label><input type="date" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={form.nextContactDate} onChange={e => setForm({ ...form, nextContactDate: e.target.value })} /></div>
