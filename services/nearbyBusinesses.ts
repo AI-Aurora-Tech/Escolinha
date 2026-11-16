@@ -24,7 +24,13 @@ export interface NearbyBusiness {
 }
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+// Servidores públicos do Overpass: se um estiver sobrecarregado (504/429) ou demorar, tenta o próximo.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+const OVERPASS_TIMEOUT_MS = 35000;
 
 // ---------- Geocodificação ----------
 
@@ -58,20 +64,20 @@ const AMENITIES = 'restaurant|cafe|fast_food|bar|pub|biergarten|food_court|ice_c
 const LEISURE = 'fitness_centre|sports_centre|dance|bowling_alley|escape_game|amusement_arcade';
 const TOURISM = 'hotel|motel|guest_house|hostel';
 
-export const buildOverpassQuery = (lat: number, lon: number, radius: number) => {
-  const a = `(around:${radius},${lat},${lon})`;
-  return `[out:json][timeout:25];
+// Uma única varredura da área (tudo que tem nome) e o filtro por tipo em memória:
+// bem mais leve para o servidor do que uma varredura por tipo.
+export const buildOverpassQuery = (lat: number, lon: number, radius: number) => `[out:json][timeout:30];
+nwr(around:${radius},${lat},${lon})["name"]->.all;
 (
-  nwr${a}["name"]["shop"];
-  nwr${a}["name"]["office"];
-  nwr${a}["name"]["craft"];
-  nwr${a}["name"]["healthcare"];
-  nwr${a}["name"]["amenity"~"^(${AMENITIES})$"];
-  nwr${a}["name"]["leisure"~"^(${LEISURE})$"];
-  nwr${a}["name"]["tourism"~"^(${TOURISM})$"];
+  nwr.all["shop"];
+  nwr.all["office"];
+  nwr.all["craft"];
+  nwr.all["healthcare"];
+  nwr.all["amenity"~"^(${AMENITIES})$"];
+  nwr.all["leisure"~"^(${LEISURE})$"];
+  nwr.all["tourism"~"^(${TOURISM})$"];
 );
 out center tags;`;
-};
 
 const CATEGORY_PT: Record<string, string> = {
   bakery: 'Padaria', supermarket: 'Supermercado', convenience: 'Conveniência', butcher: 'Açougue', greengrocer: 'Hortifruti',
@@ -150,19 +156,34 @@ export const parseOverpassResult = (json: any, center: { lat: number; lon: numbe
   return out.sort((a, b) => a.distanceMeters - b.distanceMeters);
 };
 
-export const searchNearbyBusinesses = async (center: { lat: number; lon: number }, radius: number): Promise<NearbyBusiness[]> => {
+export const searchNearbyBusinesses = async (
+  center: { lat: number; lon: number },
+  radius: number,
+  onAttempt?: (attempt: number, total: number) => void,
+): Promise<NearbyBusiness[]> => {
   const body = 'data=' + encodeURIComponent(buildOverpassQuery(center.lat, center.lon, radius));
-  let lastErr = '';
-  for (const url of OVERPASS_ENDPOINTS) {
+  const errors: string[] = [];
+  for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
+    const url = OVERPASS_ENDPOINTS[i];
+    onAttempt?.(i + 1, OVERPASS_ENDPOINTS.length);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-      if (!res.ok) { lastErr = `HTTP ${res.status}`; continue; }
-      return parseOverpassResult(await res.json(), center, radius);
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal: ctrl.signal });
+      if (!res.ok) { errors.push(`HTTP ${res.status}`); continue; }
+      const json = await res.json();
+      // O Overpass às vezes responde 200 com um aviso de tempo esgotado e sem resultados.
+      if (json?.remark && /timed out|runtime error|out of memory/i.test(json.remark) && !(json.elements || []).length) {
+        errors.push('tempo esgotado no servidor'); continue;
+      }
+      return parseOverpassResult(json, center, radius);
     } catch (e: any) {
-      lastErr = e?.message || 'falha de conexão';
+      errors.push(e?.name === 'AbortError' ? 'sem resposta' : (e?.message || 'falha de conexão'));
+    } finally {
+      clearTimeout(timer);
     }
   }
-  throw new Error(`Não foi possível consultar o mapa (${lastErr}). Tente novamente em alguns minutos.`);
+  throw new Error(`Os servidores do mapa estão ocupados agora (${errors.join(', ')}). Aguarde alguns minutos e clique em "Tentar novamente"; um raio menor também ajuda.`);
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------

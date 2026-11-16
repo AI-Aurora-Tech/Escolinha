@@ -41,6 +41,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [radius, setRadius] = useState(DEFAULT_RADIUS_METERS);            // raio usado na última busca
   const [radiusInput, setRadiusInput] = useState(kmText(DEFAULT_RADIUS_METERS)); // km, como digitado
   const [searching, setSearching] = useState(false);
+  const [attempt, setAttempt] = useState<{ n: number; total: number } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
@@ -56,7 +57,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     setRadius(r);
     setSearching(true); setSearchError(null); setResults(null); setSelected(new Set());
     try {
-      const found = await searchNearbyBusinesses(c, r);
+      const found = await searchNearbyBusinesses(c, r, (n, total) => setAttempt({ n, total }));
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
@@ -64,6 +65,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
       setSearchError(e?.message || 'Erro ao buscar empresas.');
     } finally {
       setSearching(false);
+      setAttempt(null);
     }
   }, [existingContacts]);
 
@@ -218,7 +220,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           <span className="text-xs text-gray-400 md:ml-auto">de {kmText(MIN_RADIUS_METERS)} a {kmText(MAX_RADIUS_METERS)} km</span>
         </div>
 
-        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...</div>}
+        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...{attempt && attempt.n > 1 && <p className="text-xs text-gray-400 mt-1">O primeiro servidor do mapa não respondeu; tentando outro ({attempt.n} de {attempt.total})...</p>}</div>}
 
         {searchError && !searching && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
