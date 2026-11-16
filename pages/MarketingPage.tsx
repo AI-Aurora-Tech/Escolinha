@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { User, UserRole } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { jsPDF } from 'jspdf';
+import { NearbyBusinessesModal } from '../components/NearbyBusinessesModal';
+import { NearbyBusiness } from '../services/nearbyBusinesses';
 import { sendZApiMessage } from '../services/zapiService';
 import {
   Megaphone, Plus, Search, X, Edit, Trash2, MessageCircle, Phone, MapPin, CalendarClock, AlertTriangle,
@@ -60,7 +62,7 @@ const statusInfo = (s: LeadStatus) => STATUS_LIST.find(x => x.id === s) || STATU
 
 const TYPE_LABEL: Record<LeadType, string> = { STUDENT: 'Possível aluno', SPONSOR: 'Possível patrocinador' };
 
-const SOURCES = ['Indicação', 'Instagram', 'Facebook', 'WhatsApp', 'Panfleto', 'Evento / Jogo', 'Visita', 'Google', 'Outro'];
+const SOURCES = ['Indicação', 'Instagram', 'Facebook', 'WhatsApp', 'Panfleto', 'Evento / Jogo', 'Visita', 'Google', 'Busca no mapa', 'Outro'];
 
 const EMPTY_LEAD: Omit<Lead, 'id'> = {
   leadType: 'STUDENT', name: '', contactName: '', phone: '', email: '', neighborhood: '', source: '',
@@ -176,6 +178,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
   const [types, setTypes] = useState<SponsorshipType[]>([]);
   const [typeForm, setTypeForm] = useState<{ id: string | null; name: string; description: string; suggestedValue: string } | null>(null);
   const [sponsorshipFilter, setSponsorshipFilter] = useState<string>('ALL');
+  const [nearbyOpen, setNearbyOpen] = useState(false);
 
   // Filtros
   const [search, setSearch] = useState('');
@@ -505,6 +508,40 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     setForm(f => ({ ...f, history: [termHistoryEntry(f), ...f.history] }));
   };
 
+  // ---------- Busca de empresas próximas ----------
+
+  // Adiciona as empresas escolhidas como possíveis patrocinadores (etapa "Novo").
+  const handleAddNearby = async (items: NearbyBusiness[]): Promise<number> => {
+    const now = new Date().toISOString();
+    const rows = items.map(b => {
+      const extras = [
+        b.category,
+        b.phone && b.whatsapp && b.phone !== b.whatsapp ? `Tel.: ${b.phone}` : '',
+        b.website ? `Site: ${b.website}` : '',
+      ].filter(Boolean).join(' · ');
+      const data: Omit<Lead, 'id'> = {
+        ...EMPTY_LEAD,
+        leadType: 'SPONSOR',
+        name: b.name,
+        phone: b.whatsapp || b.phone,
+        email: b.email,
+        neighborhood: b.neighborhood || b.address,
+        source: 'Busca no mapa',
+        interest: extras,
+        history: [{ date: now, text: `Encontrada na busca de empresas próximas (${b.distanceMeters} m do clube).${b.address ? ` Endereço: ${b.address}.` : ''}`, author: authorName }],
+      };
+      return { ...toRow(data), created_at: now };
+    });
+    const { data, error } = await supabase.from('marketing_leads').insert(rows).select();
+    if (error) {
+      alert(`Não foi possível adicionar as empresas: ${error.message}${isMissingColumn(error) ? `\n\n${SETUP_HINT}` : ''}`);
+      return 0;
+    }
+    const added = (data || []).map(mapRow);
+    setLeads(prev => [...added, ...prev]);
+    return added.length;
+  };
+
   // ---------- Tipos de patrocínio ----------
 
   const handleSaveType = async (e: React.FormEvent) => {
@@ -661,7 +698,8 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Megaphone className="w-6 h-6 text-primary-600" /> Marketing / Captação</h2>
-        <div className="flex gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <button onClick={() => setNearbyOpen(true)} className="w-full sm:w-auto md:flex-none flex items-center justify-center gap-2 bg-white border border-primary-300 text-primary-700 px-4 py-2 rounded-lg hover:bg-primary-50 shadow-sm font-bold text-sm"><MapPin className="w-4 h-4" /> Empresas próximas</button>
           <button onClick={() => openNew('STUDENT')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 shadow-sm font-bold text-sm"><Plus className="w-4 h-4" /> Possível aluno</button>
           <button onClick={() => openNew('SPONSOR')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 shadow-sm font-bold text-sm"><Plus className="w-4 h-4" /> Patrocinador</button>
         </div>
@@ -932,6 +970,14 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
             </div>
           </form>
         </div>
+      )}
+
+      {nearbyOpen && (
+        <NearbyBusinessesModal
+          existingContacts={leads.map(l => ({ name: l.name, phone: l.phone }))}
+          onAdd={handleAddNearby}
+          onClose={() => setNearbyOpen(false)}
+        />
       )}
 
       {/* Cadastro / edição */}
