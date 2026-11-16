@@ -154,6 +154,13 @@ const daysUntil = (date: string, today: string) =>
   Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
 const EXPIRING_DAYS = 30;
 
+// Dados oficiais do clube (aparecem no termo de compromisso).
+const CLUB = {
+  name: 'CLUBE DESPORTIVO COMUNITARIO JARDIM MARTINICA',
+  address: 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290',
+  cnpj: '52.640.299/0001-42',
+};
+
 // ---------- Componente ----------
 
 interface MarketingPageProps {
@@ -430,7 +437,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     doc.setFontSize(11); doc.text('Escolinha de Futebol Garotos do Martinica', 105, y, { align: 'center' }); y += 8;
 
     title('1. DAS PARTES');
-    para('PATROCINADO: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA – Escolinha de Futebol Garotos do Martinica, Unidade Martinica, São Paulo/SP, CNPJ: ______________________.');
+    para(`PATROCINADO: ${CLUB.name} – Escolinha de Futebol Garotos do Martinica, inscrito no CNPJ sob o nº ${CLUB.cnpj}, com sede na ${CLUB.address}.`);
     para(`PATROCINADOR: ${l.name}, CNPJ/CPF: ${blank(l.sponsorDocument)}, neste ato representado por ${blank(l.contactName, 30)}, telefone ${blank(l.phone, 16)}, e-mail ${blank(l.email, 26)}, endereço/bairro ${blank(l.neighborhood, 30)}.`);
 
     title('2. DO OBJETO');
@@ -442,7 +449,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     para(l.dealFrequency === 'ONCE'
       ? `O PATROCINADOR pagará o valor único de ${valueText}, até ____/____/______.`
       : `O PATROCINADOR pagará o valor de ${valueText} por mês, até o dia ____ de cada mês, durante toda a vigência deste termo.`);
-    para('O pagamento será feito por PIX (chave celular 11987019721 – CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA) ou outra forma combinada por escrito entre as partes.');
+    para(`O pagamento será feito por PIX (chave celular 11987019721 – ${CLUB.name}) ou outra forma combinada por escrito entre as partes.`);
 
     title('4. DA VIGÊNCIA');
     para(`Este termo vigora de ${start} até ${end} (prazo final da parceria). Poderá ser renovado mediante novo termo assinado pelas partes.`);
@@ -468,7 +475,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
     doc.text('_______________________________________', left, y); doc.text('_______________________________________', 110, y); y += 5;
     doc.text('PATROCINADO', left, y); doc.text('PATROCINADOR', 110, y); y += 4.5;
-    doc.text('Clube Desportivo Municipal Jardim Martinica', left, y); doc.text(doc.splitTextToSize(l.contactName ? `${l.name} – ${l.contactName}` : l.name, 86), 110, y); y += 15;
+    doc.text(doc.splitTextToSize(`${CLUB.name}\nCNPJ ${CLUB.cnpj}`, 86), left, y); doc.text(doc.splitTextToSize(l.contactName ? `${l.name} – ${l.contactName}` : l.name, 86), 110, y); y += 18;
     doc.text('_______________________________________', left, y); doc.text('_______________________________________', 110, y); y += 5;
     doc.text('Testemunha 1 – Nome / CPF', left, y); doc.text('Testemunha 2 – Nome / CPF', 110, y);
 
