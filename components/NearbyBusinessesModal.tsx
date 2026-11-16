@@ -18,7 +18,8 @@ const RADIUS_SETTING_KEY = 'marketing_search_radius';
 const MIN_REVIEWS_PRESETS = [0, 10, 30, 50, 100, 200];
 const DEFAULT_MIN_REVIEWS = 30;
 const MIN_REVIEWS_SETTING_KEY = 'marketing_min_reviews';
-const SEGMENTS_SETTING_KEY = 'marketing_segments';
+// v2: lista de segmentos mudou (supermercados/atacados e "Outras empresas"); começa com todos marcados.
+const SEGMENTS_SETTING_KEY = 'marketing_segments_v2';
 
 const CLUB_ADDRESS = 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290';
 
@@ -479,7 +480,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             )}
             <p className="text-xs text-gray-400 mt-3">
               Dados do Google Maps. O Google não informa e-mail nem WhatsApp: celulares aparecem como "provável WhatsApp", e o e-mail pode ser obtido no site da empresa.
-              Cada segmento buscado usa 1 consulta da cota do Google; segmentos já buscados no mesmo endereço e raio nas últimas 24 h não geram custo.
+              Cada segmento usa 1 consulta da cota do Google (Supermercados, hiper e atacados usa de 4 a 7, pois também busca por texto); segmentos já buscados no mesmo endereço e raio nas últimas 24 h não geram custo.
             </p>
           </>
         )}

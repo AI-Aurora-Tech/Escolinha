@@ -76,31 +76,48 @@ export const distanceMeters = (lat1: number, lon1: number, lat2: number, lon2: n
 
 // ---------- Google Places (New) ----------
 
-const PLACES_URL = 'https://places.googleapis.com/v1/places:searchNearby';
+const PLACES_BASE = 'https://places.googleapis.com/v1/places';
 // Mesmo endereço passando pelo proxy do próprio site (vercel.json / vite.config.ts),
 // usado se o navegador bloquear a chamada direta.
-const PLACES_PROXY_URL = '/api/places/v1/places:searchNearby';
+const PLACES_PROXY_BASE = '/api/places/v1/places';
 const PLACES_TIMEOUT_MS = 20000;
 
-const FIELD_MASK = [
+const PLACE_FIELDS = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
-  'places.location', 'places.primaryType', 'places.primaryTypeDisplayName',
+  'places.location', 'places.primaryType', 'places.primaryTypeDisplayName', 'places.businessStatus',
   'places.nationalPhoneNumber', 'places.internationalPhoneNumber', 'places.websiteUri',
   'places.rating', 'places.userRatingCount',
-].join(',');
+];
+const FIELD_MASK = PLACE_FIELDS.join(',');
+const TEXT_FIELD_MASK = [...PLACE_FIELDS, 'nextPageToken'].join(',');
 
-// Segmentos de empresas. Cada segmento é um pedido ao Google (que devolve no máximo 20
+// Lugares que não são empresas: ficam de fora do segmento "Outras empresas".
+const NON_BUSINESS_TYPES = [
+  'park', 'playground', 'dog_park', 'place_of_worship', 'church', 'mosque', 'synagogue', 'hindu_temple',
+  'school', 'primary_school', 'secondary_school', 'preschool', 'university',
+  'bus_station', 'bus_stop', 'train_station', 'subway_station', 'transit_station', 'light_rail_station', 'transit_depot',
+  'parking', 'city_hall', 'local_government_office', 'courthouse', 'police', 'fire_station', 'embassy', 'cemetery',
+  'public_bath', 'tourist_attraction', 'plaza', 'apartment_building', 'housing_complex',
+];
+
+// Segmentos de empresas. Cada segmento faz pedidos ao Google (que devolve no máximo 20
 // lugares por pedido); os segmentos escolhidos são buscados ao mesmo tempo e juntados.
-export interface Segment { id: string; label: string; hint: string; types: string[] }
+// - types: busca por tipo de lugar (Nearby Search);
+// - queries: buscas por texto na região (Text Search), para pegar quem o Google classifica
+//   com outro tipo (ex.: redes de atacarejo);
+// - anyType: busca qualquer estabelecimento, menos os NON_BUSINESS_TYPES.
+export interface Segment { id: string; label: string; hint: string; types?: string[]; queries?: string[]; anyType?: boolean }
 export const SEGMENTS: Segment[] = [
+  { id: 'supermarkets', label: 'Supermercados, hiper e atacados', hint: 'supermercados, hipermercados, atacados e atacarejos', types: ['supermarket', 'hypermarket', 'wholesaler', 'warehouse_store', 'discount_supermarket'], queries: ['supermercado', 'hipermercado', 'atacado atacarejo'] },
   { id: 'food', label: 'Alimentação', hint: 'padarias, restaurantes, lanchonetes, bares', types: ['bakery', 'restaurant', 'cafe', 'coffee_shop', 'meal_takeaway', 'bar', 'ice_cream_shop', 'pizza_restaurant', 'fast_food_restaurant', 'hamburger_restaurant', 'sandwich_shop', 'steak_house'] },
-  { id: 'grocery', label: 'Mercados', hint: 'supermercados, mercearias, conveniências', types: ['supermarket', 'grocery_store', 'convenience_store', 'market', 'liquor_store', 'food_store'] },
+  { id: 'grocery', label: 'Mercearias e conveniências', hint: 'mercearias, mercadinhos, conveniências, adegas, açougues', types: ['grocery_store', 'convenience_store', 'market', 'liquor_store', 'food_store', 'butcher_shop'] },
   { id: 'health', label: 'Saúde', hint: 'farmácias, clínicas, dentistas, veterinários', types: ['pharmacy', 'drugstore', 'dentist', 'dental_clinic', 'doctor', 'physiotherapist', 'medical_lab', 'veterinary_care'] },
   { id: 'sports', label: 'Academias e esporte', hint: 'academias, clubes, quadras', types: ['gym', 'fitness_center', 'sports_club', 'sports_complex', 'yoga_studio', 'swimming_pool'] },
   { id: 'auto', label: 'Automotivo', hint: 'oficinas, postos, lava-rápidos, autopeças', types: ['car_repair', 'car_wash', 'gas_station', 'car_dealer', 'auto_parts_store'] },
   { id: 'beauty', label: 'Beleza e serviços', hint: 'salões, barbearias, lavanderias, floriculturas', types: ['beauty_salon', 'hair_salon', 'barber_shop', 'hair_care', 'nail_salon', 'spa', 'laundry', 'florist'] },
   { id: 'retail', label: 'Lojas', hint: 'roupas, calçados, materiais, móveis, eletrônicos, pet', types: ['clothing_store', 'shoe_store', 'hardware_store', 'home_goods_store', 'home_improvement_store', 'furniture_store', 'electronics_store', 'cell_phone_store', 'sporting_goods_store', 'book_store', 'pet_store', 'jewelry_store', 'gift_shop'] },
-  { id: 'business', label: 'Escritórios e outros', hint: 'imobiliárias, contabilidade, bancos, hotéis', types: ['real_estate_agency', 'insurance_agency', 'accounting', 'lawyer', 'travel_agency', 'bank', 'hotel', 'lodging', 'department_store', 'shopping_mall'] },
+  { id: 'business', label: 'Escritórios e serviços', hint: 'imobiliárias, contabilidade, bancos, hotéis', types: ['real_estate_agency', 'insurance_agency', 'accounting', 'lawyer', 'travel_agency', 'bank', 'hotel', 'lodging', 'department_store', 'shopping_mall'] },
+  { id: 'other', label: 'Outras empresas', hint: 'estabelecimentos de qualquer tipo que não entram nos segmentos acima', anyType: true },
 ];
 export const ALL_SEGMENT_IDS = SEGMENTS.map(s => s.id);
 export const segmentLabel = (id: string) => SEGMENTS.find(s => s.id === id)?.label || '';
@@ -115,6 +132,7 @@ export const parsePlace = (p: any, center: { lat: number; lon: number }, segment
   const name = p?.displayName?.text?.trim();
   const lat = p?.location?.latitude, lon = p?.location?.longitude;
   if (!name || typeof lat !== 'number' || typeof lon !== 'number') return null;
+  if (p.businessStatus === 'CLOSED_PERMANENTLY') return null;
   const comps: any[] = Array.isArray(p.addressComponents) ? p.addressComponents : [];
   const neighborhood = comps.find(c => (c.types || []).some((t: string) => t === 'sublocality_level_1' || t === 'sublocality' || t === 'neighborhood'))?.longText || '';
   const phone = p.nationalPhoneNumber || p.internationalPhoneNumber || '';
@@ -144,50 +162,96 @@ const describeHttpError = (status: number, msg: string): PlacesApiError => {
   return new PlacesApiError(`O Google respondeu com erro ${status}${msg ? `: ${msg}` : ''}.`, 'other');
 };
 
-// Um pedido ao Google para um grupo de tipos. Se algum tipo não for aceito, tenta de novo sem ele.
-const searchGroup = async (apiKey: string, center: { lat: number; lon: number }, radius: number, types: string[], signal: AbortSignal, useProxy: boolean): Promise<any[]> => {
-  let current = [...types];
-  for (let tries = 0; tries < 3 && current.length; tries++) {
-    const res = await fetch(useProxy ? PLACES_PROXY_URL : PLACES_URL, {
+type Center = { lat: number; lon: number };
+const circle = (c: Center, radius: number) => ({ circle: { center: { latitude: c.lat, longitude: c.lon }, radius } });
+const rectangle = (c: Center, radius: number) => {
+  const dLat = radius / 111320, dLon = radius / (111320 * Math.cos((c.lat * Math.PI) / 180));
+  return { rectangle: { low: { latitude: c.lat - dLat, longitude: c.lon - dLon }, high: { latitude: c.lat + dLat, longitude: c.lon + dLon } } };
+};
+
+// Faz um POST à Places API; se algum tipo não for aceito, chama onUnsupported e tenta de novo.
+const postPlaces = async (
+  endpoint: 'searchNearby' | 'searchText', apiKey: string, body: () => any, mask: string,
+  signal: AbortSignal, useProxy: boolean, onUnsupported?: (bad: string[]) => boolean,
+): Promise<any> => {
+  for (let tries = 0; tries < 3; tries++) {
+    const res = await fetch(`${useProxy ? PLACES_PROXY_BASE : PLACES_BASE}:${endpoint}`, {
       method: 'POST',
       signal,
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': FIELD_MASK },
-      body: JSON.stringify({
-        includedTypes: current,
-        maxResultCount: 20,
-        rankPreference: 'DISTANCE',
-        languageCode: 'pt-BR',
-        regionCode: 'BR',
-        locationRestriction: { circle: { center: { latitude: center.lat, longitude: center.lon }, radius } },
-      }),
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': mask },
+      body: JSON.stringify(body()),
     });
-    if (res.ok) return (await res.json())?.places || [];
+    if (res.ok) return await res.json();
     const errJson = await res.json().catch(() => null);
     const msg: string = errJson?.error?.message || '';
     const unsupported = msg.match(/Unsupported types?:\s*([^.]+)/i);
-    if (res.status === 400 && unsupported) {
-      const bad = unsupported[1].split(/[,\s]+/).filter(Boolean);
-      current = current.filter(t => !bad.includes(t));
-      continue;
-    }
+    if (res.status === 400 && unsupported && onUnsupported?.(unsupported[1].split(/[,\s]+/).filter(Boolean))) continue;
     throw describeHttpError(res.status, msg);
   }
-  return [];
+  return {};
 };
 
-// Busca os segmentos pedidos ao mesmo tempo; devolve os lugares com o segmento de origem
-// e a lista de segmentos que responderam.
-const runSegments = async (apiKey: string, center: { lat: number; lon: number }, radius: number, segmentIds: string[], useProxy: boolean) => {
+// Todos os pedidos de um segmento. Devolve os lugares e quantos pedidos foram feitos.
+const searchSegment = async (apiKey: string, c: Center, radius: number, seg: Segment, signal: AbortSignal, useProxy: boolean) => {
+  const jobs: Promise<{ places: any[]; requests: number }>[] = [];
+  const nearbyBase = { maxResultCount: 20, rankPreference: 'DISTANCE', languageCode: 'pt-BR', regionCode: 'BR', locationRestriction: circle(c, radius) };
+
+  if (seg.types?.length) {
+    let types = [...seg.types];
+    jobs.push((async () => {
+      let requests = 0;
+      const json = await postPlaces('searchNearby', apiKey, () => { requests++; return { ...nearbyBase, includedTypes: types }; }, FIELD_MASK, signal, useProxy,
+        bad => { types = types.filter(t => !bad.includes(t)); return types.length > 0; });
+      return { places: json?.places || [], requests };
+    })());
+  }
+  if (seg.anyType) {
+    let excluded = [...NON_BUSINESS_TYPES];
+    jobs.push((async () => {
+      let requests = 0;
+      const json = await postPlaces('searchNearby', apiKey, () => { requests++; return { ...nearbyBase, excludedTypes: excluded }; }, FIELD_MASK, signal, useProxy,
+        bad => { excluded = excluded.filter(t => !bad.includes(t)); return true; });
+      return { places: json?.places || [], requests };
+    })());
+  }
+  for (const q of seg.queries || []) {
+    // Busca por texto na região (até 2 páginas de 20).
+    jobs.push((async () => {
+      const places: any[] = []; let requests = 0; let pageToken: string | undefined;
+      for (let page = 0; page < 2; page++) {
+        const json = await postPlaces('searchText', apiKey, () => {
+          requests++;
+          return { textQuery: q, pageSize: 20, languageCode: 'pt-BR', regionCode: 'BR', locationRestriction: rectangle(c, radius), ...(pageToken ? { pageToken } : {}) };
+        }, TEXT_FIELD_MASK, signal, useProxy);
+        places.push(...(json?.places || []));
+        pageToken = json?.nextPageToken;
+        if (!pageToken) break;
+      }
+      return { places, requests };
+    })());
+  }
+
+  const settled = await Promise.allSettled(jobs);
+  const ok = settled.filter((r): r is PromiseFulfilledResult<{ places: any[]; requests: number }> => r.status === 'fulfilled');
+  if (ok.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+  return { places: ok.flatMap(r => r.value.places), requests: ok.reduce((n, r) => n + r.value.requests, 0) };
+};
+
+// Busca os segmentos pedidos ao mesmo tempo; devolve os lugares com o segmento de origem,
+// os segmentos que responderam e o total de pedidos feitos ao Google.
+const runSegments = async (apiKey: string, center: Center, radius: number, segmentIds: string[], useProxy: boolean) => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PLACES_TIMEOUT_MS);
   try {
     const segs = SEGMENTS.filter(s => segmentIds.includes(s.id));
-    const settled = await Promise.allSettled(segs.map(s => searchGroup(apiKey, center, radius, s.types, ctrl.signal, useProxy)));
+    const settled = await Promise.allSettled(segs.map(s => searchSegment(apiKey, center, radius, s, ctrl.signal, useProxy)));
     const okIdx = settled.map((r, i) => (r.status === 'fulfilled' ? i : -1)).filter(i => i >= 0);
     if (okIdx.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+    const value = (i: number) => (settled[i] as PromiseFulfilledResult<{ places: any[]; requests: number }>).value;
     return {
-      places: okIdx.flatMap(i => ((settled[i] as PromiseFulfilledResult<any[]>).value).map(p => ({ p, segment: segs[i].id }))),
+      places: okIdx.flatMap(i => value(i).places.map(p => ({ p, segment: segs[i].id }))),
       doneSegments: okIdx.map(i => segs[i].id),
+      requests: okIdx.reduce((n, i) => n + value(i).requests, 0),
     };
   } finally {
     clearTimeout(timer);
@@ -199,7 +263,7 @@ const isNetworkError = (e: any) => e instanceof TypeError || e?.name === 'AbortE
 // ---------- Memória de resultados (no navegador) ----------
 
 interface CachedSearch { radius: number; savedAt: number; segments: string[]; items: NearbyBusiness[] }
-const cacheKey = (c: { lat: number; lon: number }) => `nearby_google_v3:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+const cacheKey = (c: { lat: number; lon: number }) => `nearby_google_v4:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
 
 const loadCache = (c: { lat: number; lon: number }): CachedSearch | null => {
   try {
@@ -240,7 +304,7 @@ export const searchNearbyBusinesses = async (
   if (usable && missing.length === 0) return { items: pick(usable.items), cachedAt: usable.savedAt, requests: 0 };
 
   // Busca no Google só os segmentos que ainda não estão na memória.
-  let result: { places: { p: any; segment: string }[]; doneSegments: string[] };
+  let result: { places: { p: any; segment: string }[]; doneSegments: string[]; requests: number };
   try {
     result = await runSegments(apiKey, center, radius, missing, false);
   } catch (e: any) {
@@ -259,7 +323,10 @@ export const searchNearbyBusinesses = async (
   for (const b of usable?.items || []) if (b.distanceMeters <= radius) byId.set(b.id, b);
   for (const { p, segment } of result.places) {
     const b = parsePlace(p, center, segment);
-    if (b && b.distanceMeters <= radius + 1 && !byId.has(b.id)) byId.set(b.id, b);
+    if (!b || b.distanceMeters > radius + 1) continue;
+    const prev = byId.get(b.id);
+    // A mesma empresa pode vir em mais de um segmento: fica no específico, não em "Outras".
+    if (!prev || (prev.segment === 'other' && b.segment !== 'other')) byId.set(b.id, b);
   }
   const all = [...byId.values()];
   saveCache(center, {
@@ -268,7 +335,7 @@ export const searchNearbyBusinesses = async (
     segments: [...new Set([...(usable?.segments || []), ...result.doneSegments])],
     items: all,
   });
-  return { items: pick(all), cachedAt: null, requests: missing.length };
+  return { items: pick(all), cachedAt: null, requests: result.requests };
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------
