@@ -23,6 +23,7 @@ export interface NearbyBusiness {
   email: string;          // o Google não informa e-mail; fica vazio
   website: string;
   distanceMeters: number;
+  segment: string;        // segmento da busca (ver SEGMENTS)
   rating: number | null;  // nota média no Google (1 a 5)
   ratingCount: number;    // total de avaliações no Google (usado como indicador de porte)
 }
@@ -88,18 +89,21 @@ const FIELD_MASK = [
   'places.rating', 'places.userRatingCount',
 ].join(',');
 
-// O Google devolve no máximo 20 lugares por pedido; por isso a busca é feita em grupos
-// de tipos (todos ao mesmo tempo) e os resultados são juntados.
-export const PLACE_TYPE_GROUPS: string[][] = [
-  ['bakery', 'restaurant', 'cafe', 'coffee_shop', 'meal_takeaway', 'bar', 'ice_cream_shop', 'pizza_restaurant', 'fast_food_restaurant', 'hamburger_restaurant', 'sandwich_shop', 'steak_house'],
-  ['supermarket', 'grocery_store', 'convenience_store', 'market', 'liquor_store', 'food_store'],
-  ['pharmacy', 'drugstore', 'dentist', 'dental_clinic', 'doctor', 'physiotherapist', 'medical_lab', 'veterinary_care'],
-  ['gym', 'fitness_center', 'sports_club', 'sports_complex', 'yoga_studio', 'swimming_pool'],
-  ['car_repair', 'car_wash', 'gas_station', 'car_dealer', 'auto_parts_store'],
-  ['beauty_salon', 'hair_salon', 'barber_shop', 'hair_care', 'nail_salon', 'spa', 'laundry', 'florist'],
-  ['clothing_store', 'shoe_store', 'hardware_store', 'home_goods_store', 'home_improvement_store', 'furniture_store', 'electronics_store', 'cell_phone_store', 'sporting_goods_store', 'book_store', 'pet_store', 'jewelry_store', 'gift_shop'],
-  ['real_estate_agency', 'insurance_agency', 'accounting', 'lawyer', 'travel_agency', 'bank', 'hotel', 'lodging', 'department_store', 'shopping_mall'],
+// Segmentos de empresas. Cada segmento é um pedido ao Google (que devolve no máximo 20
+// lugares por pedido); os segmentos escolhidos são buscados ao mesmo tempo e juntados.
+export interface Segment { id: string; label: string; hint: string; types: string[] }
+export const SEGMENTS: Segment[] = [
+  { id: 'food', label: 'Alimentação', hint: 'padarias, restaurantes, lanchonetes, bares', types: ['bakery', 'restaurant', 'cafe', 'coffee_shop', 'meal_takeaway', 'bar', 'ice_cream_shop', 'pizza_restaurant', 'fast_food_restaurant', 'hamburger_restaurant', 'sandwich_shop', 'steak_house'] },
+  { id: 'grocery', label: 'Mercados', hint: 'supermercados, mercearias, conveniências', types: ['supermarket', 'grocery_store', 'convenience_store', 'market', 'liquor_store', 'food_store'] },
+  { id: 'health', label: 'Saúde', hint: 'farmácias, clínicas, dentistas, veterinários', types: ['pharmacy', 'drugstore', 'dentist', 'dental_clinic', 'doctor', 'physiotherapist', 'medical_lab', 'veterinary_care'] },
+  { id: 'sports', label: 'Academias e esporte', hint: 'academias, clubes, quadras', types: ['gym', 'fitness_center', 'sports_club', 'sports_complex', 'yoga_studio', 'swimming_pool'] },
+  { id: 'auto', label: 'Automotivo', hint: 'oficinas, postos, lava-rápidos, autopeças', types: ['car_repair', 'car_wash', 'gas_station', 'car_dealer', 'auto_parts_store'] },
+  { id: 'beauty', label: 'Beleza e serviços', hint: 'salões, barbearias, lavanderias, floriculturas', types: ['beauty_salon', 'hair_salon', 'barber_shop', 'hair_care', 'nail_salon', 'spa', 'laundry', 'florist'] },
+  { id: 'retail', label: 'Lojas', hint: 'roupas, calçados, materiais, móveis, eletrônicos, pet', types: ['clothing_store', 'shoe_store', 'hardware_store', 'home_goods_store', 'home_improvement_store', 'furniture_store', 'electronics_store', 'cell_phone_store', 'sporting_goods_store', 'book_store', 'pet_store', 'jewelry_store', 'gift_shop'] },
+  { id: 'business', label: 'Escritórios e outros', hint: 'imobiliárias, contabilidade, bancos, hotéis', types: ['real_estate_agency', 'insurance_agency', 'accounting', 'lawyer', 'travel_agency', 'bank', 'hotel', 'lodging', 'department_store', 'shopping_mall'] },
 ];
+export const ALL_SEGMENT_IDS = SEGMENTS.map(s => s.id);
+export const segmentLabel = (id: string) => SEGMENTS.find(s => s.id === id)?.label || '';
 
 export class PlacesApiError extends Error {
   constructor(message: string, public kind: 'invalid_key' | 'permission' | 'quota' | 'network' | 'other') { super(message); }
@@ -107,7 +111,7 @@ export class PlacesApiError extends Error {
 
 const cleanAddress = (a: string) => (a || '').replace(/,?\s*(Brazil|Brasil)$/i, '').trim();
 
-export const parsePlace = (p: any, center: { lat: number; lon: number }): NearbyBusiness | null => {
+export const parsePlace = (p: any, center: { lat: number; lon: number }, segment = ''): NearbyBusiness | null => {
   const name = p?.displayName?.text?.trim();
   const lat = p?.location?.latitude, lon = p?.location?.longitude;
   if (!name || typeof lat !== 'number' || typeof lon !== 'number') return null;
@@ -127,6 +131,7 @@ export const parsePlace = (p: any, center: { lat: number; lon: number }): Nearby
     email: '',
     website: p.websiteUri || '',
     distanceMeters: Math.round(distanceMeters(center.lat, center.lon, lat, lon)),
+    segment,
     rating: typeof p.rating === 'number' ? p.rating : null,
     ratingCount: typeof p.userRatingCount === 'number' ? p.userRatingCount : 0,
   };
@@ -170,14 +175,20 @@ const searchGroup = async (apiKey: string, center: { lat: number; lon: number },
   return [];
 };
 
-const runAllGroups = async (apiKey: string, center: { lat: number; lon: number }, radius: number, useProxy: boolean) => {
+// Busca os segmentos pedidos ao mesmo tempo; devolve os lugares com o segmento de origem
+// e a lista de segmentos que responderam.
+const runSegments = async (apiKey: string, center: { lat: number; lon: number }, radius: number, segmentIds: string[], useProxy: boolean) => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PLACES_TIMEOUT_MS);
   try {
-    const settled = await Promise.allSettled(PLACE_TYPE_GROUPS.map(g => searchGroup(apiKey, center, radius, g, ctrl.signal, useProxy)));
-    const ok = settled.filter((s): s is PromiseFulfilledResult<any[]> => s.status === 'fulfilled');
-    if (ok.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
-    return ok.flatMap(s => s.value);
+    const segs = SEGMENTS.filter(s => segmentIds.includes(s.id));
+    const settled = await Promise.allSettled(segs.map(s => searchGroup(apiKey, center, radius, s.types, ctrl.signal, useProxy)));
+    const okIdx = settled.map((r, i) => (r.status === 'fulfilled' ? i : -1)).filter(i => i >= 0);
+    if (okIdx.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+    return {
+      places: okIdx.flatMap(i => ((settled[i] as PromiseFulfilledResult<any[]>).value).map(p => ({ p, segment: segs[i].id }))),
+      doneSegments: okIdx.map(i => segs[i].id),
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -187,69 +198,77 @@ const isNetworkError = (e: any) => e instanceof TypeError || e?.name === 'AbortE
 
 // ---------- Memória de resultados (no navegador) ----------
 
-interface CachedSearch { radius: number; savedAt: number; items: NearbyBusiness[] }
-const cacheKey = (c: { lat: number; lon: number }) => `nearby_google_v2:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+interface CachedSearch { radius: number; savedAt: number; segments: string[]; items: NearbyBusiness[] }
+const cacheKey = (c: { lat: number; lon: number }) => `nearby_google_v3:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
 
-const readCache = (c: { lat: number; lon: number }, radius: number): { items: NearbyBusiness[]; savedAt: number } | null => {
+const loadCache = (c: { lat: number; lon: number }): CachedSearch | null => {
   try {
     const raw = localStorage.getItem(cacheKey(c));
     if (!raw) return null;
     const v: CachedSearch = JSON.parse(raw);
-    if (!v || Date.now() - v.savedAt > CACHE_TTL_MS || v.radius < radius) return null;
-    // Uma busca maior já feita serve para um raio menor: só filtra pela distância.
-    return { items: v.items.filter(b => b.distanceMeters <= radius), savedAt: v.savedAt };
+    if (!v || !Array.isArray(v.segments) || Date.now() - v.savedAt > CACHE_TTL_MS) return null;
+    return v;
   } catch { return null; }
 };
 
-const writeCache = (c: { lat: number; lon: number }, radius: number, items: NearbyBusiness[]) => {
-  try {
-    const prev = localStorage.getItem(cacheKey(c));
-    const old: CachedSearch | null = prev ? JSON.parse(prev) : null;
-    if (old && Date.now() - old.savedAt <= CACHE_TTL_MS && old.radius > radius) return;
-    localStorage.setItem(cacheKey(c), JSON.stringify({ radius, savedAt: Date.now(), items }));
-  } catch { /* navegador sem espaço ou bloqueado: segue sem memória */ }
+const saveCache = (c: { lat: number; lon: number }, v: CachedSearch) => {
+  try { localStorage.setItem(cacheKey(c), JSON.stringify(v)); } catch { /* sem memória: segue */ }
 };
 
 // ---------- Busca ----------
 
 export interface NearbySearchResult {
-  items: NearbyBusiness[];
-  cachedAt: number | null; // preenchido quando veio da memória do navegador
+  items: NearbyBusiness[];    // empresas dos segmentos pedidos, dentro do raio
+  cachedAt: number | null;    // preenchido quando tudo veio da memória do navegador
+  requests: number;           // pedidos feitos ao Google nesta busca (0 = sem custo)
 }
 
 export const searchNearbyBusinesses = async (
   apiKey: string,
   center: { lat: number; lon: number },
   radius: number,
+  segmentIds: string[],
   opts: { force?: boolean } = {},
 ): Promise<NearbySearchResult> => {
-  if (!opts.force) {
-    const cached = readCache(center, radius);
-    if (cached) return { items: cached.items, cachedAt: cached.savedAt };
-  }
+  const wanted = segmentIds.length ? segmentIds : ALL_SEGMENT_IDS;
+  // Memória: vale se a busca guardada tem raio igual ou maior (filtra pela distância).
+  const cache = !opts.force ? loadCache(center) : null;
+  const usable = cache && cache.radius >= radius ? cache : null;
+  const missing = usable ? wanted.filter(id => !usable.segments.includes(id)) : wanted;
+  const pick = (list: NearbyBusiness[]) => list.filter(b => b.distanceMeters <= radius && wanted.includes(b.segment)).sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-  let raw: any[];
+  if (usable && missing.length === 0) return { items: pick(usable.items), cachedAt: usable.savedAt, requests: 0 };
+
+  // Busca no Google só os segmentos que ainda não estão na memória.
+  let result: { places: { p: any; segment: string }[]; doneSegments: string[] };
   try {
-    raw = await runAllGroups(apiKey, center, radius, false);
+    result = await runSegments(apiKey, center, radius, missing, false);
   } catch (e: any) {
     if (!isNetworkError(e)) throw e;
     // Chamada direta bloqueada ou sem resposta: tenta pelo proxy do próprio site.
     try {
-      raw = await runAllGroups(apiKey, center, radius, true);
+      result = await runSegments(apiKey, center, radius, missing, true);
     } catch (e2: any) {
       if (isNetworkError(e2)) throw new PlacesApiError('Não foi possível falar com o Google agora (sem conexão ou sem resposta). Tente novamente.', 'network');
       throw e2;
     }
   }
 
+  // Junta com o que já estava na memória (mesmo lugar em dois segmentos fica no primeiro).
   const byId = new Map<string, NearbyBusiness>();
-  for (const p of raw) {
-    const b = parsePlace(p, center);
+  for (const b of usable?.items || []) if (b.distanceMeters <= radius) byId.set(b.id, b);
+  for (const { p, segment } of result.places) {
+    const b = parsePlace(p, center, segment);
     if (b && b.distanceMeters <= radius + 1 && !byId.has(b.id)) byId.set(b.id, b);
   }
-  const items = [...byId.values()].sort((a, b) => a.distanceMeters - b.distanceMeters);
-  writeCache(center, radius, items);
-  return { items, cachedAt: null };
+  const all = [...byId.values()];
+  saveCache(center, {
+    radius,
+    savedAt: Date.now(),
+    segments: [...new Set([...(usable?.segments || []), ...result.doneSegments])],
+    items: all,
+  });
+  return { items: pick(all), cachedAt: null, requests: missing.length };
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------
