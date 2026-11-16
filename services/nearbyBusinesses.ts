@@ -86,7 +86,7 @@ const PLACE_FIELDS = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
   'places.location', 'places.primaryType', 'places.primaryTypeDisplayName', 'places.businessStatus',
   'places.nationalPhoneNumber', 'places.internationalPhoneNumber', 'places.websiteUri',
-  'places.rating', 'places.userRatingCount',
+  'places.rating', 'places.userRatingCount', 'places.types',
 ];
 const FIELD_MASK = PLACE_FIELDS.join(',');
 const TEXT_FIELD_MASK = [...PLACE_FIELDS, 'nextPageToken'].join(',');
@@ -121,6 +121,12 @@ export const SEGMENTS: Segment[] = [
 ];
 export const ALL_SEGMENT_IDS = SEGMENTS.map(s => s.id);
 export const segmentLabel = (id: string) => SEGMENTS.find(s => s.id === id)?.label || '';
+
+// Segmento de um lugar pelos tipos do Google (usado na busca por nome).
+const classifyPlace = (p: any): string => {
+  const types: string[] = [p?.primaryType, ...(Array.isArray(p?.types) ? p.types : [])].filter(Boolean);
+  return SEGMENTS.find(s => s.types?.some(t => types.includes(t)))?.id || 'other';
+};
 
 export class PlacesApiError extends Error {
   constructor(message: string, public kind: 'invalid_key' | 'permission' | 'quota' | 'network' | 'other') { super(message); }
@@ -336,6 +342,71 @@ export const searchNearbyBusinesses = async (
     items: all,
   });
   return { items: pick(all), cachedAt: null, requests: result.requests };
+};
+
+// ---------- Busca por nome do local ----------
+
+const nameCacheKey = (c: Center, name: string) => `nearby_google_name_v1:${c.lat.toFixed(5)},${c.lon.toFixed(5)}:${normalizeName(name)}`;
+
+// Busca no Google pelo nome digitado (ex.: "Assaí", "Padaria Silva"), só dentro do raio.
+// Até 3 páginas de 20. Guardada no navegador por 24 h, como a busca por segmento.
+export const searchBusinessesByName = async (
+  apiKey: string,
+  center: Center,
+  radius: number,
+  name: string,
+  opts: { force?: boolean } = {},
+): Promise<NearbySearchResult> => {
+  const key = nameCacheKey(center, name);
+  const pick = (list: NearbyBusiness[]) => list.filter(b => b.distanceMeters <= radius).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  if (!opts.force) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key) || 'null');
+      if (v && v.radius >= radius && Date.now() - v.savedAt <= CACHE_TTL_MS && Array.isArray(v.items)) return { items: pick(v.items), cachedAt: v.savedAt, requests: 0 };
+    } catch { /* sem memória */ }
+  }
+
+  const run = async (useProxy: boolean) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PLACES_TIMEOUT_MS);
+    try {
+      const places: any[] = []; let requests = 0; let pageToken: string | undefined;
+      for (let page = 0; page < 3; page++) {
+        const json = await postPlaces('searchText', apiKey, () => {
+          requests++;
+          return { textQuery: name, pageSize: 20, languageCode: 'pt-BR', regionCode: 'BR', locationRestriction: rectangle(center, radius), ...(pageToken ? { pageToken } : {}) };
+        }, TEXT_FIELD_MASK, ctrl.signal, useProxy);
+        places.push(...(json?.places || []));
+        pageToken = json?.nextPageToken;
+        if (!pageToken) break;
+      }
+      return { places, requests };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let result: { places: any[]; requests: number };
+  try {
+    result = await run(false);
+  } catch (e: any) {
+    if (!isNetworkError(e)) throw e;
+    try {
+      result = await run(true);
+    } catch (e2: any) {
+      if (isNetworkError(e2)) throw new PlacesApiError('Não foi possível falar com o Google agora (sem conexão ou sem resposta). Tente novamente.', 'network');
+      throw e2;
+    }
+  }
+
+  const byId = new Map<string, NearbyBusiness>();
+  for (const p of result.places) {
+    const b = parsePlace(p, center, classifyPlace(p));
+    if (b && b.distanceMeters <= radius + 1 && !byId.has(b.id)) byId.set(b.id, b);
+  }
+  const items = [...byId.values()];
+  try { localStorage.setItem(key, JSON.stringify({ radius, savedAt: Date.now(), items })); } catch { /* sem memória */ }
+  return { items: pick(items), cachedAt: null, requests: result.requests };
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------
