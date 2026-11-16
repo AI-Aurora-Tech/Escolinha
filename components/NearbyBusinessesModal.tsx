@@ -12,6 +12,12 @@ const MAX_RADIUS_METERS = 5000;
 const RADIUS_PRESETS = [500, 1000, 2000, 3000, 5000];
 const RADIUS_SETTING_KEY = 'marketing_search_radius';
 
+// Porte mínimo: o Google não informa funcionários; o total de avaliações serve de indicador
+// (empresa com mais movimento tende a ter mais funcionários). Filtro aplicado sobre o resultado.
+const MIN_REVIEWS_PRESETS = [0, 10, 30, 50, 100, 200];
+const DEFAULT_MIN_REVIEWS = 30;
+const MIN_REVIEWS_SETTING_KEY = 'marketing_min_reviews';
+
 const CLUB_ADDRESS = 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290';
 
 // Endereço do clube, em formas diferentes: usa a primeira que o mapa encontrar.
@@ -71,6 +77,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
+  const [minReviews, setMinReviews] = useState(DEFAULT_MIN_REVIEWS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
@@ -119,6 +126,11 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         const { data } = await supabase.from('app_settings').select('value').eq('key', RADIUS_SETTING_KEY).maybeSingle();
         const saved = Number(data?.value);
         if (Number.isFinite(saved) && saved >= MIN_RADIUS_METERS && saved <= MAX_RADIUS_METERS) r = saved;
+      } catch { /* usa o padrão */ }
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', MIN_REVIEWS_SETTING_KEY).maybeSingle();
+        const saved = Number(data?.value);
+        if (data?.value != null && Number.isFinite(saved) && saved >= 0) setMinReviews(saved);
       } catch { /* usa o padrão */ }
       let key = '';
       try {
@@ -208,18 +220,28 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     void runSearch(center, m);
   };
 
-  const allSelected = !!results && results.length > 0 && results.every(r => selected.has(r.id));
-  const toggle = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSelected(allSelected || !results ? new Set() : new Set(results.map(r => r.id)));
+  // Empresas que passam no porte mínimo (total de avaliações no Google).
+  const visible = useMemo(() => (results || []).filter(b => (b.ratingCount || 0) >= minReviews), [results, minReviews]);
+  const hiddenBySize = (results?.length || 0) - visible.length;
 
-  const stats = useMemo(() => {
-    const r = results || [];
-    return { phone: r.filter(b => b.phone).length, whatsapp: r.filter(b => b.whatsapp).length, website: r.filter(b => b.website).length };
-  }, [results]);
+  const changeMinReviews = (n: number) => {
+    setMinReviews(n);
+    // Desmarca quem saiu da lista com o novo filtro.
+    setSelected(prev => new Set([...prev].filter(id => (results || []).some(b => b.id === id && (b.ratingCount || 0) >= n))));
+    void (async () => { await supabase.from('app_settings').upsert({ key: MIN_REVIEWS_SETTING_KEY, value: String(n) }); })();
+  };
+
+  const allSelected = visible.length > 0 && visible.every(r => selected.has(r.id));
+  const toggle = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map(r => r.id)));
+
+  const stats = useMemo(() => ({
+    phone: visible.filter(b => b.phone).length, whatsapp: visible.filter(b => b.whatsapp).length, website: visible.filter(b => b.website).length,
+  }), [visible]);
 
   const handleAdd = async () => {
     if (!results) return;
-    const items = results.filter(r => selected.has(r.id));
+    const items = visible.filter(r => selected.has(r.id));
     if (items.length === 0) return;
     setAdding(true);
     const added = await onAdd(items);
@@ -310,6 +332,17 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           </button>
         </form>
 
+        {/* Porte mínimo (avaliações no Google) */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-4 text-sm">
+          <span className="font-bold text-gray-700 whitespace-nowrap">Porte mínimo:</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {MIN_REVIEWS_PRESETS.map(n => (
+              <button type="button" key={n} onClick={() => changeMinReviews(n)} className={`px-3 py-1.5 rounded-full border text-xs font-bold ${minReviews === n ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{n === 0 ? 'Todas' : `${n}+ avaliações`}</button>
+            ))}
+          </div>
+          <span className="text-xs text-gray-400 lg:ml-2">O Google não informa funcionários; o nº de avaliações indica o movimento da empresa. Mudar este filtro não faz nova consulta.</span>
+        </div>
+
         {center && !searching && !results && !searchError && (
           <div className="py-10 text-center bg-gray-50 rounded-xl border border-dashed text-gray-500 text-sm">
             <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -330,9 +363,10 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           <>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3 text-sm">
               <p className="text-gray-600">
-                <strong className="text-gray-900">{results.length}</strong> empresa(s) nova(s) encontrada(s){searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
+                <strong className="text-gray-900">{visible.length}</strong> empresa(s) nova(s) encontrada(s){searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
+                {hiddenBySize > 0 && <> · <strong>{hiddenBySize}</strong> com menos de {minReviews} avaliações ocultada(s) pelo porte mínimo</>}
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
-                {results.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · celular: {stats.whatsapp} · com site: {stats.website}</span>}
+                {visible.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · celular: {stats.whatsapp} · com site: {stats.website}</span>}
                 {cachedAt && center && (
                   <span className="block text-xs text-gray-400 mt-0.5">
                     Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (sem custo).{' '}
@@ -347,9 +381,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
               </div>
             </div>
 
-            {results.length === 0 ? (
+            {visible.length === 0 ? (
               <div className="py-12 text-center bg-gray-50 rounded-xl border border-dashed text-gray-400">
-                <p className="font-medium">Nenhuma empresa nova encontrada neste raio.</p>
+                <p className="font-medium">{hiddenBySize > 0 ? `Nenhuma empresa com ${minReviews} ou mais avaliações. Diminua o porte mínimo para ver as ${hiddenBySize} encontradas.` : 'Nenhuma empresa nova encontrada neste raio.'}</p>
               </div>
             ) : (
               <div className="border rounded-xl overflow-hidden">
@@ -367,12 +401,13 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {results.map(b => (
+                      {visible.map(b => (
                         <tr key={b.id} onClick={() => toggle(b.id)} className={`cursor-pointer ${selected.has(b.id) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}>
                           <td className="p-3">{selected.has(b.id) ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5 text-gray-300" />}</td>
                           <td className="p-3">
                             <p className="font-bold text-gray-900">{b.name}</p>
                             <p className="text-xs text-gray-500">{b.category}</p>
+                            <p className="text-xs text-amber-600 font-medium">{b.ratingCount > 0 ? <>★ {b.rating != null ? b.rating.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '–'} · {b.ratingCount.toLocaleString('pt-BR')} avaliações</> : <span className="text-gray-400">sem avaliações</span>}</p>
                             {b.website && <a href={/^https?:/i.test(b.website) ? b.website : `https://${b.website}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-primary-600 flex items-center gap-1 truncate max-w-[220px]"><Globe className="w-3 h-3" /> {b.website.replace(/^https?:\/\//, '')}</a>}
                           </td>
                           <td className="p-3 text-gray-600">{b.address || dash}</td>

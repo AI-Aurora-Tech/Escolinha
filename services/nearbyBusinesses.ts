@@ -23,6 +23,8 @@ export interface NearbyBusiness {
   email: string;          // o Google não informa e-mail; fica vazio
   website: string;
   distanceMeters: number;
+  rating: number | null;  // nota média no Google (1 a 5)
+  ratingCount: number;    // total de avaliações no Google (usado como indicador de porte)
 }
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
@@ -83,6 +85,7 @@ const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
   'places.location', 'places.primaryType', 'places.primaryTypeDisplayName',
   'places.nationalPhoneNumber', 'places.internationalPhoneNumber', 'places.websiteUri',
+  'places.rating', 'places.userRatingCount',
 ].join(',');
 
 // O Google devolve no máximo 20 lugares por pedido; por isso a busca é feita em grupos
@@ -124,6 +127,8 @@ export const parsePlace = (p: any, center: { lat: number; lon: number }): Nearby
     email: '',
     website: p.websiteUri || '',
     distanceMeters: Math.round(distanceMeters(center.lat, center.lon, lat, lon)),
+    rating: typeof p.rating === 'number' ? p.rating : null,
+    ratingCount: typeof p.userRatingCount === 'number' ? p.userRatingCount : 0,
   };
 };
 
@@ -183,7 +188,7 @@ const isNetworkError = (e: any) => e instanceof TypeError || e?.name === 'AbortE
 // ---------- Memória de resultados (no navegador) ----------
 
 interface CachedSearch { radius: number; savedAt: number; items: NearbyBusiness[] }
-const cacheKey = (c: { lat: number; lon: number }) => `nearby_google:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+const cacheKey = (c: { lat: number; lon: number }) => `nearby_google_v2:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
 
 const readCache = (c: { lat: number; lon: number }, radius: number): { items: NearbyBusiness[]; savedAt: number } | null => {
   try {
