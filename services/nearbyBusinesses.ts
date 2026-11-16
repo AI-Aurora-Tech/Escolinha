@@ -6,7 +6,9 @@
 export interface GeoPoint {
   lat: number;
   lon: number;
-  label: string;
+  label: string;      // nome do local devolvido pelo mapa
+  address?: string;   // endereço como foi digitado (o que aparece na tela)
+  isClub?: boolean;   // true quando é o endereço do clube
 }
 
 export interface NearbyBusiness {

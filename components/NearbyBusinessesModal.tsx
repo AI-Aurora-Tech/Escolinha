@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import {
   NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, isAlreadyContact,
 } from '../services/nearbyBusinesses';
-import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Crosshair } from 'lucide-react';
+import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Home } from 'lucide-react';
 
 // Raio da busca (em metros): padrão 1 km, ajustável na tela entre 100 m e 5 km.
 export const DEFAULT_RADIUS_METERS = 1000;
@@ -11,6 +11,8 @@ const MIN_RADIUS_METERS = 100;
 const MAX_RADIUS_METERS = 5000;
 const RADIUS_PRESETS = [500, 1000, 2000, 3000, 5000];
 const RADIUS_SETTING_KEY = 'marketing_search_radius';
+
+const CLUB_ADDRESS = 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290';
 
 // Endereço do clube, em formas diferentes: usa a primeira que o mapa encontrar.
 const CLUB_GEOCODE_ATTEMPTS: Record<string, string>[] = [
@@ -29,6 +31,19 @@ interface Props {
 
 const kmText = (m: number) => (m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 const formatDistance = (m: number) => (m < 1000 ? `${m} m` : `${(m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`);
+// Endereço digitado: tenta como está e, se não achar, completando com a cidade.
+const typedAddressAttempts = (text: string): Record<string, string>[] => {
+  const t = text.trim();
+  const attempts: Record<string, string>[] = [{ q: t }];
+  if (!/s[ãa]o paulo/i.test(t)) attempts.push({ q: `${t}, São Paulo, SP` });
+  return attempts;
+};
+
+// Texto mostrado como referência (pontos salvos antes desta versão não têm "address").
+const centerAddressText = (c: GeoPoint) =>
+  c.address || (c.label === 'Ponto ajustado manualmente' ? 'Ponto ajustado manualmente' : CLUB_ADDRESS);
+const centerIsClub = (c: GeoPoint) => c.isClub ?? (!c.address && c.label !== 'Ponto ajustado manualmente');
+
 const mapLink = (lat: number, lon: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
 
 export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd, onClose }) => {
@@ -37,6 +52,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [centerError, setCenterError] = useState<string | null>(null);
   const [editingCenter, setEditingCenter] = useState(false);
   const [centerInput, setCenterInput] = useState('');
+  const [locating, setLocating] = useState(false);
 
   const [radius, setRadius] = useState(DEFAULT_RADIUS_METERS);            // raio usado na última busca
   const [radiusInput, setRadiusInput] = useState(kmText(DEFAULT_RADIUS_METERS)); // km, como digitado
@@ -91,13 +107,14 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
       if (cancelled) return;
       setRadius(r); setRadiusInput(kmText(r));
       if (!c) {
-        c = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
-        if (c) void saveCenter(c);
+        const found = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
+        if (found) { c = { ...found, address: CLUB_ADDRESS, isClub: true }; void saveCenter(c); }
       }
       if (cancelled) return;
       setCenterLoading(false);
       if (!c) {
-        setCenterError('Não foi possível localizar o endereço do clube no mapa. Informe as coordenadas (latitude, longitude) do clube.');
+        setCenterError('Não foi possível localizar o endereço do clube no mapa. Digite o endereço de referência abaixo.');
+        setCenterInput(CLUB_ADDRESS);
         setEditingCenter(true);
         return;
       }
@@ -108,23 +125,32 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const applyCenterInput = async () => {
-    const p = parseLatLon(centerInput);
-    if (!p) return alert('Informe as coordenadas no formato: -23.6123, -46.7456 (latitude, longitude).');
-    const c: GeoPoint = { ...p, label: 'Ponto ajustado manualmente' };
+  const applyCenter = async (c: GeoPoint) => {
     setCenter(c); setCenterError(null); setEditingCenter(false);
     await saveCenter(c);
     void runSearch(c, radius);
   };
 
-  const relocateFromAddress = async () => {
-    setCenterLoading(true);
-    const c = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
-    setCenterLoading(false);
-    if (!c) return alert('O mapa não encontrou o endereço do clube. Informe as coordenadas manualmente.');
-    setCenter(c); setEditingCenter(false); setCenterError(null);
-    await saveCenter(c);
-    void runSearch(c, radius);
+  // Localiza o endereço digitado e passa a buscar a partir dele.
+  const applyTypedAddress = async () => {
+    const text = centerInput.trim();
+    if (text.length < 5) return setCenterError('Digite o endereço com rua, número e bairro (ou CEP).');
+    setLocating(true); setCenterError(null);
+    // Quem colar coordenadas (ex.: do Google Maps) também é atendido.
+    const coords = parseLatLon(text);
+    const found = coords ? { ...coords, label: text } : await geocodeAddress(typedAddressAttempts(text));
+    setLocating(false);
+    if (!found) return setCenterError('Endereço não encontrado no mapa. Confira rua, número, bairro e cidade, ou tente informar o CEP.');
+    await applyCenter({ ...found, address: text, isClub: false });
+  };
+
+  // Volta a usar o endereço do clube.
+  const resetToClub = async () => {
+    setLocating(true); setCenterError(null);
+    const found = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
+    setLocating(false);
+    if (!found) return setCenterError('O mapa não encontrou o endereço do clube agora. Tente novamente em instantes.');
+    await applyCenter({ ...found, address: CLUB_ADDRESS, isClub: true });
   };
 
   // Aplica o raio digitado (em km), guarda para as próximas buscas e busca de novo.
@@ -169,8 +195,8 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl p-4 sm:p-6 my-4 sm:my-8">
         <div className="flex justify-between items-start gap-3 mb-4 border-b pb-3">
           <div>
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="w-5 h-5 text-primary-600" /> Empresas a até {formatDistance(radius)} do clube</h3>
-            <p className="text-xs text-gray-500">Rua Roque de Mingo, 550 – Jardim Samara. Empresas que já estão nos seus contatos são ignoradas.</p>
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="w-5 h-5 text-primary-600" /> Empresas a até {formatDistance(radius)} {!center || centerIsClub(center) ? 'do clube' : 'do endereço informado'}</h3>
+            <p className="text-xs text-gray-500">Empresas que já estão nos seus contatos são ignoradas.</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
@@ -178,29 +204,33 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         {/* Ponto central da busca */}
         <div className="bg-gray-50 border rounded-xl p-3 mb-4 text-sm">
           {centerLoading ? (
-            <p className="flex items-center gap-2 text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Localizando o endereço do clube no mapa...</p>
+            <p className="flex items-center gap-2 text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Localizando o endereço no mapa...</p>
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
                 {center && (
-                  <p className="text-gray-700 break-words"><Crosshair className="w-4 h-4 inline mr-1 text-gray-400" />Centro da busca: <span className="font-mono text-xs">{center.lat.toFixed(5)}, {center.lon.toFixed(5)}</span> <a href={mapLink(center.lat, center.lon)} target="_blank" rel="noreferrer" className="text-primary-600 font-bold underline ml-1">ver no mapa</a></p>
+                  <p className="text-gray-700 break-words">
+                    <Home className="w-4 h-4 inline mr-1 text-gray-400 -mt-0.5" />
+                    <span className="text-gray-500">Endereço de referência:</span> <strong>{centerAddressText(center)}</strong>
+                    <a href={mapLink(center.lat, center.lon)} target="_blank" rel="noreferrer" className="text-primary-600 font-bold underline ml-2 whitespace-nowrap">ver no mapa</a>
+                  </p>
                 )}
-                {centerError && <p className="text-amber-700 flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {centerError}</p>}
               </div>
-              {!editingCenter && <button onClick={() => { setEditingCenter(true); setCenterInput(center ? `${center.lat}, ${center.lon}` : ''); }} className="text-xs font-bold text-gray-600 hover:text-primary-600 shrink-0">Ajustar ponto</button>}
+              {!editingCenter && center && <button onClick={() => { setEditingCenter(true); setCenterError(null); setCenterInput(centerAddressText(center) === 'Ponto ajustado manualmente' ? '' : centerAddressText(center)); }} className="text-xs font-bold text-gray-600 hover:text-primary-600 shrink-0">Alterar endereço</button>}
             </div>
           )}
           {editingCenter && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-gray-500">No Google Maps, clique com o botão direito sobre o clube e copie as coordenadas (ex.: -23.6123, -46.7456). Cole abaixo:</p>
+            <form onSubmit={e => { e.preventDefault(); void applyTypedAddress(); }} className="mt-3 space-y-2">
+              <label className="block text-xs text-gray-500">Digite o endereço a partir do qual buscar as empresas (rua, número, bairro, cidade ou CEP):</label>
               <div className="flex flex-col sm:flex-row gap-2">
-                <input className="flex-1 border rounded-lg p-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none" placeholder="-23.6123, -46.7456" value={centerInput} onChange={e => setCenterInput(e.target.value)} />
-                <button onClick={() => void applyCenterInput()} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-700">Usar este ponto</button>
-                <button onClick={() => void relocateFromAddress()} className="px-4 py-2 border rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100">Localizar pelo endereço</button>
-                {center && <button onClick={() => setEditingCenter(false)} className="px-3 py-2 text-sm text-gray-500">Cancelar</button>}
+                <input autoFocus className="flex-1 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Ex.: Av. Carlos Lacerda, 1200 – Campo Limpo, São Paulo" value={centerInput} onChange={e => setCenterInput(e.target.value)} disabled={locating} />
+                <button type="submit" disabled={locating} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-1.5 whitespace-nowrap">{locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Usar este endereço</button>
+                {center && !centerIsClub(center) && <button type="button" onClick={() => void resetToClub()} disabled={locating} className="px-4 py-2 border rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 whitespace-nowrap disabled:opacity-50">Voltar ao endereço do clube</button>}
+                {center && <button type="button" onClick={() => { setEditingCenter(false); setCenterError(null); }} className="px-3 py-2 text-sm text-gray-500">Cancelar</button>}
               </div>
-            </div>
+            </form>
           )}
+          {centerError && <p className="mt-2 text-amber-700 flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {centerError}</p>}
         </div>
 
         {/* Raio da busca */}
