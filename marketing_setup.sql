@@ -67,3 +67,9 @@ WHERE NOT EXISTS (SELECT 1 FROM public.sponsorship_types);
 -- Tipos de patrocínio escolhidos e valor negociado em cada contato de patrocinador.
 ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS sponsorship_type_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS deal_value numeric(10,2);
+
+-- Dados da parceria fechada com o patrocinador (usados no termo de compromisso).
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS sponsor_document text;       -- CNPJ / CPF
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS deal_frequency text;         -- MONTHLY (mensal) | ONCE (valor único)
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS partnership_start date;      -- início da parceria
+ALTER TABLE public.marketing_leads ADD COLUMN IF NOT EXISTS partnership_end date;        -- prazo final da parceria

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User, UserRole } from '../types';
 import { supabase } from '../lib/supabaseClient';
+import { jsPDF } from 'jspdf';
 import { sendZApiMessage } from '../services/zapiService';
 import {
   Megaphone, Plus, Search, X, Edit, Trash2, MessageCircle, Phone, MapPin, CalendarClock, AlertTriangle,
-  Users, Handshake, CheckSquare, Square, Pause, Play, Loader2, BarChart3, ListChecks, History, Send, RefreshCw, Tags, Eye, EyeOff
+  Users, Handshake, CheckSquare, Square, Pause, Play, Loader2, BarChart3, ListChecks, History, Send, RefreshCw, Tags, Eye, EyeOff, FileText
 } from 'lucide-react';
 
 // ---------- Tipos e constantes ----------
@@ -33,6 +34,10 @@ interface Lead {
   history: LeadHistoryEntry[];
   sponsorshipTypeIds: string[]; // tipos de patrocínio de interesse (só patrocinador)
   dealValue: string;            // valor negociado, como digitado ('' = não informado)
+  dealFrequency: 'MONTHLY' | 'ONCE';
+  sponsorDocument: string;      // CNPJ / CPF do patrocinador
+  partnershipStart: string;     // 'YYYY-MM-DD' ou ''
+  partnershipEnd: string;       // prazo final da parceria, 'YYYY-MM-DD' ou ''
   createdAt?: string;
 }
 
@@ -60,6 +65,7 @@ const SOURCES = ['Indicação', 'Instagram', 'Facebook', 'WhatsApp', 'Panfleto',
 const EMPTY_LEAD: Omit<Lead, 'id'> = {
   leadType: 'STUDENT', name: '', contactName: '', phone: '', email: '', neighborhood: '', source: '',
   interest: '', status: 'NEW', nextContactDate: '', history: [], sponsorshipTypeIds: [], dealValue: '',
+  dealFrequency: 'MONTHLY', sponsorDocument: '', partnershipStart: '', partnershipEnd: '',
 };
 
 const formatMoney = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -103,6 +109,10 @@ const mapRow = (r: any): Lead => ({
   history: Array.isArray(r.history) ? r.history : [],
   sponsorshipTypeIds: Array.isArray(r.sponsorship_type_ids) ? r.sponsorship_type_ids : [],
   dealValue: r.deal_value != null ? String(r.deal_value).replace('.', ',') : '',
+  dealFrequency: r.deal_frequency === 'ONCE' ? 'ONCE' : 'MONTHLY',
+  sponsorDocument: r.sponsor_document || '',
+  partnershipStart: r.partnership_start || '',
+  partnershipEnd: r.partnership_end || '',
   createdAt: r.created_at,
 });
 
@@ -125,6 +135,10 @@ const toRow = (l: Omit<Lead, 'id'>) => ({
   history: l.history,
   sponsorship_type_ids: l.leadType === 'SPONSOR' ? l.sponsorshipTypeIds : [],
   deal_value: l.leadType === 'SPONSOR' ? parseMoney(l.dealValue) : null,
+  deal_frequency: l.leadType === 'SPONSOR' ? l.dealFrequency : null,
+  sponsor_document: l.leadType === 'SPONSOR' ? (l.sponsorDocument.trim() || null) : null,
+  partnership_start: l.leadType === 'SPONSOR' ? (l.partnershipStart || null) : null,
+  partnership_end: l.leadType === 'SPONSOR' ? (l.partnershipEnd || null) : null,
   updated_at: new Date().toISOString(),
 });
 
@@ -132,8 +146,13 @@ const toRow = (l: Omit<Lead, 'id'>) => ({
 const isMissingTable = (err: any) =>
   /(marketing_leads|sponsorship_types)/i.test(err?.message || '') && /(does not exist|could not find|schema cache)/i.test(err?.message || '');
 // Colunas novas (tipos de patrocínio / valor) ausentes: o script precisa ser executado de novo.
-const isMissingColumn = (err: any) => /(sponsorship_type_ids|deal_value)/i.test(err?.message || '');
-const SETUP_HINT = 'Execute novamente o script marketing_setup.sql no SQL Editor do Supabase (ele foi atualizado com os tipos de patrocínio).';
+const isMissingColumn = (err: any) => /(sponsorship_type_ids|deal_value|deal_frequency|sponsor_document|partnership_start|partnership_end)/i.test(err?.message || '');
+const SETUP_HINT = 'Execute novamente o script marketing_setup.sql no SQL Editor do Supabase (ele foi atualizado com novos campos).';
+
+// Dias entre hoje e uma data 'YYYY-MM-DD' (negativo = já passou).
+const daysUntil = (date: string, today: string) =>
+  Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
+const EXPIRING_DAYS = 30;
 
 // ---------- Componente ----------
 
@@ -309,6 +328,9 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return alert('Informe o nome.');
+    if (form.leadType === 'SPONSOR' && form.partnershipStart && form.partnershipEnd && form.partnershipEnd < form.partnershipStart) {
+      return alert('O prazo final da parceria não pode ser antes do início.');
+    }
     setSaving(true);
     let data = form;
     const previous = editingId ? leads.find(l => l.id === editingId) : null;
@@ -345,6 +367,135 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
     if (error) return alert(`Não foi possível excluir: ${error.message}`);
     setLeads(prev => prev.filter(x => x.id !== l.id));
     setSelectedIds(prev => { const n = new Set(prev); n.delete(l.id); return n; });
+  };
+
+  // ---------- Parcerias (patrocinadores fechados) ----------
+
+  // Situação da parceria pelo prazo final: vencida, vencendo (até 30 dias) ou em vigor.
+  const partnershipState = (l: Lead): 'EXPIRED' | 'EXPIRING' | 'ACTIVE' | null => {
+    if (l.leadType !== 'SPONSOR' || !l.partnershipEnd) return null;
+    const d = daysUntil(l.partnershipEnd, today);
+    if (d < 0) return 'EXPIRED';
+    if (d <= EXPIRING_DAYS) return 'EXPIRING';
+    return 'ACTIVE';
+  };
+
+  const partnershipBadge = (l: Lead) => {
+    const st = partnershipState(l);
+    if (!st) return null;
+    const d = daysUntil(l.partnershipEnd, today);
+    if (st === 'EXPIRED') return { label: `Parceria vencida (${formatDate(l.partnershipEnd)})`, cls: 'bg-red-100 text-red-700' };
+    if (st === 'EXPIRING') return { label: d === 0 ? 'Parceria vence hoje' : `Vence em ${d} dia(s)`, cls: 'bg-amber-100 text-amber-700' };
+    return { label: `Parceria até ${formatDate(l.partnershipEnd)}`, cls: 'bg-green-100 text-green-700' };
+  };
+
+  const partnerships = useMemo(() => leads
+    .filter(l => l.leadType === 'SPONSOR' && l.status === 'WON')
+    .sort((a, b) => (a.partnershipEnd || '9999-12-31').localeCompare(b.partnershipEnd || '9999-12-31')), [leads]);
+  const partnershipsAttention = partnerships.filter(l => { const st = partnershipState(l); return st === 'EXPIRED' || st === 'EXPIRING'; }).length;
+
+  // ---------- Termo de compromisso (PDF) ----------
+
+  const generateTerm = (l: Omit<Lead, 'id'> & { id?: string }): boolean => {
+    const missing: string[] = [];
+    if (!l.sponsorDocument.trim()) missing.push('CNPJ/CPF');
+    if (parseMoney(l.dealValue) == null) missing.push('valor');
+    if (!l.partnershipStart) missing.push('início da parceria');
+    if (!l.partnershipEnd) missing.push('prazo final');
+    if (l.sponsorshipTypeIds.length === 0) missing.push('tipos de patrocínio');
+    if (missing.length && !confirm(`Faltam no cadastro: ${missing.join(', ')}.\nEsses campos sairão em branco no termo para preencher à mão. Gerar mesmo assim?`)) return false;
+
+    const doc = new jsPDF();
+    const left = 14, width = 182;
+    let y = 18;
+    const ensure = (h: number) => { if (y + h > 282) { doc.addPage(); y = 18; } };
+    const title = (t: string) => { ensure(12); y += 2; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(t, left, y); y += 5; };
+    const para = (t: string, opts: { bold?: boolean; indent?: number } = {}) => {
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal'); doc.setFontSize(9.5);
+      const lines = doc.splitTextToSize(t, width - (opts.indent || 0));
+      ensure(lines.length * 4.4);
+      doc.text(lines, left + (opts.indent || 0), y, { lineHeightFactor: 1.3 });
+      y += lines.length * 4.4 + 1.2;
+    };
+    const blank = (v: string, size = 22) => v.trim() || '_'.repeat(size);
+    const value = parseMoney(l.dealValue);
+    const valueText = value != null ? formatMoney(value) : 'R$ ____________';
+    const chosenTypes = l.sponsorshipTypeIds.map(id => types.find(t => t.id === id)).filter(Boolean) as SponsorshipType[];
+    const start = l.partnershipStart ? formatDate(l.partnershipStart) : '____/____/______';
+    const end = l.partnershipEnd ? formatDate(l.partnershipEnd) : '____/____/______';
+    const longToday = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: 'numeric', month: 'long', year: 'numeric' });
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+    doc.text('TERMO DE COMPROMISSO DE PATROCÍNIO', 105, y, { align: 'center' }); y += 7;
+    doc.setFontSize(11); doc.text('Escolinha de Futebol Garotos do Martinica', 105, y, { align: 'center' }); y += 8;
+
+    title('1. DAS PARTES');
+    para('PATROCINADO: CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA – Escolinha de Futebol Garotos do Martinica, Unidade Martinica, São Paulo/SP, CNPJ: ______________________.');
+    para(`PATROCINADOR: ${l.name}, CNPJ/CPF: ${blank(l.sponsorDocument)}, neste ato representado por ${blank(l.contactName, 30)}, telefone ${blank(l.phone, 16)}, e-mail ${blank(l.email, 26)}, endereço/bairro ${blank(l.neighborhood, 30)}.`);
+
+    title('2. DO OBJETO');
+    para('O PATROCINADOR apoiará financeiramente as atividades esportivas e sociais da escolinha. Em contrapartida, o PATROCINADO divulgará a marca do PATROCINADOR nas seguintes formas:');
+    if (chosenTypes.length) chosenTypes.forEach(t => para(`•  ${t.name}${t.description ? ` – ${t.description}` : ''}`, { indent: 4 }));
+    else para('•  ____________________________________________', { indent: 4 });
+
+    title('3. DO VALOR E DO PAGAMENTO');
+    para(l.dealFrequency === 'ONCE'
+      ? `O PATROCINADOR pagará o valor único de ${valueText}, até ____/____/______.`
+      : `O PATROCINADOR pagará o valor de ${valueText} por mês, até o dia ____ de cada mês, durante toda a vigência deste termo.`);
+    para('O pagamento será feito por PIX (chave celular 11987019721 – CLUBE DESPORTIVO MUNICIPAL JARDIM MARTINICA) ou outra forma combinada por escrito entre as partes.');
+
+    title('4. DA VIGÊNCIA');
+    para(`Este termo vigora de ${start} até ${end} (prazo final da parceria). Poderá ser renovado mediante novo termo assinado pelas partes.`);
+
+    title('5. DAS OBRIGAÇÕES DO PATROCINADO');
+    para('a) Aplicar e manter a marca do PATROCINADOR nas formas descritas na cláusula 2 durante toda a vigência;', { indent: 4 });
+    para('b) Utilizar os recursos recebidos em atividades da escolinha (uniformes, materiais esportivos, transporte, taxas de competição e afins);', { indent: 4 });
+    para('c) Zelar pela boa imagem do PATROCINADOR em seus eventos, jogos e redes sociais.', { indent: 4 });
+
+    title('6. DAS OBRIGAÇÕES DO PATROCINADOR');
+    para('a) Efetuar os pagamentos nos valores e prazos acordados;', { indent: 4 });
+    para('b) Fornecer sua logomarca em boa resolução em até 10 (dez) dias após a assinatura;', { indent: 4 });
+    para('c) Não utilizar a imagem dos atletas sem autorização prévia do PATROCINADO e dos responsáveis legais.', { indent: 4 });
+
+    title('7. DA RESCISÃO');
+    para('Qualquer das partes poderá encerrar este termo mediante aviso por escrito com 30 (trinta) dias de antecedência. O atraso no pagamento por mais de 30 (trinta) dias permite ao PATROCINADO suspender a divulgação da marca.');
+
+    title('8. DO FORO');
+    para('Fica eleito o foro da Comarca de São Paulo/SP para dirimir eventuais dúvidas oriundas deste termo.');
+
+    ensure(52);
+    y += 3; para(`São Paulo, ${longToday}.`); y += 11;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    doc.text('_______________________________________', left, y); doc.text('_______________________________________', 110, y); y += 5;
+    doc.text('PATROCINADO', left, y); doc.text('PATROCINADOR', 110, y); y += 4.5;
+    doc.text('Clube Desportivo Municipal Jardim Martinica', left, y); doc.text(doc.splitTextToSize(l.contactName ? `${l.name} – ${l.contactName}` : l.name, 86), 110, y); y += 15;
+    doc.text('_______________________________________', left, y); doc.text('_______________________________________', 110, y); y += 5;
+    doc.text('Testemunha 1 – Nome / CPF', left, y); doc.text('Testemunha 2 – Nome / CPF', 110, y);
+
+    // Nome do arquivo sem acentos: alguns navegadores trocam nomes acentuados por "download".
+    const fileName = l.name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'Patrocinador';
+    doc.save(`Termo_Patrocinio_${fileName}.pdf`);
+    return true;
+  };
+
+  const termHistoryEntry = (l: { partnershipStart: string; partnershipEnd: string }): LeadHistoryEntry => ({
+    date: new Date().toISOString(),
+    text: `Termo de compromisso gerado${l.partnershipStart || l.partnershipEnd ? ` (vigência ${l.partnershipStart ? formatDate(l.partnershipStart) : '?'} a ${l.partnershipEnd ? formatDate(l.partnershipEnd) : '?'})` : ''}.`,
+    author: authorName,
+  });
+
+  // Gera a partir do cartão: registra no histórico.
+  const handleGenerateTermFromCard = async (l: Lead) => {
+    if (!generateTerm(l)) return;
+    const { id, createdAt, ...rest } = l;
+    await persistLead(l.id, { ...rest, history: [termHistoryEntry(l), ...l.history] });
+  };
+
+  // Gera a partir do formulário (dados ainda não salvos): o registro entra no histórico ao salvar.
+  const handleGenerateTermFromForm = () => {
+    if (!form.name.trim()) return alert('Informe o nome do patrocinador.');
+    if (!generateTerm(form)) return;
+    setForm(f => ({ ...f, history: [termHistoryEntry(f), ...f.history] }));
   };
 
   // ---------- Tipos de patrocínio ----------
@@ -558,6 +709,33 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
             </div>
           </div>
 
+          <div className={`bg-white p-5 rounded-xl border shadow-sm ${partnershipsAttention > 0 ? 'border-amber-300' : ''}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2"><Handshake className="w-5 h-5 text-green-600" /> Parcerias fechadas ({partnerships.length})</h3>
+              {partnershipsAttention > 0 && <span className="text-sm font-bold text-amber-700">{partnershipsAttention} vencida(s) ou vencendo em até {EXPIRING_DAYS} dias</span>}
+            </div>
+            {partnerships.length === 0 ? <p className="text-sm text-gray-400">Nenhum patrocinador na etapa "Fechado" ainda.</p> : (
+              <div className="divide-y">
+                {partnerships.map(l => {
+                  const badge = partnershipBadge(l);
+                  const v = parseMoney(l.dealValue);
+                  return (
+                    <div key={l.id} className="py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
+                      <button onClick={() => openEdit(l)} className="text-left min-w-0">
+                        <p className="font-bold text-gray-800 truncate">{l.name}</p>
+                        <p className="text-xs text-gray-500">{[l.sponsorshipTypeIds.map(typeName).join(', '), v != null ? `${formatMoney(v)}${l.dealFrequency === 'MONTHLY' ? '/mês' : ''}` : ''].filter(Boolean).join(' · ') || 'Sem tipos/valor'}</p>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {badge ? <span className={`text-xs font-bold px-2 py-1 rounded-full ${badge.cls}`}>{badge.label}</span> : <span className="text-xs text-gray-400">Sem prazo final</span>}
+                        <button onClick={() => void handleGenerateTermFromCard(l)} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg" title="Gerar termo de compromisso (PDF)"><FileText className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="bg-white p-5 rounded-xl border shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
               <h3 className="font-bold text-gray-800 flex items-center gap-2"><Tags className="w-5 h-5 text-amber-600" /> Patrocínios por tipo</h3>
@@ -669,6 +847,15 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                           {parseMoney(l.dealValue) != null && <span className="text-[11px] font-bold text-green-700 ml-1">{formatMoney(parseMoney(l.dealValue)!)}</span>}
                         </div>
                       )}
+                      {l.leadType === 'SPONSOR' && (l.partnershipStart || l.partnershipEnd) && (() => {
+                        const badge = partnershipBadge(l);
+                        return (
+                          <p className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-gray-500">Parceria: {l.partnershipStart ? formatDate(l.partnershipStart) : '?'} a {l.partnershipEnd ? formatDate(l.partnershipEnd) : '?'}</span>
+                            {badge && l.status === 'WON' && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.cls}`}>{badge.label}</span>}
+                          </p>
+                        );
+                      })()}
                       {l.interest && <p className="text-gray-500 line-clamp-2">{l.interest}</p>}
                       {l.source && <p className="text-gray-400">Origem: {l.source}</p>}
                       {l.nextContactDate && isOpenStatus(l.status) && (
@@ -679,6 +866,7 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                       <select value={l.status} onChange={e => void handleQuickStatus(l, e.target.value as LeadStatus)} className={`flex-1 text-xs font-bold border rounded-lg px-2 py-1.5 ${statusInfo(l.status).badge}`}>
                         {STATUS_LIST.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                       </select>
+                      {l.leadType === 'SPONSOR' && <button onClick={() => void handleGenerateTermFromCard(l)} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg" title="Gerar termo de compromisso (PDF)"><FileText className="w-4 h-4" /></button>}
                       {l.phone.replace(/\D/g, '') && <button onClick={() => openCompose([l])} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="Enviar WhatsApp"><MessageCircle className="w-4 h-4" /></button>}
                       <button onClick={() => openEdit(l)} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg" title="Editar / histórico"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => void handleDelete(l)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Excluir"><Trash2 className="w-4 h-4" /></button>
@@ -784,9 +972,32 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                         })}
                       </div>
                     )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Valor negociado (R$)</label>
+                        <input inputMode="decimal" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder={(() => { const sug = form.sponsorshipTypeIds.reduce((acc, id) => acc + (types.find(t => t.id === id)?.suggestedValue || 0), 0); return sug > 0 ? `Sugerido: ${formatMoney(sug)}` : 'Ex.: 500,00'; })()} value={form.dealValue} onChange={e => setForm({ ...form, dealValue: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Pagamento</label>
+                        <select className="w-full border rounded-lg p-2.5 bg-white" value={form.dealFrequency} onChange={e => setForm({ ...form, dealFrequency: e.target.value as 'MONTHLY' | 'ONCE' })}>
+                          <option value="MONTHLY">Mensal</option>
+                          <option value="ONCE">Valor único</option>
+                        </select>
+                      </div>
+                    </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Valor negociado (R$)</label>
-                      <input inputMode="decimal" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder={(() => { const sug = form.sponsorshipTypeIds.reduce((acc, id) => acc + (types.find(t => t.id === id)?.suggestedValue || 0), 0); return sug > 0 ? `Sugerido: ${formatMoney(sug)}` : 'Ex.: 500,00'; })()} value={form.dealValue} onChange={e => setForm({ ...form, dealValue: e.target.value })} />
+                      <label className="block text-xs font-medium text-gray-500 mb-1">CNPJ / CPF do patrocinador</label>
+                      <input className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="00.000.000/0000-00" value={form.sponsorDocument} onChange={e => setForm({ ...form, sponsorDocument: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Início da parceria</label>
+                        <input type="date" className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={form.partnershipStart} onChange={e => setForm({ ...form, partnershipStart: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Prazo final da parceria</label>
+                        <input type="date" min={form.partnershipStart || undefined} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none" value={form.partnershipEnd} onChange={e => setForm({ ...form, partnershipEnd: e.target.value })} />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -812,7 +1023,10 @@ export const MarketingPage: React.FC<MarketingPageProps> = ({ currentUser }) => 
                 </div>
               </div>
 
-              <div className="lg:col-span-2 flex justify-end gap-3 pt-4 border-t">
+              <div className="lg:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 border-t">
+                {form.leadType === 'SPONSOR' && (
+                  <button type="button" onClick={handleGenerateTermFromForm} className="sm:mr-auto flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50"><FileText className="w-4 h-4" /> Gerar termo de compromisso</button>
+                )}
                 <button type="button" onClick={() => setFormOpen(false)} className="px-5 py-2.5 text-gray-500 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={saving} className="px-8 py-2.5 bg-primary-600 text-white font-black rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />} Salvar</button>
               </div>
