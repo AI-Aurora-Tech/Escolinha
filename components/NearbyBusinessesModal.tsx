@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import {
-  NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, isAlreadyContact, PlacesApiError,
+  NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, searchBusinessesByName, isAlreadyContact, PlacesApiError,
   SEGMENTS, ALL_SEGMENT_IDS, segmentLabel,
 } from '../services/nearbyBusinesses';
 import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Home, KeyRound } from 'lucide-react';
@@ -20,6 +20,22 @@ const DEFAULT_MIN_REVIEWS = 30;
 const MIN_REVIEWS_SETTING_KEY = 'marketing_min_reviews';
 // v2: lista de segmentos mudou (supermercados/atacados e "Outras empresas"); começa com todos marcados.
 const SEGMENTS_SETTING_KEY = 'marketing_segments_v2';
+
+// Filtro de contato (aplicado sobre o resultado, sem nova consulta). O Google não informa
+// e-mail: ele costuma estar no site da empresa, por isso "WhatsApp ou e-mail" inclui quem tem site.
+type ContactFilter = 'all' | 'whatsapp' | 'whatsapp_or_email' | 'phone';
+const CONTACT_FILTERS: { id: ContactFilter; label: string; hint: string }[] = [
+  { id: 'all', label: 'Todas', hint: 'Mostra todas as empresas' },
+  { id: 'whatsapp', label: 'Com WhatsApp', hint: 'Só empresas com celular (provável WhatsApp)' },
+  { id: 'whatsapp_or_email', label: 'Com WhatsApp ou e-mail', hint: 'Celular (provável WhatsApp), e-mail ou site (onde o e-mail costuma estar)' },
+  { id: 'phone', label: 'Com telefone', hint: 'Qualquer telefone (fixo ou celular)' },
+];
+const CONTACT_FILTER_SETTING_KEY = 'marketing_contact_filter';
+const passesContact = (b: NearbyBusiness, f: ContactFilter) =>
+  f === 'all' ? true
+  : f === 'whatsapp' ? !!b.whatsapp
+  : f === 'whatsapp_or_email' ? !!(b.whatsapp || b.email || b.website)
+  : !!b.phone;
 
 const CLUB_ADDRESS = 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290';
 
@@ -81,6 +97,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
   const [minReviews, setMinReviews] = useState(DEFAULT_MIN_REVIEWS);
+  const [contactFilter, setContactFilter] = useState<ContactFilter>('all');
+  const [nameQuery, setNameQuery] = useState('');                               // nome do local (opcional)
+  const [searchedName, setSearchedName] = useState('');                         // nome da última busca ('' = por segmento)
   const [segments, setSegments] = useState<string[]>(ALL_SEGMENT_IDS);          // segmentos escolhidos
   const [searchedSegments, setSearchedSegments] = useState<string[]>([]);       // segmentos da última busca
   const [lastRequests, setLastRequests] = useState<number | null>(null);        // pedidos ao Google na última busca
@@ -92,14 +111,16 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     await supabase.from('app_settings').upsert({ key: CENTER_SETTING_KEY, value: JSON.stringify(p) });
   };
 
-  const runSearch = useCallback(async (c: GeoPoint, r: number, force = false, segs: string[] = segments) => {
-    setSearchedRadius(r);
+  const runSearch = useCallback(async (c: GeoPoint, r: number, force = false, segs: string[] = segments, name = '') => {
+    setSearchedRadius(r); setSearchedName(name);
     setSearching(true); setSearchError(null); setResults(null); setSelected(new Set()); setElapsed(0);
     const started = Date.now();
     const tick = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     try {
-      const { items: found, cachedAt: fromCache, requests } = await searchNearbyBusinesses(apiKey, c, r, segs, { force });
-      setSearchedSegments(segs); setLastRequests(requests);
+      const { items: found, cachedAt: fromCache, requests } = name
+        ? await searchBusinessesByName(apiKey, c, r, name, { force })
+        : await searchNearbyBusinesses(apiKey, c, r, segs, { force });
+      if (!name) setSearchedSegments(segs); setLastRequests(requests);
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
@@ -147,6 +168,10 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           if (valid.length) setSegments(valid);
         }
       } catch { /* usa todos */ }
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', CONTACT_FILTER_SETTING_KEY).maybeSingle();
+        if (CONTACT_FILTERS.some(f => f.id === data?.value)) setContactFilter(data!.value as ContactFilter);
+      } catch { /* usa "Todas" */ }
       let key = '';
       try {
         const { data } = await supabase.from('app_settings').select('value').eq('key', GOOGLE_KEY_SETTING).maybeSingle();
@@ -227,21 +252,26 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const startSearch = () => {
     if (!center) return;
     if (!apiKey) { setEditingKey(true); return alert('Cadastre primeiro a chave de API do Google.'); }
-    if (segments.length === 0) return alert('Escolha pelo menos um segmento.');
+    const name = nameQuery.trim();
+    if (!name && segments.length === 0) return alert('Escolha pelo menos um segmento ou digite o nome do local.');
+    if (name && name.length < 2) return alert('Digite pelo menos 2 letras do nome do local.');
     const m = parseRadiusInput(radiusInput);
     if (!radiusIsValid(m)) return alert(`Informe um raio entre ${kmText(MIN_RADIUS_METERS)} e ${kmText(MAX_RADIUS_METERS)} km.`);
     selectRadius(m);
     // O Supabase só executa a gravação quando o resultado é aguardado.
     void (async () => { await supabase.from('app_settings').upsert({ key: RADIUS_SETTING_KEY, value: String(m) }); })();
-    void runSearch(center, m);
+    void runSearch(center, m, false, segments, name);
   };
 
-  // Empresas que passam no porte mínimo (total de avaliações no Google).
-  const inSegments = useMemo(() => (results || []).filter(b => segments.includes(b.segment)), [results, segments]);
-  const visible = useMemo(() => inSegments.filter(b => (b.ratingCount || 0) >= minReviews), [inSegments, minReviews]);
-  const hiddenBySize = inSegments.length - visible.length;
+  // Filtros sobre o resultado: segmentos (só na busca por segmento), porte mínimo e contato.
+  const inSegments = useMemo(() => (results || []).filter(b => searchedName || segments.includes(b.segment)), [results, segments, searchedName]);
+  const bySize = useMemo(() => inSegments.filter(b => (b.ratingCount || 0) >= minReviews), [inSegments, minReviews]);
+  const visible = useMemo(() => bySize.filter(b => passesContact(b, contactFilter)), [bySize, contactFilter]);
+  const hiddenBySize = inSegments.length - bySize.length;
+  const hiddenByContact = bySize.length - visible.length;
+  const contactLabel = CONTACT_FILTERS.find(f => f.id === contactFilter)?.label.toLowerCase() || '';
   // Segmentos marcados que ainda não foram buscados (precisam de "Buscar empresas").
-  const pendingSegments = results ? segments.filter(id => !searchedSegments.includes(id)) : [];
+  const pendingSegments = results && !searchedName ? segments.filter(id => !searchedSegments.includes(id)) : [];
 
   const saveSegments = (list: string[]) => {
     setSegments(list);
@@ -252,8 +282,14 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const changeMinReviews = (n: number) => {
     setMinReviews(n);
     // Desmarca quem saiu da lista com o novo filtro.
-    setSelected(prev => new Set([...prev].filter(id => (results || []).some(b => b.id === id && (b.ratingCount || 0) >= n))));
+    setSelected(prev => new Set([...prev].filter(id => (results || []).some(b => b.id === id && (b.ratingCount || 0) >= n && passesContact(b, contactFilter)))));
     void (async () => { await supabase.from('app_settings').upsert({ key: MIN_REVIEWS_SETTING_KEY, value: String(n) }); })();
+  };
+
+  const changeContactFilter = (f: ContactFilter) => {
+    setContactFilter(f);
+    setSelected(prev => new Set([...prev].filter(id => (results || []).some(b => b.id === id && (b.ratingCount || 0) >= minReviews && passesContact(b, f)))));
+    void (async () => { await supabase.from('app_settings').upsert({ key: CONTACT_FILTER_SETTING_KEY, value: f }); })();
   };
 
   const allSelected = visible.length > 0 && visible.every(r => selected.has(r.id));
@@ -352,13 +388,24 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             <input inputMode="decimal" className="w-20 border rounded-lg px-2 py-1.5 text-sm text-right focus:ring-2 focus:ring-primary-500 outline-none" value={radiusInput} onChange={e => onRadiusTyped(e.target.value)} disabled={searching} aria-label="Raio em km" />
             <span className="text-gray-500 text-xs">km <span className="text-gray-400">(0,1 a 5)</span></span>
           </div>
+          <div className="flex items-center gap-1.5 lg:flex-1 lg:max-w-xs">
+            <span className="text-gray-500 text-xs whitespace-nowrap">Nome do local:</span>
+            <div className="relative flex-1">
+              <input className="w-full border rounded-lg pl-2 pr-7 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="opcional, ex.: Assaí" value={nameQuery} onChange={e => setNameQuery(e.target.value)} disabled={searching} aria-label="Nome do local" />
+              {nameQuery && !searching && <button type="button" onClick={() => setNameQuery('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" aria-label="Limpar nome"><X className="w-4 h-4" /></button>}
+            </div>
+          </div>
           <button type="submit" disabled={searching || !center || locating || centerLoading || !apiKey} className="lg:ml-auto px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap">
             {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} 2. Buscar empresas
           </button>
         </form>
 
+        {nameQuery.trim() && (
+          <p className="mb-3 -mt-2 text-xs text-gray-500">Com o nome preenchido, a busca procura esse nome no Google dentro do raio, em qualquer segmento. Deixe em branco para buscar pelos segmentos.</p>
+        )}
+
         {/* Segmentos */}
-        <div className="flex flex-col lg:flex-row lg:items-start gap-2 mb-3 text-sm">
+        <div className={`flex flex-col lg:flex-row lg:items-start gap-2 mb-3 text-sm ${nameQuery.trim() ? 'opacity-50' : ''}`}>
           <span className="font-bold text-gray-700 whitespace-nowrap lg:pt-1.5">Segmentos:</span>
           <div className="flex flex-wrap items-center gap-1.5">
             {SEGMENTS.map(sg => {
@@ -383,7 +430,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         {/* Porte mínimo (avaliações no Google) */}
         <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-4 text-sm">
           <span className="font-bold text-gray-700 whitespace-nowrap">Porte mínimo:</span>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap lg:shrink-0 items-center gap-1.5">
             {MIN_REVIEWS_PRESETS.map(n => (
               <button type="button" key={n} onClick={() => changeMinReviews(n)} className={`px-3 py-1.5 rounded-full border text-xs font-bold ${minReviews === n ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{n === 0 ? 'Todas' : `${n}+ avaliações`}</button>
             ))}
@@ -391,10 +438,21 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           <span className="text-xs text-gray-400 lg:ml-2">O Google não informa funcionários; o nº de avaliações indica o movimento da empresa. Mudar este filtro não faz nova consulta.</span>
         </div>
 
+        {/* Contato */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-4 -mt-2 text-sm">
+          <span className="font-bold text-gray-700 whitespace-nowrap">Contato:</span>
+          <div className="flex flex-wrap lg:shrink-0 items-center gap-1.5">
+            {CONTACT_FILTERS.map(f => (
+              <button type="button" key={f.id} onClick={() => changeContactFilter(f.id)} title={f.hint} className={`px-3 py-1.5 rounded-full border text-xs font-bold ${contactFilter === f.id ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{f.label}</button>
+            ))}
+          </div>
+          <span className="text-xs text-gray-400 lg:ml-2">O Google não informa e-mail: "WhatsApp ou e-mail" inclui quem tem site, onde o e-mail costuma estar.</span>
+        </div>
+
         {center && !searching && !results && !searchError && (
           <div className="py-10 text-center bg-gray-50 rounded-xl border border-dashed text-gray-500 text-sm">
             <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            Escolha o raio de distância e clique em <strong>Buscar empresas</strong>.
+            Escolha o raio de distância (e, se quiser, o nome do local) e clique em <strong>Buscar empresas</strong>.
           </div>
         )}
 
@@ -403,7 +461,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         {searchError && !searching && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span>{searchError}</span>
-            {center && <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="font-bold underline shrink-0">Tentar novamente</button>}
+            {center && <button onClick={() => void runSearch(center, searchedRadius ?? radius, true, segments, searchedName)} className="font-bold underline shrink-0">Tentar novamente</button>}
           </div>
         )}
 
@@ -411,8 +469,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           <>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3 text-sm">
               <p className="text-gray-600">
-                <strong className="text-gray-900">{visible.length}</strong> empresa(s) nova(s) encontrada(s){searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
+                <strong className="text-gray-900">{visible.length}</strong> empresa(s) nova(s) encontrada(s){searchedName && <> com o nome <strong>"{searchedName}"</strong></>}{searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
                 {hiddenBySize > 0 && <> · <strong>{hiddenBySize}</strong> com menos de {minReviews} avaliações ocultada(s) pelo porte mínimo</>}
+                {hiddenByContact > 0 && <> · <strong>{hiddenByContact}</strong> ocultada(s) pelo filtro de contato</>}
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
                 {visible.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · celular: {stats.whatsapp} · com site: {stats.website}</span>}
                 {!cachedAt && lastRequests != null && lastRequests > 0 && (
@@ -421,7 +480,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                 {cachedAt && center && (
                   <span className="block text-xs text-gray-400 mt-0.5">
                     Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (sem custo).{' '}
-                    <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="text-primary-600 font-bold underline">Buscar de novo no Google</button>
+                    <button onClick={() => void runSearch(center, searchedRadius ?? radius, true, segments, searchedName)} className="text-primary-600 font-bold underline">Buscar de novo no Google</button>
                   </span>
                 )}
               </p>
@@ -434,7 +493,11 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
 
             {visible.length === 0 ? (
               <div className="py-12 text-center bg-gray-50 rounded-xl border border-dashed text-gray-400">
-                <p className="font-medium">{hiddenBySize > 0 ? `Nenhuma empresa com ${minReviews} ou mais avaliações. Diminua o porte mínimo para ver as ${hiddenBySize} encontradas.` : 'Nenhuma empresa nova encontrada neste raio.'}</p>
+                <p className="font-medium">{
+                  hiddenByContact > 0 ? `Nenhuma empresa ${contactLabel}. Escolha "Todas" em Contato para ver as ${hiddenByContact} encontradas.`
+                  : hiddenBySize > 0 ? `Nenhuma empresa com ${minReviews} ou mais avaliações. Diminua o porte mínimo para ver as ${hiddenBySize} encontradas.`
+                  : searchedName ? `Nenhuma empresa nova com o nome "${searchedName}" neste raio.`
+                  : 'Nenhuma empresa nova encontrada neste raio.'}</p>
               </div>
             ) : (
               <div className="border rounded-xl overflow-hidden">
@@ -480,7 +543,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             )}
             <p className="text-xs text-gray-400 mt-3">
               Dados do Google Maps. O Google não informa e-mail nem WhatsApp: celulares aparecem como "provável WhatsApp", e o e-mail pode ser obtido no site da empresa.
-              Cada segmento usa 1 consulta da cota do Google (Supermercados, hiper e atacados usa de 4 a 7, pois também busca por texto); segmentos já buscados no mesmo endereço e raio nas últimas 24 h não geram custo.
+              Cada segmento usa 1 consulta da cota do Google (Supermercados, hiper e atacados usa de 4 a 7, pois também busca por texto) e a busca por nome usa de 1 a 3; buscas repetidas no mesmo endereço e raio nas últimas 24 h não geram custo.
             </p>
           </>
         )}
