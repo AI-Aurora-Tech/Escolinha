@@ -5,6 +5,10 @@
       "destination": "https://api.mercadopago.com/:path*"
     },
     {
+      "source": "/api/places/:path*",
+      "destination": "https://places.googleapis.com/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
