@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Shirt, Ticket, X, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, Wallet, LogOut, Shirt, Ticket, X, Settings, Megaphone } from 'lucide-react';
 import { User, UserRole } from '../types';
 
 interface SidebarProps {
@@ -21,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, currentPage, onNa
     { id: 'plans', label: 'Planos', icon: Ticket, roles: [UserRole.ADMIN] },
     { id: 'schedule', label: 'Agenda', icon: Calendar, roles: [UserRole.ADMIN, UserRole.PROFESSOR, UserRole.RESPONSAVEL] },
     { id: 'finance', label: 'Fluxo de Caixa', icon: Wallet, roles: [UserRole.ADMIN] },
+    { id: 'marketing', label: 'Marketing / Captação', icon: Megaphone, roles: [UserRole.ADMIN] },
     { id: 'users', label: 'Usuários do Sistema', icon: Settings, roles: [UserRole.ADMIN] },
   ];
 

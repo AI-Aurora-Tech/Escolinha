@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { StudentsPage } from './pages/StudentsPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { PlansPage } from './pages/PlansPage';
+import { MarketingPage } from './pages/MarketingPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { FinancePage } from './pages/FinancePage';
 import { UsersPage } from './pages/UsersPage';
@@ -1393,6 +1394,7 @@ const AppContent: React.FC = () => {
             <Route path="/schedule" element={<SchedulePage activities={activities} students={students} groups={groups} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onUpdateAttendance={handleUpdateAttendance} onUpdateFeePayment={handleUpdateFeePayment} onDeleteActivity={handleDeleteActivity} currentUser={currentUser} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} transactions={transactions} onRefresh={() => fetchData(true)} />} />
             <Route path="/groups" element={<GroupsPage groups={groups} students={students} transactions={transactions} onAddGroup={handleAddGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} onBatchAssignStudents={handleBatchAssignStudents} />} />
             <Route path="/plans" element={<PlansPage plans={plans} students={students} onAddPlan={handleAddPlan} onUpdatePlan={handleUpdatePlan} onDeletePlan={handleDeletePlan} />} />
+            <Route path="/marketing" element={<MarketingPage currentUser={currentUser} />} />
             <Route path="/users" element={<UsersPage users={systemUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />} />
             <Route path="/aicoach" element={<AICoachPage income={transactions.filter(t => t.type === TransactionType.INCOME && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} expense={transactions.filter(t => t.type === TransactionType.EXPENSE && t.status === PaymentStatus.PAID).reduce((acc, curr) => acc + curr.amount, 0)} />} />
             <Route path="/" element={<DashboardPage students={students} transactions={transactions} activities={activities} role={currentUser!.role} onNavigate={handleNavigate} />} />
