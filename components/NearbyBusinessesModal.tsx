@@ -5,7 +5,12 @@ import {
 } from '../services/nearbyBusinesses';
 import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Crosshair } from 'lucide-react';
 
-export const SEARCH_RADIUS_METERS = 1000;
+// Raio da busca (em metros): padrão 1 km, ajustável na tela entre 100 m e 5 km.
+export const DEFAULT_RADIUS_METERS = 1000;
+const MIN_RADIUS_METERS = 100;
+const MAX_RADIUS_METERS = 5000;
+const RADIUS_PRESETS = [500, 1000, 2000, 3000, 5000];
+const RADIUS_SETTING_KEY = 'marketing_search_radius';
 
 // Endereço do clube, em formas diferentes: usa a primeira que o mapa encontrar.
 const CLUB_GEOCODE_ATTEMPTS: Record<string, string>[] = [
@@ -22,6 +27,7 @@ interface Props {
   onClose: () => void;
 }
 
+const kmText = (m: number) => (m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 const formatDistance = (m: number) => (m < 1000 ? `${m} m` : `${(m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`);
 const mapLink = (lat: number, lon: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
 
@@ -32,6 +38,8 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [editingCenter, setEditingCenter] = useState(false);
   const [centerInput, setCenterInput] = useState('');
 
+  const [radius, setRadius] = useState(DEFAULT_RADIUS_METERS);            // raio usado na última busca
+  const [radiusInput, setRadiusInput] = useState(kmText(DEFAULT_RADIUS_METERS)); // km, como digitado
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
@@ -44,10 +52,11 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     await supabase.from('app_settings').upsert({ key: CENTER_SETTING_KEY, value: JSON.stringify(p) });
   };
 
-  const runSearch = useCallback(async (c: GeoPoint) => {
+  const runSearch = useCallback(async (c: GeoPoint, r: number) => {
+    setRadius(r);
     setSearching(true); setSearchError(null); setResults(null); setSelected(new Set());
     try {
-      const found = await searchNearbyBusinesses(c, SEARCH_RADIUS_METERS);
+      const found = await searchNearbyBusinesses(c, r);
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
@@ -71,6 +80,14 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           if (typeof v?.lat === 'number' && typeof v?.lon === 'number') c = v;
         }
       } catch { /* sem ponto salvo */ }
+      let r = DEFAULT_RADIUS_METERS;
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', RADIUS_SETTING_KEY).maybeSingle();
+        const saved = Number(data?.value);
+        if (Number.isFinite(saved) && saved >= MIN_RADIUS_METERS && saved <= MAX_RADIUS_METERS) r = saved;
+      } catch { /* usa o padrão */ }
+      if (cancelled) return;
+      setRadius(r); setRadiusInput(kmText(r));
       if (!c) {
         c = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
         if (c) void saveCenter(c);
@@ -83,7 +100,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         return;
       }
       setCenter(c);
-      void runSearch(c);
+      void runSearch(c, r);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +112,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     const c: GeoPoint = { ...p, label: 'Ponto ajustado manualmente' };
     setCenter(c); setCenterError(null); setEditingCenter(false);
     await saveCenter(c);
-    void runSearch(c);
+    void runSearch(c, radius);
   };
 
   const relocateFromAddress = async () => {
@@ -105,7 +122,19 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     if (!c) return alert('O mapa não encontrou o endereço do clube. Informe as coordenadas manualmente.');
     setCenter(c); setEditingCenter(false); setCenterError(null);
     await saveCenter(c);
-    void runSearch(c);
+    void runSearch(c, radius);
+  };
+
+  // Aplica o raio digitado (em km), guarda para as próximas buscas e busca de novo.
+  const applyRadius = async (meters?: number) => {
+    const m = meters ?? Math.round(Number(radiusInput.replace(',', '.')) * 1000);
+    if (!Number.isFinite(m) || m < MIN_RADIUS_METERS || m > MAX_RADIUS_METERS) {
+      return alert(`Informe um raio entre ${kmText(MIN_RADIUS_METERS)} e ${kmText(MAX_RADIUS_METERS)} km.`);
+    }
+    setRadiusInput(kmText(m));
+    // O Supabase só executa a gravação quando o resultado é aguardado.
+    void (async () => { await supabase.from('app_settings').upsert({ key: RADIUS_SETTING_KEY, value: String(m) }); })();
+    if (center) void runSearch(center, m);
   };
 
   const allSelected = !!results && results.length > 0 && results.every(r => selected.has(r.osmId));
@@ -138,7 +167,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl p-4 sm:p-6 my-4 sm:my-8">
         <div className="flex justify-between items-start gap-3 mb-4 border-b pb-3">
           <div>
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="w-5 h-5 text-primary-600" /> Empresas a até {formatDistance(SEARCH_RADIUS_METERS)} do clube</h3>
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="w-5 h-5 text-primary-600" /> Empresas a até {formatDistance(radius)} do clube</h3>
             <p className="text-xs text-gray-500">Rua Roque de Mingo, 550 – Jardim Samara. Empresas que já estão nos seus contatos são ignoradas.</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
@@ -152,7 +181,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
                 {center && (
-                  <p className="text-gray-700 truncate"><Crosshair className="w-4 h-4 inline mr-1 text-gray-400" />Centro da busca: <span className="font-mono text-xs">{center.lat.toFixed(5)}, {center.lon.toFixed(5)}</span> <a href={mapLink(center.lat, center.lon)} target="_blank" rel="noreferrer" className="text-primary-600 font-bold underline ml-1">ver no mapa</a></p>
+                  <p className="text-gray-700 break-words"><Crosshair className="w-4 h-4 inline mr-1 text-gray-400" />Centro da busca: <span className="font-mono text-xs">{center.lat.toFixed(5)}, {center.lon.toFixed(5)}</span> <a href={mapLink(center.lat, center.lon)} target="_blank" rel="noreferrer" className="text-primary-600 font-bold underline ml-1">ver no mapa</a></p>
                 )}
                 {centerError && <p className="text-amber-700 flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {centerError}</p>}
               </div>
@@ -172,12 +201,29 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           )}
         </div>
 
+        {/* Raio da busca */}
+        <div className="flex flex-col md:flex-row md:items-center gap-2 mb-4 text-sm">
+          <span className="font-bold text-gray-700">Raio de distância:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {RADIUS_PRESETS.map(m => (
+              <button key={m} onClick={() => void applyRadius(m)} disabled={searching || !center} className={`px-3 py-1.5 rounded-full border text-xs font-bold disabled:opacity-50 ${radius === m ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{formatDistance(m)}</button>
+            ))}
+          </div>
+          <form onSubmit={e => { e.preventDefault(); void applyRadius(); }} className="flex items-center gap-1.5 md:ml-2">
+            <span className="text-gray-500 text-xs">ou</span>
+            <input inputMode="decimal" className="w-20 border rounded-lg px-2 py-1.5 text-sm text-right focus:ring-2 focus:ring-primary-500 outline-none" value={radiusInput} onChange={e => setRadiusInput(e.target.value)} aria-label="Raio em km" />
+            <span className="text-gray-500 text-xs">km</span>
+            <button type="submit" disabled={searching || !center} className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Buscar</button>
+          </form>
+          <span className="text-xs text-gray-400 md:ml-auto">de {kmText(MIN_RADIUS_METERS)} a {kmText(MAX_RADIUS_METERS)} km</span>
+        </div>
+
         {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...</div>}
 
         {searchError && !searching && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span>{searchError}</span>
-            {center && <button onClick={() => void runSearch(center)} className="font-bold underline shrink-0">Tentar novamente</button>}
+            {center && <button onClick={() => void runSearch(center, radius)} className="font-bold underline shrink-0">Tentar novamente</button>}
           </div>
         )}
 
@@ -189,9 +235,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
                 {results.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · WhatsApp: {stats.whatsapp} · e-mail: {stats.email}</span>}
               </p>
-              <div className="flex gap-2 shrink-0">
-                {center && <button onClick={() => void runSearch(center)} className="px-3 py-2 border rounded-lg font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-1.5 whitespace-nowrap"><Search className="w-4 h-4" /> Buscar de novo</button>}
-                <button onClick={() => void handleAdd()} disabled={selected.size === 0 || adding} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap">
+              <div className="flex flex-wrap gap-2 md:shrink-0">
+                {center && <button onClick={() => void runSearch(center, radius)} className="flex-1 md:flex-none justify-center px-3 py-2 border rounded-lg font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-1.5 whitespace-nowrap"><Search className="w-4 h-4" /> Buscar de novo</button>}
+                <button onClick={() => void handleAdd()} disabled={selected.size === 0 || adding} className="flex-1 md:flex-none justify-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap">
                   {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Adicionar {selected.size > 0 ? selected.size : ''} aos contatos
                 </button>
               </div>
