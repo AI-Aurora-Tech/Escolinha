@@ -1,7 +1,7 @@
-// Busca de empresas próximas ao clube usando dados abertos do OpenStreetMap:
-// - Nominatim: transforma o endereço do clube em coordenadas;
-// - Overpass: lista estabelecimentos com nome num raio em volta dessas coordenadas.
-// Ambos são gratuitos, não exigem chave e aceitam chamadas direto do navegador.
+// Busca de empresas próximas a um endereço:
+// - Nominatim (OpenStreetMap, gratuito): transforma o endereço digitado em coordenadas;
+// - Google Places API (New): lista as empresas num raio em volta dessas coordenadas.
+//   Precisa de uma chave de API do Google (guardada em app_settings).
 
 export interface GeoPoint {
   lat: number;
@@ -12,32 +12,23 @@ export interface GeoPoint {
 }
 
 export interface NearbyBusiness {
-  osmId: string;          // ex.: "node/123"
+  id: string;             // id do lugar no Google
   name: string;
   category: string;       // ex.: "Padaria", "Farmácia"
   address: string;
   neighborhood: string;
   phone: string;
-  whatsapp: string;       // da tag do OSM ou celular (provável WhatsApp)
+  whatsapp: string;       // celular (provável WhatsApp); o Google não informa WhatsApp
   whatsappIsGuess: boolean;
-  email: string;
+  email: string;          // o Google não informa e-mail; fica vazio
   website: string;
   distanceMeters: number;
 }
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-// Servidores públicos do Overpass. São consultados AO MESMO TEMPO e vale a primeira
-// resposta boa: um servidor lento ou fora do ar não atrasa mais a busca.
-const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-const OVERPASS_TIMEOUT_MS = 25000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // resultados guardados no navegador por 24 h
 
-// ---------- Geocodificação ----------
+// ---------- Geocodificação (endereço -> coordenadas) ----------
 
 export const geocodeAddress = async (attempts: Record<string, string>[]): Promise<GeoPoint | null> => {
   for (const params of attempts) {
@@ -63,61 +54,7 @@ export const parseLatLon = (text: string): { lat: number; lon: number } | null =
   return { lat, lon };
 };
 
-// ---------- Busca no Overpass ----------
-
-const AMENITIES = 'restaurant|cafe|fast_food|bar|pub|biergarten|food_court|ice_cream|pharmacy|bank|clinic|dentist|doctors|veterinary|fuel|car_wash|car_rental|driving_school|marketplace|bureau_de_change|money_transfer|internet_cafe|cinema|nightclub|language_school|music_school|prep_school';
-const LEISURE = 'fitness_centre|sports_centre|dance|bowling_alley|escape_game|amusement_arcade';
-const TOURISM = 'hotel|motel|guest_house|hostel';
-
-// Retângulo que contém o círculo do raio (sul, oeste, norte, leste).
-export const boundingBox = (lat: number, lon: number, radius: number) => {
-  const dLat = radius / 111320;
-  const dLon = radius / (111320 * Math.cos((lat * Math.PI) / 180));
-  const f = (n: number) => n.toFixed(6);
-  return `${f(lat - dLat)},${f(lon - dLon)},${f(lat + dLat)},${f(lon + dLon)}`;
-};
-
-// Busca por retângulo + índice de tags (bem mais rápido no Overpass do que "around").
-// O corte exato pelo raio é feito depois, em parseOverpassResult.
-export const buildOverpassQuery = (lat: number, lon: number, radius: number) => {
-  const b = `(${boundingBox(lat, lon, radius)})`;
-  return `[out:json][timeout:25];
-(
-  nwr["shop"]["name"]${b};
-  nwr["office"]["name"]${b};
-  nwr["craft"]["name"]${b};
-  nwr["healthcare"]["name"]${b};
-  nwr["amenity"~"^(${AMENITIES})$"]["name"]${b};
-  nwr["leisure"~"^(${LEISURE})$"]["name"]${b};
-  nwr["tourism"~"^(${TOURISM})$"]["name"]${b};
-);
-out center tags qt;`;
-};
-
-const CATEGORY_PT: Record<string, string> = {
-  bakery: 'Padaria', supermarket: 'Supermercado', convenience: 'Conveniência', butcher: 'Açougue', greengrocer: 'Hortifruti',
-  clothes: 'Loja de roupas', shoes: 'Calçados', hairdresser: 'Cabeleireiro', beauty: 'Estética', hardware: 'Material de construção',
-  doityourself: 'Material de construção', car_repair: 'Oficina mecânica', car_parts: 'Autopeças', tyres: 'Pneus', mobile_phone: 'Celulares',
-  electronics: 'Eletrônicos', optician: 'Ótica', pet: 'Pet shop', sports: 'Artigos esportivos', stationery: 'Papelaria', florist: 'Floricultura',
-  furniture: 'Móveis', variety_store: 'Variedades', alcohol: 'Bebidas', beverages: 'Bebidas', kiosk: 'Banca', laundry: 'Lavanderia',
-  restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', bar: 'Bar', pub: 'Bar', ice_cream: 'Sorveteria', pharmacy: 'Farmácia',
-  bank: 'Banco', clinic: 'Clínica', dentist: 'Dentista', doctors: 'Consultório', veterinary: 'Veterinário', fuel: 'Posto de combustível',
-  car_wash: 'Lava-rápido', driving_school: 'Autoescola', marketplace: 'Feira / mercado', fitness_centre: 'Academia', sports_centre: 'Centro esportivo',
-  hotel: 'Hotel', motel: 'Motel', guest_house: 'Pousada', hostel: 'Hostel', language_school: 'Escola de idiomas', music_school: 'Escola de música',
-  company: 'Empresa', estate_agent: 'Imobiliária', insurance: 'Seguros', lawyer: 'Advocacia', accountant: 'Contabilidade',
-};
-
-const categoryOf = (t: Record<string, string>) => {
-  const raw = t.shop || t.amenity || t.leisure || t.tourism || t.office || t.craft || t.healthcare || '';
-  if (CATEGORY_PT[raw]) return CATEGORY_PT[raw];
-  const group = t.shop ? 'Comércio' : t.office ? 'Escritório' : t.craft ? 'Serviço' : t.healthcare ? 'Saúde' : 'Estabelecimento';
-  return raw && raw !== 'yes' ? `${group} (${raw.replace(/_/g, ' ')})` : group;
-};
-
-const first = (t: Record<string, string>, ...keys: string[]) => {
-  for (const k of keys) if (t[k]) return t[k].split(';')[0].trim();
-  return '';
-};
+// ---------- Utilitários ----------
 
 // Celular brasileiro: DDD + 9 dígitos começando com 9 (com ou sem 55).
 export const isBrazilianMobile = (phone: string) => {
@@ -134,47 +71,119 @@ export const distanceMeters = (lat1: number, lon1: number, lat2: number, lon2: n
   return 2 * R * Math.asin(Math.sqrt(h));
 };
 
-export const parseOverpassResult = (json: any, center: { lat: number; lon: number }, radius: number): NearbyBusiness[] => {
-  const seen = new Set<string>();
-  const out: NearbyBusiness[] = [];
-  for (const el of json?.elements || []) {
-    const t: Record<string, string> = el.tags || {};
-    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-    if (!t.name || typeof lat !== 'number' || typeof lon !== 'number') continue;
-    const dist = distanceMeters(center.lat, center.lon, lat, lon);
-    if (dist > radius + 1) continue;
-    // O mesmo lugar pode vir como ponto e como prédio: junta por nome + endereço.
-    const dedupKey = `${normalizeName(t.name)}|${t['addr:street'] || ''}|${t['addr:housenumber'] || ''}`;
-    if (seen.has(dedupKey)) continue;
-    seen.add(dedupKey);
+// ---------- Google Places (New) ----------
 
-    const street = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(', ');
-    const neighborhood = first(t, 'addr:suburb', 'addr:neighbourhood', 'addr:district');
-    const address = [street, neighborhood, first(t, 'addr:city'), first(t, 'addr:postcode')].filter(Boolean).join(' – ');
-    const phone = first(t, 'phone', 'contact:phone', 'phone:mobile', 'contact:mobile');
-    const waTag = first(t, 'contact:whatsapp', 'whatsapp');
-    const mobile = first(t, 'phone:mobile', 'contact:mobile') || (isBrazilianMobile(phone) ? phone : '');
-    out.push({
-      osmId: `${el.type}/${el.id}`,
-      name: t.name.trim(),
-      category: categoryOf(t),
-      address,
-      neighborhood,
-      phone,
-      whatsapp: waTag || mobile,
-      whatsappIsGuess: !waTag && !!mobile,
-      email: first(t, 'email', 'contact:email'),
-      website: first(t, 'website', 'contact:website', 'contact:instagram', 'contact:facebook'),
-      distanceMeters: Math.round(dist),
-    });
-  }
-  return out.sort((a, b) => a.distanceMeters - b.distanceMeters);
+const PLACES_URL = 'https://places.googleapis.com/v1/places:searchNearby';
+// Mesmo endereço passando pelo proxy do próprio site (vercel.json / vite.config.ts),
+// usado se o navegador bloquear a chamada direta.
+const PLACES_PROXY_URL = '/api/places/v1/places:searchNearby';
+const PLACES_TIMEOUT_MS = 20000;
+
+const FIELD_MASK = [
+  'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
+  'places.location', 'places.primaryType', 'places.primaryTypeDisplayName',
+  'places.nationalPhoneNumber', 'places.internationalPhoneNumber', 'places.websiteUri',
+].join(',');
+
+// O Google devolve no máximo 20 lugares por pedido; por isso a busca é feita em grupos
+// de tipos (todos ao mesmo tempo) e os resultados são juntados.
+export const PLACE_TYPE_GROUPS: string[][] = [
+  ['bakery', 'restaurant', 'cafe', 'coffee_shop', 'meal_takeaway', 'bar', 'ice_cream_shop', 'pizza_restaurant', 'fast_food_restaurant', 'hamburger_restaurant', 'sandwich_shop', 'steak_house'],
+  ['supermarket', 'grocery_store', 'convenience_store', 'market', 'liquor_store', 'food_store'],
+  ['pharmacy', 'drugstore', 'dentist', 'dental_clinic', 'doctor', 'physiotherapist', 'medical_lab', 'veterinary_care'],
+  ['gym', 'fitness_center', 'sports_club', 'sports_complex', 'yoga_studio', 'swimming_pool'],
+  ['car_repair', 'car_wash', 'gas_station', 'car_dealer', 'auto_parts_store'],
+  ['beauty_salon', 'hair_salon', 'barber_shop', 'hair_care', 'nail_salon', 'spa', 'laundry', 'florist'],
+  ['clothing_store', 'shoe_store', 'hardware_store', 'home_goods_store', 'home_improvement_store', 'furniture_store', 'electronics_store', 'cell_phone_store', 'sporting_goods_store', 'book_store', 'pet_store', 'jewelry_store', 'gift_shop'],
+  ['real_estate_agency', 'insurance_agency', 'accounting', 'lawyer', 'travel_agency', 'bank', 'hotel', 'lodging', 'department_store', 'shopping_mall'],
+];
+
+export class PlacesApiError extends Error {
+  constructor(message: string, public kind: 'invalid_key' | 'permission' | 'quota' | 'network' | 'other') { super(message); }
+}
+
+const cleanAddress = (a: string) => (a || '').replace(/,?\s*(Brazil|Brasil)$/i, '').trim();
+
+export const parsePlace = (p: any, center: { lat: number; lon: number }): NearbyBusiness | null => {
+  const name = p?.displayName?.text?.trim();
+  const lat = p?.location?.latitude, lon = p?.location?.longitude;
+  if (!name || typeof lat !== 'number' || typeof lon !== 'number') return null;
+  const comps: any[] = Array.isArray(p.addressComponents) ? p.addressComponents : [];
+  const neighborhood = comps.find(c => (c.types || []).some((t: string) => t === 'sublocality_level_1' || t === 'sublocality' || t === 'neighborhood'))?.longText || '';
+  const phone = p.nationalPhoneNumber || p.internationalPhoneNumber || '';
+  const mobile = isBrazilianMobile(phone) ? phone : '';
+  return {
+    id: p.id || `${name}|${lat},${lon}`,
+    name,
+    category: p.primaryTypeDisplayName?.text || '',
+    address: cleanAddress(p.formattedAddress || ''),
+    neighborhood,
+    phone,
+    whatsapp: mobile,
+    whatsappIsGuess: !!mobile,
+    email: '',
+    website: p.websiteUri || '',
+    distanceMeters: Math.round(distanceMeters(center.lat, center.lon, lat, lon)),
+  };
 };
+
+const describeHttpError = (status: number, msg: string): PlacesApiError => {
+  if (/api key not valid|API_KEY_INVALID/i.test(msg)) return new PlacesApiError('A chave do Google é inválida. Confira a chave cadastrada.', 'invalid_key');
+  if (status === 403) return new PlacesApiError(`O Google recusou a chave (${msg || 'sem permissão'}). Confira se a "Places API (New)" está ativada no projeto e se a chave permite este site.`, 'permission');
+  if (status === 429) return new PlacesApiError('A cota de consultas do Google foi atingida. Tente mais tarde ou aumente a cota no Google Cloud.', 'quota');
+  return new PlacesApiError(`O Google respondeu com erro ${status}${msg ? `: ${msg}` : ''}.`, 'other');
+};
+
+// Um pedido ao Google para um grupo de tipos. Se algum tipo não for aceito, tenta de novo sem ele.
+const searchGroup = async (apiKey: string, center: { lat: number; lon: number }, radius: number, types: string[], signal: AbortSignal, useProxy: boolean): Promise<any[]> => {
+  let current = [...types];
+  for (let tries = 0; tries < 3 && current.length; tries++) {
+    const res = await fetch(useProxy ? PLACES_PROXY_URL : PLACES_URL, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': FIELD_MASK },
+      body: JSON.stringify({
+        includedTypes: current,
+        maxResultCount: 20,
+        rankPreference: 'DISTANCE',
+        languageCode: 'pt-BR',
+        regionCode: 'BR',
+        locationRestriction: { circle: { center: { latitude: center.lat, longitude: center.lon }, radius } },
+      }),
+    });
+    if (res.ok) return (await res.json())?.places || [];
+    const errJson = await res.json().catch(() => null);
+    const msg: string = errJson?.error?.message || '';
+    const unsupported = msg.match(/Unsupported types?:\s*([^.]+)/i);
+    if (res.status === 400 && unsupported) {
+      const bad = unsupported[1].split(/[,\s]+/).filter(Boolean);
+      current = current.filter(t => !bad.includes(t));
+      continue;
+    }
+    throw describeHttpError(res.status, msg);
+  }
+  return [];
+};
+
+const runAllGroups = async (apiKey: string, center: { lat: number; lon: number }, radius: number, useProxy: boolean) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), PLACES_TIMEOUT_MS);
+  try {
+    const settled = await Promise.allSettled(PLACE_TYPE_GROUPS.map(g => searchGroup(apiKey, center, radius, g, ctrl.signal, useProxy)));
+    const ok = settled.filter((s): s is PromiseFulfilledResult<any[]> => s.status === 'fulfilled');
+    if (ok.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+    return ok.flatMap(s => s.value);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const isNetworkError = (e: any) => e instanceof TypeError || e?.name === 'AbortError';
 
 // ---------- Memória de resultados (no navegador) ----------
 
 interface CachedSearch { radius: number; savedAt: number; items: NearbyBusiness[] }
-const cacheKey = (c: { lat: number; lon: number }) => `nearby_businesses:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+const cacheKey = (c: { lat: number; lon: number }) => `nearby_google:${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
 
 const readCache = (c: { lat: number; lon: number }, radius: number): { items: NearbyBusiness[]; savedAt: number } | null => {
   try {
@@ -191,7 +200,6 @@ const writeCache = (c: { lat: number; lon: number }, radius: number, items: Near
   try {
     const prev = localStorage.getItem(cacheKey(c));
     const old: CachedSearch | null = prev ? JSON.parse(prev) : null;
-    // Mantém a busca de raio maior, se ainda estiver valendo.
     if (old && Date.now() - old.savedAt <= CACHE_TTL_MS && old.radius > radius) return;
     localStorage.setItem(cacheKey(c), JSON.stringify({ radius, savedAt: Date.now(), items }));
   } catch { /* navegador sem espaço ou bloqueado: segue sem memória */ }
@@ -199,23 +207,13 @@ const writeCache = (c: { lat: number; lon: number }, radius: number, items: Near
 
 // ---------- Busca ----------
 
-const queryEndpoint = async (url: string, body: string, signal: AbortSignal) => {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  // O Overpass às vezes responde 200 com um aviso de tempo esgotado e sem resultados.
-  if (json?.remark && /timed out|runtime error|out of memory/i.test(json.remark) && !(json.elements || []).length) {
-    throw new Error('tempo esgotado no servidor');
-  }
-  return json;
-};
-
 export interface NearbySearchResult {
   items: NearbyBusiness[];
   cachedAt: number | null; // preenchido quando veio da memória do navegador
 }
 
 export const searchNearbyBusinesses = async (
+  apiKey: string,
   center: { lat: number; lon: number },
   radius: number,
   opts: { force?: boolean } = {},
@@ -225,28 +223,28 @@ export const searchNearbyBusinesses = async (
     if (cached) return { items: cached.items, cachedAt: cached.savedAt };
   }
 
-  const body = 'data=' + encodeURIComponent(buildOverpassQuery(center.lat, center.lon, radius));
-  const controllers = OVERPASS_ENDPOINTS.map(() => new AbortController());
-  const timer = setTimeout(() => controllers.forEach(c => c.abort()), OVERPASS_TIMEOUT_MS);
-  const errors: string[] = [];
+  let raw: any[];
   try {
-    // Todos ao mesmo tempo; a primeira resposta boa vence e as outras são canceladas.
-    const json = await Promise.any(OVERPASS_ENDPOINTS.map((url, i) =>
-      queryEndpoint(url, body, controllers[i].signal).catch((e: any) => {
-        errors.push(e?.name === 'AbortError' ? 'sem resposta' : (e?.message || 'falha de conexão'));
-        throw e;
-      })
-    ));
-    controllers.forEach(c => c.abort());
-    const items = parseOverpassResult(json, center, radius);
-    writeCache(center, radius, items);
-    return { items, cachedAt: null };
-  } catch {
-    const detail = [...new Set(errors)].join(', ');
-    throw new Error(`Os servidores do mapa não responderam agora${detail ? ` (${detail})` : ''}. Clique em "Tentar novamente" em alguns instantes; um raio menor também ajuda.`);
-  } finally {
-    clearTimeout(timer);
+    raw = await runAllGroups(apiKey, center, radius, false);
+  } catch (e: any) {
+    if (!isNetworkError(e)) throw e;
+    // Chamada direta bloqueada ou sem resposta: tenta pelo proxy do próprio site.
+    try {
+      raw = await runAllGroups(apiKey, center, radius, true);
+    } catch (e2: any) {
+      if (isNetworkError(e2)) throw new PlacesApiError('Não foi possível falar com o Google agora (sem conexão ou sem resposta). Tente novamente.', 'network');
+      throw e2;
+    }
   }
+
+  const byId = new Map<string, NearbyBusiness>();
+  for (const p of raw) {
+    const b = parsePlace(p, center);
+    if (b && b.distanceMeters <= radius + 1 && !byId.has(b.id)) byId.set(b.id, b);
+  }
+  const items = [...byId.values()].sort((a, b) => a.distanceMeters - b.distanceMeters);
+  writeCache(center, radius, items);
+  return { items, cachedAt: null };
 };
 
 // ---------- Comparação com os contatos já cadastrados ----------

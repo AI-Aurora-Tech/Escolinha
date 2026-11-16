@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import {
-  NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, isAlreadyContact,
+  NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, isAlreadyContact, PlacesApiError,
 } from '../services/nearbyBusinesses';
-import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Home } from 'lucide-react';
+import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Home, KeyRound } from 'lucide-react';
 
 // Raio da busca (em metros): padrão 1 km, ajustável na tela entre 100 m e 5 km.
 export const DEFAULT_RADIUS_METERS = 1000;
@@ -22,6 +22,7 @@ const CLUB_GEOCODE_ATTEMPTS: Record<string, string>[] = [
   { postalcode: '05759-290', city: 'São Paulo' },
 ];
 const CENTER_SETTING_KEY = 'marketing_search_center';
+const GOOGLE_KEY_SETTING = 'google_places_api_key';
 
 interface Props {
   existingContacts: { name: string; phone: string }[];
@@ -54,6 +55,13 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [centerInput, setCenterInput] = useState('');
   const [locating, setLocating] = useState(false);
 
+  // Chave da API do Google (Places API New), guardada em app_settings.
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
+  const [editingKey, setEditingKey] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+
   const [radius, setRadius] = useState(DEFAULT_RADIUS_METERS);            // raio escolhido (ainda não buscado)
   const [radiusInput, setRadiusInput] = useState(kmText(DEFAULT_RADIUS_METERS)); // km, como digitado
   const [searchedRadius, setSearchedRadius] = useState<number | null>(null); // raio da última busca feita
@@ -77,18 +85,20 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     const started = Date.now();
     const tick = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     try {
-      const { items: found, cachedAt: fromCache } = await searchNearbyBusinesses(c, r, { force });
+      const { items: found, cachedAt: fromCache } = await searchNearbyBusinesses(apiKey, c, r, { force });
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
       setCachedAt(fromCache);
     } catch (e: any) {
       setSearchError(e?.message || 'Erro ao buscar empresas.');
+      // Chave inválida ou sem permissão: abre o campo para trocar a chave.
+      if (e instanceof PlacesApiError && (e.kind === 'invalid_key' || e.kind === 'permission')) { setKeyInput(''); setEditingKey(true); }
     } finally {
       clearInterval(tick);
       setSearching(false);
     }
-  }, [existingContacts]);
+  }, [existingContacts, apiKey]);
 
   // Ao abrir: usa o endereço salvo (ou o do clube) e o último raio. A busca só começa
   // quando o usuário clicar em "Buscar empresas".
@@ -110,7 +120,13 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         const saved = Number(data?.value);
         if (Number.isFinite(saved) && saved >= MIN_RADIUS_METERS && saved <= MAX_RADIUS_METERS) r = saved;
       } catch { /* usa o padrão */ }
+      let key = '';
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', GOOGLE_KEY_SETTING).maybeSingle();
+        key = (data?.value || '').trim();
+      } catch { /* sem chave */ }
       if (cancelled) return;
+      setApiKey(key); setApiKeyLoaded(true); if (!key) setEditingKey(true);
       setRadius(r); setRadiusInput(kmText(r));
       if (!c) {
         const found = await geocodeAddress(CLUB_GEOCODE_ATTEMPTS);
@@ -159,6 +175,16 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     await applyCenter({ ...found, address: CLUB_ADDRESS, isClub: true });
   };
 
+  const saveApiKey = async () => {
+    const k = keyInput.trim();
+    if (k.length < 20) return alert('Cole a chave de API completa do Google (começa com "AIza").');
+    setSavingKey(true);
+    const { error } = await supabase.from('app_settings').upsert({ key: GOOGLE_KEY_SETTING, value: k });
+    setSavingKey(false);
+    if (error) return alert(`Não foi possível salvar a chave: ${error.message}`);
+    setApiKey(k); setEditingKey(false); setSearchError(null);
+  };
+
   const parseRadiusInput = (text: string) => Math.round(Number(text.replace(',', '.')) * 1000);
   const radiusIsValid = (m: number) => Number.isFinite(m) && m >= MIN_RADIUS_METERS && m <= MAX_RADIUS_METERS;
 
@@ -173,6 +199,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   // Inicia a busca com o raio escolhido e guarda o raio para as próximas vezes.
   const startSearch = () => {
     if (!center) return;
+    if (!apiKey) { setEditingKey(true); return alert('Cadastre primeiro a chave de API do Google.'); }
     const m = parseRadiusInput(radiusInput);
     if (!radiusIsValid(m)) return alert(`Informe um raio entre ${kmText(MIN_RADIUS_METERS)} e ${kmText(MAX_RADIUS_METERS)} km.`);
     selectRadius(m);
@@ -181,24 +208,24 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     void runSearch(center, m);
   };
 
-  const allSelected = !!results && results.length > 0 && results.every(r => selected.has(r.osmId));
+  const allSelected = !!results && results.length > 0 && results.every(r => selected.has(r.id));
   const toggle = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSelected(allSelected || !results ? new Set() : new Set(results.map(r => r.osmId)));
+  const toggleAll = () => setSelected(allSelected || !results ? new Set() : new Set(results.map(r => r.id)));
 
   const stats = useMemo(() => {
     const r = results || [];
-    return { phone: r.filter(b => b.phone).length, whatsapp: r.filter(b => b.whatsapp).length, email: r.filter(b => b.email).length };
+    return { phone: r.filter(b => b.phone).length, whatsapp: r.filter(b => b.whatsapp).length, website: r.filter(b => b.website).length };
   }, [results]);
 
   const handleAdd = async () => {
     if (!results) return;
-    const items = results.filter(r => selected.has(r.osmId));
+    const items = results.filter(r => selected.has(r.id));
     if (items.length === 0) return;
     setAdding(true);
     const added = await onAdd(items);
     setAdding(false);
     if (added > 0) {
-      setResults(prev => (prev || []).filter(r => !selected.has(r.osmId)));
+      setResults(prev => (prev || []).filter(r => !selected.has(r.id)));
       setSelected(new Set());
       alert(`${added} empresa(s) adicionada(s) aos contatos como possíveis patrocinadores (etapa "Novo").`);
     }
@@ -212,7 +239,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         <div className="flex justify-between items-start gap-3 mb-4 border-b pb-3">
           <div>
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="w-5 h-5 text-primary-600" /> Empresas próximas {!center || centerIsClub(center) ? 'do clube' : 'do endereço informado'}</h3>
-            <p className="text-xs text-gray-500">Empresas que já estão nos seus contatos são ignoradas.</p>
+            <p className="text-xs text-gray-500">Empresas que já estão nos seus contatos são ignoradas.{apiKey && !editingKey && <> · <button onClick={() => { setKeyInput(''); setEditingKey(true); }} className="underline hover:text-primary-600">trocar chave do Google</button></>}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
@@ -249,6 +276,24 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           {centerError && <p className="mt-2 text-amber-700 flex items-start gap-1.5"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {centerError}</p>}
         </div>
 
+        {/* Chave do Google */}
+        {apiKeyLoaded && editingKey && (
+          <form onSubmit={e => { e.preventDefault(); void saveApiKey(); }} className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-sm space-y-2">
+            <p className="font-bold text-amber-900 flex items-center gap-1.5"><KeyRound className="w-4 h-4" /> {apiKey ? 'Trocar a chave do Google' : 'Cadastre a chave do Google para buscar empresas'}</p>
+            <ol className="text-xs text-amber-900 list-decimal pl-5 space-y-0.5">
+              <li>No <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" className="underline font-bold">Google Cloud Console</a>, crie (ou escolha) um projeto com faturamento ativo.</li>
+              <li>Em "APIs e serviços", ative a <strong>Places API (New)</strong>.</li>
+              <li>Em "Credenciais", crie uma <strong>chave de API</strong> e restrinja-a à Places API (New) e ao endereço deste site.</li>
+              <li>Cole a chave abaixo (ela começa com "AIza").</li>
+            </ol>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input className="flex-1 border rounded-lg p-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none bg-white" placeholder="AIza..." value={keyInput} onChange={e => setKeyInput(e.target.value)} autoComplete="off" />
+              <button type="submit" disabled={savingKey} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-700 disabled:opacity-50 whitespace-nowrap">Salvar chave</button>
+              {apiKey && <button type="button" onClick={() => setEditingKey(false)} className="px-3 py-2 text-sm text-gray-500">Cancelar</button>}
+            </div>
+          </form>
+        )}
+
         {/* Raio da busca + botão Buscar */}
         <form onSubmit={e => { e.preventDefault(); startSearch(); }} className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4 text-sm border rounded-xl p-3">
           <span className="font-bold text-gray-700 whitespace-nowrap">1. Escolha o raio:</span>
@@ -260,7 +305,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             <input inputMode="decimal" className="w-20 border rounded-lg px-2 py-1.5 text-sm text-right focus:ring-2 focus:ring-primary-500 outline-none" value={radiusInput} onChange={e => onRadiusTyped(e.target.value)} disabled={searching} aria-label="Raio em km" />
             <span className="text-gray-500 text-xs">km <span className="text-gray-400">(0,1 a 5)</span></span>
           </div>
-          <button type="submit" disabled={searching || !center || locating || centerLoading} className="lg:ml-auto px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap">
+          <button type="submit" disabled={searching || !center || locating || centerLoading || !apiKey} className="lg:ml-auto px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap">
             {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} 2. Buscar empresas
           </button>
         </form>
@@ -272,7 +317,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           </div>
         )}
 
-        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...<p className="text-xs text-gray-400 mt-1">{elapsed > 0 ? `${elapsed} s · ` : ''}consultando vários servidores do mapa ao mesmo tempo</p></div>}
+        {searching && <div className="py-16 text-center text-gray-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" /> Buscando empresas próximas...<p className="text-xs text-gray-400 mt-1">{elapsed > 0 ? `${elapsed} s · ` : ''}consultando o Google Maps</p></div>}
 
         {searchError && !searching && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -287,11 +332,11 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
               <p className="text-gray-600">
                 <strong className="text-gray-900">{results.length}</strong> empresa(s) nova(s) encontrada(s){searchedRadius != null && <> num raio de <strong>{formatDistance(searchedRadius)}</strong></>}
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
-                {results.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · WhatsApp: {stats.whatsapp} · e-mail: {stats.email}</span>}
+                {results.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · celular: {stats.whatsapp} · com site: {stats.website}</span>}
                 {cachedAt && center && (
                   <span className="block text-xs text-gray-400 mt-0.5">
-                    Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.{' '}
-                    <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="text-primary-600 font-bold underline">Buscar de novo no mapa</button>
+                    Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (sem custo).{' '}
+                    <button onClick={() => void runSearch(center, searchedRadius ?? radius, true)} className="text-primary-600 font-bold underline">Buscar de novo no Google</button>
                   </span>
                 )}
               </p>
@@ -323,8 +368,8 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                     </thead>
                     <tbody className="divide-y">
                       {results.map(b => (
-                        <tr key={b.osmId} onClick={() => toggle(b.osmId)} className={`cursor-pointer ${selected.has(b.osmId) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}>
-                          <td className="p-3">{selected.has(b.osmId) ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5 text-gray-300" />}</td>
+                        <tr key={b.id} onClick={() => toggle(b.id)} className={`cursor-pointer ${selected.has(b.id) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}>
+                          <td className="p-3">{selected.has(b.id) ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5 text-gray-300" />}</td>
                           <td className="p-3">
                             <p className="font-bold text-gray-900">{b.name}</p>
                             <p className="text-xs text-gray-500">{b.category}</p>
@@ -347,7 +392,10 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-400 mt-3">Dados abertos do OpenStreetMap (mapa colaborativo). Nem toda empresa da região está cadastrada no mapa, e telefone, WhatsApp e e-mail só aparecem quando foram informados lá.</p>
+            <p className="text-xs text-gray-400 mt-3">
+              Dados do Google Maps. O Google não informa e-mail nem WhatsApp: celulares aparecem como "provável WhatsApp", e o e-mail pode ser obtido no site da empresa.
+              Cada busca nova usa até 8 consultas da cota do Google; repetir a mesma busca em até 24 h não gera custo.
+            </p>
           </>
         )}
       </div>
