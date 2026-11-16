@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import {
   NearbyBusiness, GeoPoint, geocodeAddress, parseLatLon, searchNearbyBusinesses, isAlreadyContact, PlacesApiError,
+  SEGMENTS, ALL_SEGMENT_IDS, segmentLabel,
 } from '../services/nearbyBusinesses';
 import { X, MapPin, Loader2, Search, CheckSquare, Square, Phone, MessageCircle, Mail, Globe, AlertTriangle, Plus, Home, KeyRound } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const RADIUS_SETTING_KEY = 'marketing_search_radius';
 const MIN_REVIEWS_PRESETS = [0, 10, 30, 50, 100, 200];
 const DEFAULT_MIN_REVIEWS = 30;
 const MIN_REVIEWS_SETTING_KEY = 'marketing_min_reviews';
+const SEGMENTS_SETTING_KEY = 'marketing_segments';
 
 const CLUB_ADDRESS = 'Rua Roque de Mingo, 550 – Jardim Samara – São Paulo/SP – CEP 05759-290';
 
@@ -78,6 +80,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const [results, setResults] = useState<NearbyBusiness[] | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
   const [minReviews, setMinReviews] = useState(DEFAULT_MIN_REVIEWS);
+  const [segments, setSegments] = useState<string[]>(ALL_SEGMENT_IDS);          // segmentos escolhidos
+  const [searchedSegments, setSearchedSegments] = useState<string[]>([]);       // segmentos da última busca
+  const [lastRequests, setLastRequests] = useState<number | null>(null);        // pedidos ao Google na última busca
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
@@ -86,13 +91,14 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
     await supabase.from('app_settings').upsert({ key: CENTER_SETTING_KEY, value: JSON.stringify(p) });
   };
 
-  const runSearch = useCallback(async (c: GeoPoint, r: number, force = false) => {
+  const runSearch = useCallback(async (c: GeoPoint, r: number, force = false, segs: string[] = segments) => {
     setSearchedRadius(r);
     setSearching(true); setSearchError(null); setResults(null); setSelected(new Set()); setElapsed(0);
     const started = Date.now();
     const tick = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     try {
-      const { items: found, cachedAt: fromCache } = await searchNearbyBusinesses(apiKey, c, r, { force });
+      const { items: found, cachedAt: fromCache, requests } = await searchNearbyBusinesses(apiKey, c, r, segs, { force });
+      setSearchedSegments(segs); setLastRequests(requests);
       const fresh = found.filter(b => !isAlreadyContact(b, existingContacts));
       setIgnoredCount(found.length - fresh.length);
       setResults(fresh);
@@ -105,7 +111,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
       clearInterval(tick);
       setSearching(false);
     }
-  }, [existingContacts, apiKey]);
+  }, [existingContacts, apiKey, segments]);
 
   // Ao abrir: usa o endereço salvo (ou o do clube) e o último raio. A busca só começa
   // quando o usuário clicar em "Buscar empresas".
@@ -132,6 +138,14 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
         const saved = Number(data?.value);
         if (data?.value != null && Number.isFinite(saved) && saved >= 0) setMinReviews(saved);
       } catch { /* usa o padrão */ }
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', SEGMENTS_SETTING_KEY).maybeSingle();
+        const saved = data?.value ? JSON.parse(data.value) : null;
+        if (Array.isArray(saved)) {
+          const valid = saved.filter((id: any) => ALL_SEGMENT_IDS.includes(id));
+          if (valid.length) setSegments(valid);
+        }
+      } catch { /* usa todos */ }
       let key = '';
       try {
         const { data } = await supabase.from('app_settings').select('value').eq('key', GOOGLE_KEY_SETTING).maybeSingle();
@@ -212,6 +226,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   const startSearch = () => {
     if (!center) return;
     if (!apiKey) { setEditingKey(true); return alert('Cadastre primeiro a chave de API do Google.'); }
+    if (segments.length === 0) return alert('Escolha pelo menos um segmento.');
     const m = parseRadiusInput(radiusInput);
     if (!radiusIsValid(m)) return alert(`Informe um raio entre ${kmText(MIN_RADIUS_METERS)} e ${kmText(MAX_RADIUS_METERS)} km.`);
     selectRadius(m);
@@ -221,8 +236,17 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
   };
 
   // Empresas que passam no porte mínimo (total de avaliações no Google).
-  const visible = useMemo(() => (results || []).filter(b => (b.ratingCount || 0) >= minReviews), [results, minReviews]);
-  const hiddenBySize = (results?.length || 0) - visible.length;
+  const inSegments = useMemo(() => (results || []).filter(b => segments.includes(b.segment)), [results, segments]);
+  const visible = useMemo(() => inSegments.filter(b => (b.ratingCount || 0) >= minReviews), [inSegments, minReviews]);
+  const hiddenBySize = inSegments.length - visible.length;
+  // Segmentos marcados que ainda não foram buscados (precisam de "Buscar empresas").
+  const pendingSegments = results ? segments.filter(id => !searchedSegments.includes(id)) : [];
+
+  const saveSegments = (list: string[]) => {
+    setSegments(list);
+    void (async () => { await supabase.from('app_settings').upsert({ key: SEGMENTS_SETTING_KEY, value: JSON.stringify(list) }); })();
+  };
+  const toggleSegment = (id: string) => saveSegments(segments.includes(id) ? segments.filter(x => x !== id) : [...segments, id]);
 
   const changeMinReviews = (n: number) => {
     setMinReviews(n);
@@ -332,6 +356,29 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
           </button>
         </form>
 
+        {/* Segmentos */}
+        <div className="flex flex-col lg:flex-row lg:items-start gap-2 mb-3 text-sm">
+          <span className="font-bold text-gray-700 whitespace-nowrap lg:pt-1.5">Segmentos:</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SEGMENTS.map(sg => {
+              const on = segments.includes(sg.id);
+              return (
+                <button type="button" key={sg.id} onClick={() => toggleSegment(sg.id)} title={sg.hint} className={`px-3 py-1.5 rounded-full border text-xs font-bold flex items-center gap-1 ${on ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  {on ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />} {sg.label}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => saveSegments(segments.length === ALL_SEGMENT_IDS.length ? [] : ALL_SEGMENT_IDS)} className="px-2 py-1.5 text-xs font-bold text-gray-500 underline">
+              {segments.length === ALL_SEGMENT_IDS.length ? 'Desmarcar todos' : 'Marcar todos'}
+            </button>
+          </div>
+        </div>
+        {pendingSegments.length > 0 && !searching && (
+          <p className="mb-3 -mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {pendingSegments.map(segmentLabel).join(', ')} ainda não {pendingSegments.length > 1 ? 'foram buscados' : 'foi buscado'}: clique em <strong>Buscar empresas</strong> para incluir.
+          </p>
+        )}
+
         {/* Porte mínimo (avaliações no Google) */}
         <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-4 text-sm">
           <span className="font-bold text-gray-700 whitespace-nowrap">Porte mínimo:</span>
@@ -367,6 +414,9 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                 {hiddenBySize > 0 && <> · <strong>{hiddenBySize}</strong> com menos de {minReviews} avaliações ocultada(s) pelo porte mínimo</>}
                 {ignoredCount > 0 && <> · <strong>{ignoredCount}</strong> já estava(m) nos contatos e foi(ram) ignorada(s)</>}
                 {visible.length > 0 && <span className="text-gray-400"> · com telefone: {stats.phone} · celular: {stats.whatsapp} · com site: {stats.website}</span>}
+                {!cachedAt && lastRequests != null && lastRequests > 0 && (
+                  <span className="block text-xs text-gray-400 mt-0.5">Esta busca usou {lastRequests} consulta(s) ao Google.</span>
+                )}
                 {cachedAt && center && (
                   <span className="block text-xs text-gray-400 mt-0.5">
                     Resultado guardado da busca de {new Date(cachedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} (sem custo).{' '}
@@ -406,7 +456,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
                           <td className="p-3">{selected.has(b.id) ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5 text-gray-300" />}</td>
                           <td className="p-3">
                             <p className="font-bold text-gray-900">{b.name}</p>
-                            <p className="text-xs text-gray-500">{b.category}</p>
+                            <p className="text-xs text-gray-500">{[b.category, segmentLabel(b.segment)].filter(Boolean).join(' · ')}</p>
                             <p className="text-xs text-amber-600 font-medium">{b.ratingCount > 0 ? <>★ {b.rating != null ? b.rating.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '–'} · {b.ratingCount.toLocaleString('pt-BR')} avaliações</> : <span className="text-gray-400">sem avaliações</span>}</p>
                             {b.website && <a href={/^https?:/i.test(b.website) ? b.website : `https://${b.website}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-primary-600 flex items-center gap-1 truncate max-w-[220px]"><Globe className="w-3 h-3" /> {b.website.replace(/^https?:\/\//, '')}</a>}
                           </td>
@@ -429,7 +479,7 @@ export const NearbyBusinessesModal: React.FC<Props> = ({ existingContacts, onAdd
             )}
             <p className="text-xs text-gray-400 mt-3">
               Dados do Google Maps. O Google não informa e-mail nem WhatsApp: celulares aparecem como "provável WhatsApp", e o e-mail pode ser obtido no site da empresa.
-              Cada busca nova usa até 8 consultas da cota do Google; repetir a mesma busca em até 24 h não gera custo.
+              Cada segmento buscado usa 1 consulta da cota do Google; segmentos já buscados no mesmo endereço e raio nas últimas 24 h não geram custo.
             </p>
           </>
         )}
